@@ -12,7 +12,8 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { useMemo, useState, type MouseEvent } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import {
   createDeck,
   drawOpeningHand,
@@ -71,6 +72,24 @@ const GUN_LIVE_ROUNDS = 1;
 const HIGH_LOW_TUTORIAL_ROBOT_ID = "high-low-1-1";
 const deck = createDeck();
 
+const highLowBattleConfigs = {
+  "high-low-1-1": {
+    correctExchangePairs: [
+      ["K-spade", "A-spade"],
+      ["K-spade", "A-daia"],
+    ],
+    initialPlayerHandIds: ["A-daia", "A-spade"],
+    initialRobotHandIds: ["A-heart", "K-spade"],
+    robotHighCardAfterExchangeId: "A-spade",
+  },
+  "high-low-1-2": {
+    correctExchangePairs: [["Q-spade", "J-spade"]],
+    initialPlayerHandIds: ["A-heart", "Q-spade"],
+    initialRobotHandIds: ["J-spade", "A-crub"],
+    robotHighCardAfterExchangeId: "A-crub",
+  },
+} as const;
+
 type FocusOption = {
   gameType: GameType;
   robot: Robot;
@@ -84,25 +103,12 @@ type ActiveBattle = {
 type GunResult = "fire";
 type HighLowZoneName = "HIGH" | "LOW";
 
-type InitialGunState = {
-  gunResult: GunResult | null;
-  isStarted: boolean;
-  liveRounds: number[];
-  playerZone: HighLowZoneName | null;
-  robotZone: HighLowZoneName | null;
-  triggerCount: number;
-};
-
 export default function CasinoGame({
   initialBattle = null,
-  initialGunState,
   initialStageId = 1,
-  nextLiveRounds,
 }: {
   initialBattle?: ActiveBattle | null;
-  initialGunState: InitialGunState;
   initialStageId?: number;
-  nextLiveRounds: number[];
 }) {
   const initialStage = stages.find((item) => item.id === initialStageId) ?? stages[0];
   const [stageId, setStageId] = useState(initialStage.id);
@@ -222,8 +228,6 @@ export default function CasinoGame({
               <HighLowBattle
                 backHref={`/?stage=${stage.id}`}
                 hand={hand}
-                initialGunState={initialGunState}
-                nextLiveRounds={nextLiveRounds}
                 onBack={() => {
                   setSelectedRobotId(null);
                   setSelectedGameType(null);
@@ -363,13 +367,17 @@ function OpponentSelector({
   const isFocusedPlayed = focusedRobot
     ? playedRobotIds.includes(focusedRobot.id)
     : false;
-  const isTutorialPreview =
-    stageId === 1 && focusedRobot?.id === HIGH_LOW_TUTORIAL_ROBOT_ID;
-  const previewPlayerHand = isTutorialPreview
-    ? getCardsById(["A-daia", "A-spade"])
+  const focusedHighLowConfig =
+    focusedRobot?.id && focusedRobot.id in highLowBattleConfigs
+      ? highLowBattleConfigs[
+          focusedRobot.id as keyof typeof highLowBattleConfigs
+        ]
+      : null;
+  const previewPlayerHand = focusedHighLowConfig
+    ? getCardsById([...focusedHighLowConfig.initialPlayerHandIds])
     : hand;
-  const previewRobotHand = isTutorialPreview
-    ? getCardsById(["A-heart", "K-spade"])
+  const previewRobotHand = focusedHighLowConfig
+    ? getCardsById([...focusedHighLowConfig.initialRobotHandIds])
     : hand.slice().reverse();
   const shouldShowFieldCards = focusedGameType === "poker";
 
@@ -519,59 +527,177 @@ function OpponentSelector({
 function HighLowBattle({
   backHref,
   hand,
-  initialGunState,
-  nextLiveRounds,
   onBack,
   robotId,
   stageId,
 }: {
   backHref: string;
   hand: PlayingCard[];
-  initialGunState: InitialGunState;
-  nextLiveRounds: number[];
   onBack: () => void;
   robotId: string;
   stageId: number;
 }) {
   const isTutorial = stageId === 1 && robotId === HIGH_LOW_TUTORIAL_ROBOT_ID;
-  const tutorialPlayerHand = getCardsById(["A-daia", "A-spade"]);
-  const tutorialRobotHand = getCardsById(["A-heart", "K-spade"]);
-  const playerHand = isTutorial ? tutorialPlayerHand : hand;
-  const robotHand = isTutorial ? tutorialRobotHand : hand.slice().reverse();
-  const tutorialRobotCard = tutorialRobotHand.find((card) => card.rank === "K");
-  const tutorialPlayerCard = tutorialPlayerHand.find((card) => card.suit === "spade");
+  const highLowConfig =
+    robotId in highLowBattleConfigs
+      ? highLowBattleConfigs[robotId as keyof typeof highLowBattleConfigs]
+      : null;
+  const initialPlayerHand = highLowConfig
+    ? getCardsById([...highLowConfig.initialPlayerHandIds])
+    : hand;
+  const initialRobotHand = highLowConfig
+    ? getCardsById([...highLowConfig.initialRobotHandIds])
+    : hand.slice().reverse();
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
-  const [liveRounds, setLiveRounds] = useState<number[]>(initialGunState.liveRounds);
-  const [triggerCount, setTriggerCount] = useState(initialGunState.triggerCount);
-  const [gunResult, setGunResult] = useState<GunResult | null>(
-    initialGunState.gunResult,
+  const [playerPlacedCardId, setPlayerPlacedCardId] = useState<string | null>(
+    null,
   );
-  const [battleStarted, setBattleStarted] = useState(initialGunState.isStarted);
-  const [canPlaceCard, setCanPlaceCard] = useState(
-    initialGunState.gunResult === "fire",
-  );
+  const [triggerCount, setTriggerCount] = useState(0);
+  const [gunResult, setGunResult] = useState<GunResult | null>(null);
+  const [battleStarted, setBattleStarted] = useState(false);
+  const [canPlaceCard, setCanPlaceCard] = useState(false);
   const [robotZone, setRobotZone] = useState<HighLowZoneName | null>(
-    initialGunState.robotZone ?? (isTutorial && initialGunState.isStarted ? "HIGH" : null),
+    null,
   );
-  const [playerZone, setPlayerZone] = useState<HighLowZoneName | null>(
-    initialGunState.playerZone,
+  const [playerZone, setPlayerZone] = useState<HighLowZoneName | null>(null);
+  const [isGunDialogOpen, setIsGunDialogOpen] = useState(false);
+  const [showPreparationVehicle, setShowPreparationVehicle] = useState(false);
+  const [showPreparation, setShowPreparation] = useState(false);
+  const [showPreparationIntro, setShowPreparationIntro] = useState(true);
+  const [showExchangeWarning, setShowExchangeWarning] = useState(false);
+  const [winOverlayDismissed, setWinOverlayDismissed] = useState(false);
+  const [hasEnteredPreparation, setHasEnteredPreparation] = useState(false);
+  const [exchangeCardIds, setExchangeCardIds] = useState<string[]>([]);
+  const [exchangeConfirmed, setExchangeConfirmed] = useState(false);
+  const [exchangeApplied, setExchangeApplied] = useState(false);
+  const isExchangeCorrect =
+    Boolean(highLowConfig) &&
+    exchangeConfirmed &&
+    highLowConfig?.correctExchangePairs.some((pair) =>
+      pair.every((cardId) => exchangeCardIds.includes(cardId)),
+    ) === true;
+  const isExchangeApplied = isExchangeCorrect && exchangeApplied;
+  const requiresExchangeBeforeStart =
+    Boolean(highLowConfig) && (!isTutorial || hasEnteredPreparation);
+  const exchangedPlayerHandIds =
+    isExchangeApplied && highLowConfig
+      ? swapSelectedCardIds(
+          [...highLowConfig.initialPlayerHandIds],
+          exchangeCardIds,
+        )
+      : initialPlayerHand.map((card) => card.id);
+  const exchangedRobotHandIds =
+    isExchangeApplied && highLowConfig
+      ? swapSelectedCardIds(
+          [...highLowConfig.initialRobotHandIds],
+          exchangeCardIds,
+        )
+      : initialRobotHand.map((card) => card.id);
+  const playerHand = getCardsById(exchangedPlayerHandIds);
+  const robotHand = getCardsById(exchangedRobotHandIds);
+  const tutorialPlayerCard =
+    playerHand.find((card) => card.id === "A-spade") ?? playerHand[0];
+  const exchangedAceCardId = exchangeCardIds.find((cardId) =>
+    cardId.startsWith("A-"),
   );
-  const [isGunDialogOpen, setIsGunDialogOpen] = useState(
-    initialGunState.isStarted && !initialGunState.playerZone,
-  );
-  const liveParam = liveRounds.join(",");
-  const startHref = `/?stage=${stageId}&battle=high-low&robot=${robotId}&gun=1&shots=0&live=${nextLiveRounds.join(",")}${
-    isTutorial ? "&rz=HIGH" : ""
-  }`;
-  const nextTriggerCount = Math.min(triggerCount + 1, GUN_MAX_TRIGGERS);
-  const nextIsFire = true;
-  const nextRobotZone: HighLowZoneName =
-    isTutorial || liveRounds.reduce((sum, item) => sum + item, 0) % 2 === 0
-      ? "HIGH"
-      : "LOW";
-  const triggerHref = `/?stage=${stageId}&battle=high-low&robot=${robotId}&gun=1&shots=${nextTriggerCount}&live=${liveParam}${
-    nextIsFire ? `&rz=${nextRobotZone}` : ""
-  }`;
+  const configuredRobotHighCard =
+    highLowConfig && isExchangeApplied
+      ? robotHand.find(
+          (card) => card.id === highLowConfig.robotHighCardAfterExchangeId,
+        ) ??
+        robotHand.find((card) => card.id === exchangedAceCardId) ??
+        robotHand.find((card) => card.rank === "A")
+      : null;
+  const defaultRobotCard =
+    configuredRobotHighCard ??
+    (isTutorial ? initialRobotHand.find((card) => card.rank === "K") : robotHand[0]);
+  const defaultPlayerCard = isTutorial
+    ? tutorialPlayerCard
+    : playerHand[0];
+  const robotPlacedCard = defaultRobotCard ?? null;
+  const playerDefaultCard = defaultPlayerCard ?? null;
+
+  useEffect(() => {
+    if (!isGunDialogOpen || gunResult !== "fire") {
+      return;
+    }
+
+    const closeTimer = window.setTimeout(() => {
+      setIsGunDialogOpen(false);
+    }, 1400);
+
+    return () => window.clearTimeout(closeTimer);
+  }, [gunResult, isGunDialogOpen]);
+
+  useEffect(() => {
+    function handleNativeAction(event: PointerEvent) {
+      const target =
+        event.target instanceof Element ? event.target : null;
+
+      if (target?.closest("[data-high-low-start]")) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (requiresExchangeBeforeStart && !isExchangeCorrect) {
+          setShowExchangeWarning(true);
+          return;
+        }
+        setExchangeApplied(isExchangeCorrect);
+        setTriggerCount(0);
+        setGunResult(null);
+        setBattleStarted(true);
+        setIsGunDialogOpen(true);
+        setCanPlaceCard(false);
+        setRobotZone(isTutorial || isExchangeCorrect ? "HIGH" : null);
+        setPlayerZone(null);
+        setPlayerPlacedCardId(null);
+        setWinOverlayDismissed(false);
+        return;
+      }
+
+      if (target?.closest("[data-high-low-prepare]")) {
+        event.preventDefault();
+        event.stopPropagation();
+        setShowPreparationVehicle(true);
+        return;
+      }
+
+      if (!target?.closest("[data-gun-trigger]")) {
+        return;
+      }
+
+      if (!battleStarted || canPlaceCard || triggerCount >= GUN_MAX_TRIGGERS) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      setTriggerCount((current) => Math.min(current + 1, GUN_MAX_TRIGGERS));
+      setGunResult("fire");
+      setCanPlaceCard(true);
+      setRobotZone(
+        isTutorial || isExchangeApplied
+          ? "HIGH"
+          : Math.random() > 0.5
+            ? "HIGH"
+            : "LOW",
+      );
+    }
+
+    document.addEventListener("pointerdown", handleNativeAction, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleNativeAction, true);
+    };
+  }, [
+    battleStarted,
+    canPlaceCard,
+    isExchangeApplied,
+    isExchangeCorrect,
+    isTutorial,
+    requiresExchangeBeforeStart,
+    triggerCount,
+  ]);
+
   const tutorialStep = getHighLowTutorialStepContent({
     battleStarted,
     canPlaceCard,
@@ -579,24 +705,51 @@ function HighLowBattle({
   });
   const draggableCardIds =
     canPlaceCard && !playerZone
-      ? isTutorial && tutorialPlayerCard
-        ? [tutorialPlayerCard.id]
+      ? isTutorial
+        ? isExchangeApplied
+          ? playerHand.map((card) => card.id)
+          : tutorialPlayerCard
+            ? [tutorialPlayerCard.id]
+            : []
         : playerHand.map((card) => card.id)
       : [];
+  const playerPlacedCard =
+    playerHand.find((card) => card.id === playerPlacedCardId) ?? null;
+  const highZoneCard =
+    robotZone === "HIGH"
+      ? robotPlacedCard
+      : playerZone === "HIGH"
+        ? playerPlacedCard
+        : null;
+  const lowZoneCard =
+    robotZone === "LOW"
+      ? robotPlacedCard
+      : playerZone === "LOW"
+        ? playerPlacedCard
+        : null;
+  const highLowResult =
+    highZoneCard && lowZoneCard
+      ? getHighLowResult(highZoneCard, lowZoneCard)
+      : null;
 
-  function createLiveRounds() {
-    return [1];
-  }
+  const showWinOverlay = highLowResult === "win" && !winOverlayDismissed;
 
   function startGunSequence() {
-    setLiveRounds(createLiveRounds());
+    if (requiresExchangeBeforeStart && !isExchangeCorrect) {
+      setShowExchangeWarning(true);
+      return;
+    }
+
+    setExchangeApplied(isExchangeCorrect);
     setTriggerCount(0);
     setGunResult(null);
     setBattleStarted(true);
     setIsGunDialogOpen(true);
     setCanPlaceCard(false);
-    setRobotZone(isTutorial ? "HIGH" : null);
+    setRobotZone(isTutorial || isExchangeCorrect ? "HIGH" : null);
     setPlayerZone(null);
+    setPlayerPlacedCardId(null);
+    setWinOverlayDismissed(false);
   }
 
   function pullTrigger() {
@@ -611,16 +764,22 @@ function HighLowBattle({
 
     if (isFire) {
       setCanPlaceCard(true);
-      setRobotZone(isTutorial ? "HIGH" : Math.random() > 0.5 ? "HIGH" : "LOW");
-      window.setTimeout(() => setIsGunDialogOpen(false), 1400);
+      setRobotZone(
+        isTutorial || isExchangeApplied
+          ? "HIGH"
+          : Math.random() > 0.5
+            ? "HIGH"
+            : "LOW",
+      );
     }
   }
 
-  function placePlayerCard(zone: "HIGH" | "LOW") {
+  function placePlayerCard(zone: "HIGH" | "LOW", cardId = playerDefaultCard?.id) {
     if (!canPlaceCard) {
       return;
     }
 
+    setPlayerPlacedCardId(cardId ?? null);
     setPlayerZone(zone);
   }
 
@@ -629,8 +788,209 @@ function HighLowBattle({
       return;
     }
 
-    placePlayerCard(zone);
+    placePlayerCard(zone, draggingCardId);
     setDraggingCardId(null);
+  }
+
+  function toggleExchangeCard(cardId: string) {
+    setExchangeCardIds((current) => {
+      setExchangeConfirmed(false);
+      setExchangeApplied(false);
+
+      if (current.includes(cardId)) {
+        return current.filter((id) => id !== cardId);
+      }
+
+      if (current.length >= 2) {
+        return [current[1], cardId];
+      }
+
+      return [...current, cardId];
+    });
+  }
+
+  if (showPreparationVehicle) {
+    return (
+      <div className="min-h-[680px] bg-[#120d09] text-white">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-black/45 p-3 sm:p-4">
+          <button
+            className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
+            onClick={() => setShowPreparationVehicle(false)}
+            type="button"
+            aria-label="ハイアンドローに戻る"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <h2 className="text-lg font-black">事前準備</h2>
+          <div className="h-10 w-10" />
+        </div>
+
+        <section className="relative min-h-[620px] overflow-hidden">
+          <Image
+            alt="事前準備車両"
+            className="object-cover"
+            fill
+            priority
+            sizes="100vw"
+            src="/preparation-vehicle.png"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/75" />
+          <div className="absolute inset-x-0 bottom-0 p-4 sm:p-6">
+            <div className="mx-auto max-w-3xl rounded border border-brass bg-stone-950/88 p-4 shadow-2xl backdrop-blur sm:p-5">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Preparation Vehicle
+              </p>
+              <h3 className="mt-2 text-2xl font-black">隣の車両で事前準備を行う</h3>
+              <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
+                この車両では、対戦前に特殊な能力を使うことができます。
+                まずはエクスチェンジの準備へ進みましょう。
+              </p>
+              <button
+                className="mt-4 min-h-11 w-full rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300 sm:w-auto sm:px-6"
+                onClick={() => {
+                  setShowPreparationVehicle(false);
+                  setShowPreparation(true);
+                  setShowPreparationIntro(true);
+                  setHasEnteredPreparation(true);
+                }}
+                type="button"
+              >
+                事前準備へ
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (showPreparation) {
+    return (
+      <div className="min-h-[680px] bg-[#111827] text-white">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-black/45 p-3 sm:p-4">
+          <button
+            className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
+            onClick={() => setShowPreparation(false)}
+            type="button"
+            aria-label="ハイアンドローに戻る"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <h2 className="text-lg font-black">事前準備</h2>
+          <div className="h-10 w-10" />
+        </div>
+
+        <div className="mx-auto max-w-5xl px-3 py-4 sm:px-6 sm:py-6">
+          <div className="hidden">
+          <TutorialBubble>
+            <span className="block">
+              このままではプレイヤーが圧倒的に不利です。そこで、あなたは事前に準備をすることが可能です。隣にある車の中で特殊な能力を使うことが可能です。
+            </span>
+          </TutorialBubble>
+          </div>
+
+          <section className="mt-4 rounded border border-white/12 bg-black/35 p-3 sm:p-5">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+              Ability 01
+            </p>
+            <h3 className="mt-1 text-2xl font-black">エクスチェンジ</h3>
+            <p className="mt-3 text-sm font-bold leading-7 text-stone-200">
+              トランプ同士を、事前に指定したゲームの開始時に指定したAKQJ1枚と入れ替える。カード自体は変わらず、数字面の印刷のみ入れ替わる。
+            </p>
+          </section>
+
+          <section className="mt-4 rounded border border-white/12 bg-black/35 p-3 sm:p-5">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                  Select Cards
+                </p>
+                <h3 className="mt-1 text-xl font-black">交換対象を2枚選択</h3>
+              </div>
+              <p className="text-sm font-bold text-stone-300">
+                {exchangeCardIds.length}/2
+              </p>
+            </div>
+
+            <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-8">
+              {deck.map((card) => {
+                const selected = exchangeCardIds.includes(card.id);
+
+                return (
+                  <button
+                    className={`rounded border p-1 transition ${
+                      selected
+                        ? "border-brass bg-brass/20 ring-4 ring-brass/45"
+                        : "border-white/10 bg-white/5 hover:bg-white/10"
+                    }`}
+                    key={`exchange-${card.id}`}
+                    onClick={() => toggleExchangeCard(card.id)}
+                    type="button"
+                  >
+                    <PlayingCardView card={card} size="hand" />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+              {exchangeConfirmed ? (
+                <p className="text-sm font-bold text-emerald-200">
+                  エクスチェンジ対象を決定しました。
+                </p>
+              ) : null}
+              <button
+                className={`min-h-11 rounded px-5 text-sm font-black ${
+                  exchangeCardIds.length === 2
+                    ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                    : "cursor-not-allowed bg-stone-700 text-stone-400"
+                }`}
+                disabled={exchangeCardIds.length !== 2}
+                onClick={() => {
+                  setExchangeConfirmed(true);
+                  setExchangeApplied(false);
+                  setBattleStarted(false);
+                  setCanPlaceCard(false);
+                  setGunResult(null);
+                  setIsGunDialogOpen(false);
+                  setPlayerPlacedCardId(null);
+                  setPlayerZone(null);
+                  setRobotZone(null);
+                  setShowExchangeWarning(false);
+                  setWinOverlayDismissed(false);
+                  setShowPreparation(false);
+                  setTriggerCount(0);
+                }}
+                type="button"
+              >
+                決定
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {showPreparationIntro ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/78 p-3 sm:p-4">
+            <section className="w-full max-w-lg rounded border border-brass bg-stone-950 p-4 text-white shadow-2xl sm:p-5">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Preparation
+              </p>
+              <h3 className="mt-2 text-xl font-black">事前準備</h3>
+              <p className="mt-4 text-sm font-bold leading-7 text-stone-100">
+                このままではプレイヤーが圧倒的に不利です。そこで、あなたは事前に準備をすることが可能です。隣にある車の中で特殊な能力を使うことが可能です。
+              </p>
+              <button
+                className="mt-5 min-h-11 w-full rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                onClick={() => setShowPreparationIntro(false)}
+                type="button"
+              >
+                確認
+              </button>
+            </section>
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   return (
@@ -649,11 +1009,52 @@ function HighLowBattle({
       </div>
 
       <div className="relative overflow-hidden px-3 py-4 sm:px-6 sm:py-6">
+        {showExchangeWarning ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/78 p-3 sm:p-4">
+            <section className="w-full max-w-md rounded border border-brass bg-stone-950 p-4 text-white shadow-2xl sm:p-5">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Exchange Check
+              </p>
+              <p className="mt-3 text-base font-black leading-7 text-stone-50">
+                このままでは上手くいかなさそうだ...
+              </p>
+              <button
+                className="mt-5 min-h-11 w-full rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                onClick={() => setShowExchangeWarning(false)}
+                type="button"
+              >
+                閉じる
+              </button>
+            </section>
+          </div>
+        ) : null}
+
+        {showWinOverlay ? (
+          <button
+            className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 text-center backdrop-blur-[2px]"
+            onClick={() => setWinOverlayDismissed(true)}
+            type="button"
+            aria-label="勝利表示を閉じる"
+          >
+            <span className="relative inline-grid place-items-center">
+              <span className="absolute h-44 w-44 rounded-full bg-emerald-400/25 blur-3xl sm:h-64 sm:w-64" />
+              <span className="absolute h-28 w-72 rounded-full border border-brass/70 shadow-[0_0_48px_rgba(246,195,92,0.75)] sm:h-40 sm:w-[34rem]" />
+              <span className="relative scale-105 text-5xl font-black text-brass drop-shadow-[0_6px_0_rgba(0,0,0,0.8)] sm:text-8xl">
+                YOU WIN
+              </span>
+            </span>
+          </button>
+        ) : null}
+
         {!battleStarted ? (
           <GunStartCue
             isSpotlight={isTutorial && tutorialStep.target === "start"}
+            onPrepare={
+              requiresExchangeBeforeStart
+                ? () => setShowPreparationVehicle(true)
+                : undefined
+            }
             onStart={startGunSequence}
-            startHref={startHref}
           />
         ) : null}
 
@@ -671,7 +1072,6 @@ function HighLowBattle({
                 gunResult={gunResult}
                 isSpotlight={isTutorial && tutorialStep.target === "trigger"}
                 onPullTrigger={pullTrigger}
-                triggerHref={triggerHref}
                 triggerCount={triggerCount}
               />
             </div>
@@ -679,37 +1079,31 @@ function HighLowBattle({
         ) : null}
 
         <section className="mx-auto max-w-4xl rounded border border-emerald-200/20 bg-emerald-950/45 p-3 shadow-[inset_0_0_70px_rgba(0,0,0,0.35)] sm:p-5">
-          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4">
             <HighLowZone
               canPlace={canPlaceCard}
               label="HIGH"
-              placeHref={`/?stage=${stageId}&battle=high-low&robot=${robotId}&gun=1&shots=${triggerCount}&live=${liveParam}${
-                robotZone ? `&rz=${robotZone}` : ""
-              }&pz=HIGH`}
               onPlace={() => placePlayerCard("HIGH")}
               playerPlaced={playerZone === "HIGH"}
-              playerCard={playerZone === "HIGH" ? tutorialPlayerCard : null}
-              placeDisabled={isTutorial}
+              playerCard={playerZone === "HIGH" ? playerPlacedCard : null}
+              placeDisabled={robotZone === "HIGH"}
               spotlight={false}
               onDropCard={() => dropPlayerCard("HIGH")}
               robotPlaced={robotZone === "HIGH"}
-              robotCard={robotZone === "HIGH" ? tutorialRobotCard : null}
+              robotCard={robotZone === "HIGH" ? robotPlacedCard : null}
               tone="high"
             />
             <HighLowZone
               canPlace={canPlaceCard}
               label="LOW"
-              placeHref={`/?stage=${stageId}&battle=high-low&robot=${robotId}&gun=1&shots=${triggerCount}&live=${liveParam}${
-                robotZone ? `&rz=${robotZone}` : ""
-              }&pz=LOW`}
               onPlace={() => placePlayerCard("LOW")}
               playerPlaced={playerZone === "LOW"}
-              playerCard={playerZone === "LOW" ? tutorialPlayerCard : null}
-              placeDisabled={false}
+              playerCard={playerZone === "LOW" ? playerPlacedCard : null}
+              placeDisabled={robotZone === "LOW"}
               spotlight={isTutorial && tutorialStep.target === "player-card"}
               onDropCard={() => dropPlayerCard("LOW")}
               robotPlaced={robotZone === "LOW"}
-              robotCard={robotZone === "LOW" ? tutorialRobotCard : null}
+              robotCard={robotZone === "LOW" ? robotPlacedCard : null}
               tone="low"
             />
           </div>
@@ -732,6 +1126,43 @@ function HighLowBattle({
 
           {isTutorial && tutorialStep.target === "player-card" ? (
             <TutorialBubble className="mt-3">{tutorialStep.text}</TutorialBubble>
+          ) : null}
+
+          {highLowResult ? (
+            <div
+              className={`mt-3 rounded border p-3 text-sm font-bold leading-6 ${
+                highLowResult === "win"
+                  ? "border-emerald-300 bg-emerald-950/55 text-emerald-100"
+                  : "border-casinoRed bg-red-950/55 text-red-100"
+              }`}
+            >
+              {getHighLowResultText(highZoneCard, lowZoneCard, highLowResult)}
+            </div>
+          ) : null}
+
+          {isTutorial && highLowResult === "lose" ? (
+            <div className="mt-3 flex justify-end">
+              <button
+                className="min-h-11 rounded bg-brass px-5 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                onClick={() => {
+                  setShowPreparationVehicle(true);
+                }}
+                type="button"
+              >
+                次へ
+              </button>
+            </div>
+          ) : null}
+
+          {robotId === HIGH_LOW_TUTORIAL_ROBOT_ID && highLowResult === "win" ? (
+            <div className="mt-3 flex justify-end">
+              <Link
+                className="grid min-h-11 place-items-center rounded bg-brass px-5 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                href="/?stage=1&battle=high-low&robot=high-low-1-2"
+              >
+                2戦目へ
+              </Link>
+            </div>
           ) : null}
         </section>
 
@@ -762,6 +1193,62 @@ function getCardsById(cardIds: string[]) {
   return cardIds
     .map((cardId) => deck.find((card) => card.id === cardId))
     .filter((card): card is PlayingCard => Boolean(card));
+}
+
+function swapSelectedCardIds(cardIds: string[], selectedCardIds: string[]) {
+  if (selectedCardIds.length !== 2) {
+    return cardIds;
+  }
+
+  const [firstCardId, secondCardId] = selectedCardIds;
+
+  return cardIds.map((cardId) => {
+    if (cardId === firstCardId) {
+      return secondCardId;
+    }
+
+    if (cardId === secondCardId) {
+      return firstCardId;
+    }
+
+    return cardId;
+  });
+}
+
+function getHighLowCardValue(card: PlayingCard) {
+  const rankValues = {
+    J: 1,
+    Q: 2,
+    K: 3,
+    A: 4,
+  };
+
+  return rankValues[card.rank];
+}
+
+function getHighLowResult(highCard: PlayingCard, lowCard: PlayingCard) {
+  return getHighLowCardValue(highCard) >= getHighLowCardValue(lowCard)
+    ? "win"
+    : "lose";
+}
+
+function getHighLowResultText(
+  highCard: PlayingCard | null,
+  lowCard: PlayingCard | null,
+  result: "win" | "lose",
+) {
+  if (!highCard || !lowCard) {
+    return "";
+  }
+
+  const relation =
+    result === "win"
+      ? `${highCard.rank} >= ${lowCard.rank}`
+      : `${highCard.rank} < ${lowCard.rank}`;
+
+  return result === "win"
+    ? `判定: ${relation}。HIGHとLOWの関係が成り立ったため、プレイヤーの勝利です。`
+    : `判定: ${relation}。HIGHとLOWの関係が成り立たなかったため、プレイヤーの負けです。`;
 }
 
 function getHighLowGuideText({
@@ -900,12 +1387,12 @@ function getHighLowTutorialStepContent({
 
 function GunStartCue({
   isSpotlight,
+  onPrepare,
   onStart,
-  startHref,
 }: {
   isSpotlight: boolean;
+  onPrepare?: () => void;
   onStart: () => void;
-  startHref: string;
 }) {
   return (
     <section
@@ -924,13 +1411,26 @@ function GunStartCue({
             ゲームスタートで銃のダイアログを開きます。
           </p>
         </div>
-        <a
+        {onPrepare ? (
+          <button
+            className="grid min-h-11 place-items-center rounded border border-brass bg-black/35 px-4 text-sm font-black text-brass hover:bg-brass/10"
+            data-high-low-prepare
+            onClick={onPrepare}
+            onPointerDown={onPrepare}
+            type="button"
+          >
+            事前準備
+          </button>
+        ) : null}
+        <button
           className="grid min-h-11 place-items-center rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
-          href={startHref}
+          data-high-low-start
           onClick={onStart}
+          onPointerDown={onStart}
+          type="button"
         >
           ゲームスタート
-        </a>
+        </button>
       </div>
     </section>
   );
@@ -940,19 +1440,16 @@ function GunCue({
   gunResult,
   isSpotlight,
   onPullTrigger,
-  triggerHref,
   triggerCount,
 }: {
   gunResult: GunResult | null;
   isSpotlight: boolean;
-  onPullTrigger: (event?: MouseEvent<HTMLAnchorElement>) => void;
-  triggerHref: string;
+  onPullTrigger: () => void;
   triggerCount: number;
 }) {
   const isFire = gunResult === "fire";
   const isTriggerDisabled = triggerCount >= GUN_MAX_TRIGGERS;
   const isStarted = true;
-  const startHref = triggerHref;
 
   return (
     <section
@@ -981,20 +1478,19 @@ function GunCue({
             引き金
           </button>
         ) : (
-          <a
+          <button
             className={`grid min-h-11 place-items-center rounded px-4 text-sm font-black ${
             !isStarted
               ? "bg-brass text-stone-950 hover:bg-yellow-300"
               : "bg-casinoRed text-white hover:bg-red-700"
           }`}
-            href={isStarted ? triggerHref : startHref}
-            onClick={(event) => {
-              event.preventDefault();
-              onPullTrigger(event);
-            }}
+            data-gun-trigger
+            onClick={onPullTrigger}
+            onPointerDown={onPullTrigger}
+            type="button"
           >
             {isStarted ? "引き金" : "ゲームスタート"}
-          </a>
+          </button>
         )}
       </div>
 
@@ -1055,7 +1551,6 @@ function HighLowZone({
   label,
   onDropCard,
   onPlace,
-  placeHref,
   placeDisabled,
   playerCard,
   playerPlaced,
@@ -1068,7 +1563,6 @@ function HighLowZone({
   label: "HIGH" | "LOW";
   onDropCard: () => void;
   onPlace: () => void;
-  placeHref: string;
   placeDisabled: boolean;
   playerCard?: PlayingCard | null;
   playerPlaced: boolean;
@@ -1082,11 +1576,18 @@ function HighLowZone({
 
   return (
     <div
-      className={`relative grid min-h-36 place-items-center rounded border-2 border-dashed p-4 text-center sm:min-h-52 ${
+      className={`relative grid min-h-32 place-items-center rounded border-2 border-dashed p-2 text-center sm:min-h-52 sm:p-4 ${
         tone === "high"
           ? "border-casinoRed/80 bg-red-950/20"
           : "border-sky-300/80 bg-sky-950/20"
-      } ${spotlight ? "animate-pulse ring-4 ring-brass/70" : ""}`}
+      } ${canUsePlace ? "cursor-pointer" : ""} ${
+        spotlight ? "animate-pulse ring-4 ring-brass/70" : ""
+      }`}
+      onClick={() => {
+        if (canUsePlace && !playerPlaced) {
+          onPlace();
+        }
+      }}
       onDragOver={(event) => {
         if (canUsePlace) {
           event.preventDefault();
@@ -1101,41 +1602,29 @@ function HighLowZone({
         onDropCard();
       }}
     >
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-2xl font-black text-white/95 drop-shadow-[0_2px_8px_rgba(0,0,0,0.75)] sm:left-5 sm:text-4xl">
-        {label}
+      <span className="absolute left-2 top-1/2 flex -translate-y-1/2 flex-col items-center text-lg font-black leading-none text-white/95 drop-shadow-[0_2px_8px_rgba(0,0,0,0.75)] sm:left-5 sm:text-4xl">
+        {label.split("").map((letter, index) => (
+          <span key={`${label}-${letter}-${index}`}>{letter}</span>
+        ))}
       </span>
       <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center">
         {placedCard ? <PlayingCardView card={placedCard} size="zone" /> : null}
       </div>
-      <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-2">
-        <span
-          className={`rounded px-2 py-1 text-xs font-black ${
-            robotPlaced ? "bg-brass text-stone-950" : "bg-black/40 text-stone-400"
-          }`}
-        >
-          ROBOT
-        </span>
-        {canUsePlace ? (
-          <a
-            className={`rounded px-3 py-2 text-xs font-black ${
-            playerPlaced
-              ? "bg-emerald-500 text-stone-950"
-              : "bg-white/12 text-white hover:bg-white/20"
-          }`}
-            href={placeHref}
-            onClick={onPlace}
-          >
-            {playerPlaced ? "PLACED" : "PLACE"}
-          </a>
+      <div className="absolute inset-x-2 bottom-2 flex items-center justify-between gap-1 sm:inset-x-3 sm:bottom-3 sm:gap-2">
+        {robotPlaced ? (
+          <span className="rounded bg-brass px-2 py-1 text-xs font-black text-stone-950">
+            ROBOT
+          </span>
         ) : (
-          <button
-            className="cursor-not-allowed rounded bg-white/6 px-3 py-2 text-xs font-black text-stone-500"
-            disabled
-            type="button"
-          >
-            PLACE
-          </button>
+          <span />
         )}
+        {playerPlaced ? (
+          <span
+            className="rounded bg-emerald-500 px-2 py-2 text-xs font-black text-stone-950 sm:px-3"
+          >
+            PLACED
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -1195,7 +1684,9 @@ function GameLogo({
 
   return (
     <div
-      className={`overflow-hidden drop-shadow-[0_4px_10px_rgba(0,0,0,0.75)] ${sizeClass}`}
+      className={`overflow-hidden rounded bg-white p-1 drop-shadow-[0_4px_10px_rgba(0,0,0,0.75)] ${
+        compact ? "border border-stone-200" : ""
+      } ${sizeClass}`}
     >
       <Image
         alt={`${logo.alt}のロゴ`}
@@ -1232,10 +1723,25 @@ function PlayingCardView({
   };
   const sizeClass =
     size === "zone"
-      ? "h-28 w-20 sm:h-36 sm:w-24"
+      ? "h-24 w-[4.25rem] sm:h-36 sm:w-24"
       : size === "field"
         ? "h-16 w-11 sm:h-20 sm:w-14"
         : "h-20 w-14 sm:h-24 sm:w-16";
+  function startCardDrag(event: DragEvent<HTMLDivElement>) {
+    if (!draggable) {
+      return;
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", card.id);
+    event.dataTransfer.setDragImage(
+      event.currentTarget,
+      bounds.width / 2,
+      bounds.height / 2,
+    );
+    onDragStart?.();
+  }
 
   if (!imageFailed) {
     return (
@@ -1244,14 +1750,7 @@ function PlayingCardView({
           highlighted ? "animate-pulse ring-4 ring-brass/70" : ""
         } ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
         draggable={draggable}
-        onDragStart={(event) => {
-          if (!draggable) {
-            return;
-          }
-
-          event.dataTransfer.setData("text/plain", card.id);
-          onDragStart?.();
-        }}
+        onDragStart={startCardDrag}
       >
         <Image
           alt={`${card.rank} ${card.suit}`}
@@ -1273,14 +1772,7 @@ function PlayingCardView({
         draggable ? "cursor-grab active:cursor-grabbing" : ""
       }`}
       draggable={draggable}
-      onDragStart={(event) => {
-        if (!draggable) {
-          return;
-        }
-
-        event.dataTransfer.setData("text/plain", card.id);
-        onDragStart?.();
-      }}
+      onDragStart={startCardDrag}
     >
       <span className="text-2xl leading-none sm:text-3xl">{card.rank}</span>
       <span className="text-lg leading-none sm:text-xl">{suitSymbols[card.suit]}</span>
