@@ -1,6 +1,6 @@
 export type GameType = "blackjack" | "poker" | "high-low";
 export type Seat = "right" | "top" | "left";
-export type CardRank = "A" | "J" | "Q" | "K";
+export type CardRank = "1" | "A" | "J" | "Q" | "K";
 export type CardSuit = "crub" | "daia" | "heart" | "spade";
 
 export type Robot = {
@@ -44,10 +44,16 @@ const gameSeats: Record<GameType, Seat> = {
 };
 
 const highLowRuleText =
-  "お互いに手札2枚ずつ用意。銃声が鳴ったら、早いもの勝ちでHIGHゾーン or LOWゾーンに置ける。プレイヤーの勝利条件はカードの大小関係が成り立つこと。ロボットはそれが成り立たないようにカードをHIGHゾーン or LOWゾーンのどちらかに置いてくる。ロボットの方が反射神経が早いため、ロボットよりも先に置くことはできない。スタートの合図で用いる銃は2つだけ弾を装填しており、どのタイミングで銃声が鳴るかはランダムである。";
+  "お互いに手札2枚ずつ用意。銃声が鳴ったら、早いもの勝ちで左側のHIGHゾーン or 右側のLOWゾーンに置ける。プレイヤーの勝利条件はカードの大小関係が成り立つこと。ロボットはそれが成り立たないようにカードをHIGHゾーン or LOWゾーンのどちらかに置いてくる。ロボットの方が反射神経が早いため、ロボットよりも先に置くことはできない。※AJQKではないトランプを使った瞬間、使った者の負けとなる。";
 
 const highLowSpecText =
   "このロボットだけこちらの手札を透視してくる。ロボットは特殊能力こそ考慮できないが、一番勝率の良いプレイをする。";
+
+export const blackjackRuleText =
+  "JQKは10、Aは11として扱い、2〜9は数字の通り扱う。手札から順番に出し、1枚目と2枚目の合計が21に近い方の勝ち。引き分けはあなたの負け。手札にある2枚目で21になる場合、1枚目にピッタリと重ねて2枚目を置き、ブラックジャックと宣言する。";
+
+export const blackjackSpecText =
+  "プレイヤー1枚目がJQK・ロボットがAの場合、50チップレイズ。プレイヤー1枚目がA・ロボットがJQKの場合、フォールド。それ以外はコールする。";
 
 export const stages: Stage[] = [
   {

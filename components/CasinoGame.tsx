@@ -15,6 +15,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import {
+  blackjackRuleText,
+  blackjackSpecText,
   createDeck,
   drawOpeningHand,
   getGameSeat,
@@ -67,8 +69,8 @@ const gameLogo: Record<GameType, { alt: string; src: string }> = {
   },
 };
 
-const GUN_MAX_TRIGGERS = 6;
-const GUN_LIVE_ROUNDS = 1;
+const GUN_AUTO_FIRE_DELAY_MS = 650;
+const GUN_CUTIN_CLOSE_DELAY_MS = 1850;
 const HIGH_LOW_TUTORIAL_ROBOT_ID = "high-low-1-1";
 const deck = createDeck();
 
@@ -88,6 +90,38 @@ const highLowBattleConfigs = {
     initialRobotHandIds: ["J-spade", "A-crub"],
     robotHighCardAfterExchangeId: "A-crub",
   },
+  "high-low-1-3": {
+    correctExchangePairs: [
+      ["A-spade", "Q-heart"],
+      ["A-spade", "Q-daia"],
+    ],
+    initialPlayerHandIds: ["Q-heart", "Q-daia"],
+    initialRobotHandIds: ["A-spade", "K-heart"],
+    robotHighCardAfterExchangeId: "K-heart",
+  },
+} as const;
+
+const blackjackBattleConfigs = {
+  "blackjack-2-1": {
+    initialPlayerHandIds: ["A-daia", "J-heart"],
+    initialRobotHandIds: ["A-spade", "J-spade"],
+    learningRestriction:
+      "勝利後追加: このStageの間、自分の手札のカードはエクスチェンジできない。",
+    requiresRaiseForMaxChips: true,
+  },
+  "blackjack-2-2": {
+    initialPlayerHandIds: ["A-heart", "A-daia"],
+    initialRobotHandIds: ["A-spade", "Q-daia"],
+    learningRestriction:
+      "勝利後追加: このStageの間、ロボットの手札はエクスチェンジできない。",
+    requiresRaiseForMaxChips: false,
+    scanTargetCardId: "scan-1",
+  },
+  "blackjack-high-low-2-3": {
+    initialPlayerHandIds: ["Q-heart", "A-spade"],
+    initialRobotHandIds: ["A-crub", "K-spade"],
+    requiresRaiseForMaxChips: false,
+  },
 } as const;
 
 type FocusOption = {
@@ -102,6 +136,21 @@ type ActiveBattle = {
 
 type GunResult = "fire";
 type HighLowZoneName = "HIGH" | "LOW";
+type PreparationAbility = "exchange" | "scan";
+type ExchangeTargetId =
+  | "player-hand"
+  | "robot-hand"
+  | "deck"
+  | "visible-print";
+
+const generatedScanCards: Record<string, PlayingCard> = {
+  "scan-1": {
+    id: "scan-1",
+    imageSrc: "",
+    rank: "1",
+    suit: "spade",
+  },
+};
 
 export default function CasinoGame({
   initialBattle = null,
@@ -124,9 +173,11 @@ export default function CasinoGame({
     initialBattle,
   );
   const [focusedOptionIndex, setFocusedOptionIndex] = useState(0);
-  const [modal, setModal] = useState<{ robot: Robot; kind: ModalKind } | null>(
-    null,
-  );
+  const [modal, setModal] = useState<{
+    gameType: GameType;
+    kind: ModalKind;
+    robot: Robot;
+  } | null>(null);
 
   const stage = stages.find((item) => item.id === stageId) ?? stages[0];
   const hand = useMemo(() => drawOpeningHand(stage.id), [stage.id]);
@@ -149,6 +200,8 @@ export default function CasinoGame({
   const activeBattleRobot =
     stage.robots.find((robot) => robot.id === activeBattle?.robotId) ?? null;
   const isHighLowBattle = activeBattle?.gameType === "high-low" && activeBattleRobot;
+  const isBlackjackBattle =
+    activeBattle?.gameType === "blackjack" && activeBattleRobot;
   const allRobotsPlayed = playedRobotIds.length === stage.robots.length;
   const isStageClear = allRobotsPlayed;
 
@@ -224,7 +277,18 @@ export default function CasinoGame({
 
         <div className="grid gap-3 lg:grid-cols-[1fr_340px] lg:gap-5">
           <section className="overflow-hidden rounded border border-white/12 bg-[#1a1714] shadow-table">
-            {isHighLowBattle ? (
+            {isBlackjackBattle ? (
+              <BlackjackBattle
+                backHref={`/?stage=${stage.id}`}
+                hand={hand}
+                onBack={() => {
+                  setSelectedRobotId(null);
+                  setSelectedGameType(null);
+                  setActiveBattle(null);
+                }}
+                robotId={activeBattle.robotId}
+              />
+            ) : isHighLowBattle ? (
               <HighLowBattle
                 backHref={`/?stage=${stage.id}`}
                 hand={hand}
@@ -244,7 +308,9 @@ export default function CasinoGame({
                 isStageClear={isStageClear}
                 onFocusRobot={focusRobot}
                 stageId={stage.id}
-                onOpenModal={(robot, kind) => setModal({ robot, kind })}
+                onOpenModal={(robot, kind, gameType) =>
+                  setModal({ gameType, kind, robot })
+                }
                 onSelectRobot={selectRobot}
                 playedRobotIds={playedRobotIds}
               />
@@ -319,7 +385,7 @@ export default function CasinoGame({
                   {modal.kind === "rules" ? "ゲームルール" : "ロボット仕様"}
                 </p>
                 <h2 className="mt-1 text-xl font-bold">
-                  {getRobotGameTypes(modal.robot).map(getGameLabel).join(" / ")}
+                  {getGameLabel(modal.gameType)}
                 </h2>
               </div>
               <button
@@ -332,7 +398,7 @@ export default function CasinoGame({
               </button>
             </div>
             <p className="mt-5 min-h-28 rounded border border-white/10 bg-white/6 p-4 leading-7 text-stone-200">
-              {modal.kind === "rules" ? modal.robot.ruleText : modal.robot.specText}
+              {getModalText(modal)}
             </p>
           </section>
         </div>
@@ -357,7 +423,7 @@ function OpponentSelector({
   hand: PlayingCard[];
   isStageClear: boolean;
   onFocusRobot: (offset: number) => void;
-  onOpenModal: (robot: Robot, kind: ModalKind) => void;
+  onOpenModal: (robot: Robot, kind: ModalKind, gameType: GameType) => void;
   onSelectRobot: (robot: Robot, gameType: GameType) => void;
   playedRobotIds: string[];
   stageId: number;
@@ -373,11 +439,21 @@ function OpponentSelector({
           focusedRobot.id as keyof typeof highLowBattleConfigs
         ]
       : null;
+  const focusedBlackjackConfig =
+    focusedRobot?.id && focusedRobot.id in blackjackBattleConfigs
+      ? blackjackBattleConfigs[
+          focusedRobot.id as keyof typeof blackjackBattleConfigs
+        ]
+      : null;
   const previewPlayerHand = focusedHighLowConfig
     ? getCardsById([...focusedHighLowConfig.initialPlayerHandIds])
+    : focusedBlackjackConfig
+      ? getCardsById([...focusedBlackjackConfig.initialPlayerHandIds])
     : hand;
   const previewRobotHand = focusedHighLowConfig
     ? getCardsById([...focusedHighLowConfig.initialRobotHandIds])
+    : focusedBlackjackConfig
+      ? getCardsById([...focusedBlackjackConfig.initialRobotHandIds])
     : hand.slice().reverse();
   const shouldShowFieldCards = focusedGameType === "poker";
 
@@ -438,7 +514,13 @@ function OpponentSelector({
                 <button
                   aria-label={`${focusedRobot.name}のルール`}
                   className="grid h-11 place-items-center rounded border border-stone-300 bg-stone-100 text-stone-950 hover:bg-stone-200"
-                  onClick={() => onOpenModal(focusedRobot, "rules")}
+                  onClick={() =>
+                    onOpenModal(
+                      focusedRobot,
+                      "rules",
+                      focusedGameType ?? focusedRobot.gameType,
+                    )
+                  }
                   title="ルール"
                   type="button"
                 >
@@ -447,7 +529,13 @@ function OpponentSelector({
                 <button
                   aria-label={`${focusedRobot.name}の仕様`}
                   className="grid h-11 place-items-center rounded border border-stone-300 bg-stone-100 text-stone-950 hover:bg-stone-200"
-                  onClick={() => onOpenModal(focusedRobot, "spec")}
+                  onClick={() =>
+                    onOpenModal(
+                      focusedRobot,
+                      "spec",
+                      focusedGameType ?? focusedRobot.gameType,
+                    )
+                  }
                   title="仕様"
                   type="button"
                 >
@@ -524,6 +612,440 @@ function OpponentSelector({
   );
 }
 
+type BlackjackPhase =
+  | "idle"
+  | "first-card"
+  | "raise"
+  | "second-card"
+  | "result";
+
+function BlackjackBattle({
+  backHref,
+  hand,
+  onBack,
+  robotId,
+}: {
+  backHref: string;
+  hand: PlayingCard[];
+  onBack: () => void;
+  robotId: string;
+}) {
+  const config =
+    robotId in blackjackBattleConfigs
+      ? blackjackBattleConfigs[robotId as keyof typeof blackjackBattleConfigs]
+      : null;
+  const canExchangePlayerHand =
+    robotId === "blackjack-2-1" && config?.requiresRaiseForMaxChips === true;
+  const canUseScan = robotId === "blackjack-2-2";
+  const [isPlayerHandExchanged, setIsPlayerHandExchanged] = useState(false);
+  const [preparationAbility, setPreparationAbility] =
+    useState<PreparationAbility>("exchange");
+  const [scannedItems, setScannedItems] = useState<string[]>([]);
+  const [isScanCardExchanged, setIsScanCardExchanged] = useState(false);
+  const scannedOneCard = generatedScanCards["scan-1"];
+  const playerHandIds =
+    config && isScanCardExchanged && canUseScan
+      ? ["A-heart", scannedOneCard.id]
+      : config && isPlayerHandExchanged
+      ? [...config.initialPlayerHandIds].reverse()
+      : config
+        ? [...config.initialPlayerHandIds]
+        : [];
+  const playerHand = config
+    ? getCardsById(playerHandIds, generatedScanCards)
+    : hand;
+  const robotHandIds =
+    config && isScanCardExchanged && canUseScan
+      ? ["Q-daia", "A-spade"]
+      : config
+        ? [...config.initialRobotHandIds]
+        : [];
+  const robotHand = config
+    ? getCardsById(robotHandIds, generatedScanCards)
+    : hand.slice().reverse();
+  const [phase, setPhase] = useState<BlackjackPhase>("idle");
+  const [playerChips, setPlayerChips] = useState(150);
+  const [pot, setPot] = useState(0);
+  const [playerBet, setPlayerBet] = useState(0);
+  const [robotBet, setRobotBet] = useState(0);
+  const [settledResult, setSettledResult] = useState<Outcome | null>(null);
+  const [message, setMessage] = useState(
+    "1ゲーム参加ごとに50チップ支払います。",
+  );
+  const playerFirstCard = playerHand[0] ?? null;
+  const robotFirstCard = robotHand[0] ?? null;
+  const playerScore = getBlackjackScore(playerHand);
+  const robotScore = getBlackjackScore(robotHand);
+  const playerHasBlackjack = playerScore === 21;
+  const robotAction = getBlackjackRobotAction(playerFirstCard, robotFirstCard);
+  const requiresRaiseForMaxChips = config?.requiresRaiseForMaxChips === true;
+  const learningRestriction =
+    config && "learningRestriction" in config ? config.learningRestriction : null;
+  const disabledExchangeTargets: ExchangeTargetId[] = [
+    ...(robotId === "blackjack-2-2" ? (["player-hand"] as const) : []),
+    ...(robotId === "blackjack-high-low-2-3"
+      ? (["player-hand", "robot-hand"] as const)
+      : []),
+  ];
+  const result =
+    phase === "result"
+      ? settledResult ?? getBlackjackResult(playerHand, robotHand)
+      : null;
+  const resultDisabledExchangeTargets: ExchangeTargetId[] = [
+    ...(result === "win" && robotId === "blackjack-2-1"
+      ? (["player-hand"] as const)
+      : []),
+    ...(result === "win" && robotId === "blackjack-2-2"
+      ? (["player-hand", "robot-hand"] as const)
+      : []),
+  ];
+  const robotFolded =
+    phase === "result" && settledResult === "win" && robotAction === "fold";
+
+  function startRound() {
+    if (playerChips < 50 || !playerFirstCard || !robotFirstCard) {
+      setMessage("チップか手札が足りません。");
+      return;
+    }
+
+    const startingBet = 50;
+    setSettledResult(null);
+    setPlayerChips((current) => current - startingBet);
+    setPlayerBet(startingBet);
+    setRobotBet(startingBet);
+    setPot(startingBet * 2);
+
+    if (robotAction === "fold") {
+      setMessage(
+        "ロボットはフォールドしました。プレイヤーがポットを獲得します。",
+      );
+      setPlayerChips((current) => current + startingBet * 2);
+      setSettledResult("win");
+      setPhase("result");
+      return;
+    }
+
+    if (robotAction === "raise") {
+      setRobotBet(100);
+      setPot(150);
+      setMessage(
+        "ロボットは50チップをレイズしました。応じるには50チップを追加するか、手持ち全てを賭けます。",
+      );
+      setPhase("raise");
+      return;
+    }
+
+    setMessage("ロボットはコールしました。2枚目を出して勝負します。");
+    setPhase("first-card");
+  }
+
+  function callRaise(allIn = false) {
+    const callCost = allIn ? playerChips : Math.min(50, playerChips);
+
+    if (callCost <= 0) {
+      setMessage("追加で賭けられるチップがありません。");
+      return;
+    }
+
+    setPlayerChips((current) => current - callCost);
+    setPlayerBet((current) => current + callCost);
+    setPot((current) => current + callCost);
+    setMessage(
+      allIn
+        ? "手持ちチップ全てで応じました。2枚目を出して勝負します。"
+        : "レイズに応じました。2枚目を出して勝負します。",
+    );
+    setPhase("first-card");
+  }
+
+  function foldPlayer() {
+    setMessage("あなたはフォールドしました。賭け金はロボットが獲得します。");
+    setSettledResult("lose");
+    setPhase("result");
+  }
+
+  function revealSecondCard() {
+    const outcome = getBlackjackResult(playerHand, robotHand);
+    const isMaximizedWin =
+      outcome === "win" && (!requiresRaiseForMaxChips || robotBet > 50);
+
+    if (isMaximizedWin) {
+      setPlayerChips((current) => current + pot);
+    }
+
+    setSettledResult(isMaximizedWin ? outcome : "lose");
+    if (outcome === "win" && !isMaximizedWin) {
+      setMessage(
+        "勝利はできましたが、チップ最大化に失敗しました。ロボットにレイズさせる必要があります。",
+      );
+      setPhase("result");
+      return;
+    }
+    setMessage(
+      outcome === "win"
+        ? "YOU WIN。賭け金を総取りしました。"
+        : outcome === "draw"
+          ? "引き分けのため、あなたの負けです。"
+          : "YOU LOSE。ロボットが賭け金を獲得します。",
+    );
+    setPhase("result");
+  }
+
+  function resetRound() {
+    setPhase("idle");
+    setPot(0);
+    setPlayerBet(0);
+    setRobotBet(0);
+    setSettledResult(null);
+    setMessage("1ゲーム参加ごとに50チップ支払います。");
+  }
+
+  return (
+    <div className="min-h-[620px] bg-[#071b12] text-white">
+      <div className="flex items-center gap-3 border-b border-white/10 bg-black/28 p-4">
+        <a
+          aria-label="戻る"
+          className="grid h-12 w-12 shrink-0 place-items-center rounded border border-white/30 bg-black/30 hover:bg-white/10"
+          href={backHref}
+          onClick={(event) => {
+            event.preventDefault();
+            onBack();
+          }}
+        >
+          <ArrowLeft size={18} />
+        </a>
+        <GameLogo gameType="blackjack" compact />
+      </div>
+
+      <div className="grid gap-3 p-4 sm:grid-cols-[1fr_220px]">
+        <section className="rounded border border-white/12 bg-black/28 p-3">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <BlackjackMetric label="PLAYER" value={`${playerChips} chips`} />
+            <BlackjackMetric label="POT" value={`${pot} chips`} />
+            <BlackjackMetric label="ROBOT BET" value={`${robotBet} chips`} />
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            <BlackjackField
+              cards={robotHand}
+              isBlackjack={robotScore === 21}
+              label="ROBOT FIELD"
+              revealSecond={phase === "result" && !robotFolded}
+              score={phase === "result" && !robotFolded ? robotScore : null}
+            />
+            <BlackjackField
+              cards={playerHand}
+              isBlackjack={playerHasBlackjack}
+              label="PLAYER FIELD"
+              revealSecond={phase === "second-card" || phase === "result"}
+              score={phase === "second-card" || phase === "result" ? playerScore : null}
+            />
+          </div>
+
+          <div className="mt-4 rounded border border-brass/60 bg-black/50 p-4">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+              Table Message
+            </p>
+            <p className="mt-2 min-h-12 text-sm font-bold leading-6 text-stone-100">
+              {message}
+            </p>
+            {result ? (
+              <div className="mt-2">
+                <p className="text-2xl font-black text-brass">
+                  {result === "win" ? "YOU WIN" : "YOU LOSE"}
+                </p>
+                {result === "win" && learningRestriction ? (
+                  <>
+                    <p className="mt-2 rounded border border-casinoRed/60 bg-casinoRed/15 p-3 text-sm font-bold leading-6 text-red-100">
+                      {learningRestriction}
+                    </p>
+                    <ExchangeRuleList
+                      disabledTargets={resultDisabledExchangeTargets}
+                    />
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-3 rounded border border-white/12 bg-black/28 p-3">
+          <BlackjackMetric label="PLAYER BET" value={`${playerBet} chips`} />
+          <div className="rounded border border-white/10 bg-white/6 p-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+              Robot Logic
+            </p>
+            <p className="mt-2 text-sm leading-6 text-stone-200">
+              {blackjackSpecText}
+            </p>
+          </div>
+
+          {phase === "idle" && canExchangePlayerHand ? (
+            <div className="rounded border border-brass/50 bg-brass/10 p-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Exchange
+              </p>
+              <p className="mt-2 text-sm leading-6 text-stone-100">
+                チップ最大化には、ロボットにレイズさせる必要があります。
+              </p>
+              <ExchangeRuleList />
+              <button
+                className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                  isPlayerHandExchanged
+                    ? "bg-emerald-500 text-stone-950"
+                    : "bg-white/10 text-white hover:bg-white/15"
+                }`}
+                onClick={() => setIsPlayerHandExchanged((current) => !current)}
+                type="button"
+              >
+                自分のAとJをエクスチェンジ
+              </button>
+            </div>
+          ) : null}
+
+          {phase === "idle" && canUseScan ? (
+            <div className="rounded border border-brass/50 bg-brass/10 p-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Preparation
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {(["exchange", "scan"] as const).map((ability) => (
+                  <button
+                    className={`min-h-10 rounded px-3 py-2 text-sm font-black ${
+                      preparationAbility === ability
+                        ? "bg-brass text-stone-950"
+                        : "bg-white/10 text-white hover:bg-white/15"
+                    }`}
+                    key={ability}
+                    onClick={() => setPreparationAbility(ability)}
+                    type="button"
+                  >
+                    {ability === "exchange" ? "エクスチェンジ" : "スキャン"}
+                  </button>
+                ))}
+              </div>
+
+              {preparationAbility === "exchange" ? (
+                <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
+                  <p className="text-sm leading-6 text-stone-100">
+                    1戦目の勝利後、自分の手札のカードはエクスチェンジできません。生成したカードとロボットのカードのみ交換できます。
+                  </p>
+                  <ExchangeRuleList disabledTargets={disabledExchangeTargets} />
+                  <button
+                    className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                      isScanCardExchanged
+                        ? "bg-emerald-500 text-stone-950"
+                        : scannedItems.includes("イチ")
+                          ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                          : "cursor-not-allowed bg-stone-700 text-stone-400"
+                    }`}
+                    disabled={!scannedItems.includes("イチ")}
+                    onClick={() => setIsScanCardExchanged(true)}
+                    type="button"
+                  >
+                    生成した1とロボットのAをエクスチェンジ
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
+                  <p className="text-sm leading-6 text-stone-100">
+                    足し算により算出された数字のトランプを生成します。今回は「イチ」をスキャンして1を生成します。
+                  </p>
+                  <button
+                    className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                      scannedItems.includes("イチ")
+                        ? "bg-emerald-500 text-stone-950"
+                        : "bg-brass text-stone-950 hover:bg-yellow-300"
+                    }`}
+                    onClick={() =>
+                      setScannedItems((current) =>
+                        current.includes("イチ") ? current : [...current, "イチ"],
+                      )
+                    }
+                    type="button"
+                  >
+                    {scannedItems.includes("イチ")
+                      ? "1を生成済み"
+                      : "イチをスキャンして1を生成"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {phase === "idle" ? (
+            <button
+              className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
+              onClick={startRound}
+              type="button"
+            >
+              参加する -50
+            </button>
+          ) : null}
+
+          {phase === "raise" ? (
+            <div className="grid gap-2">
+              <button
+                className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                onClick={() => callRaise(false)}
+                type="button"
+              >
+                コール +50
+              </button>
+              <button
+                className="min-h-12 rounded bg-casinoRed px-4 py-3 text-sm font-black text-white hover:bg-red-700"
+                onClick={() => callRaise(true)}
+                type="button"
+              >
+                オールイン
+              </button>
+              <button
+                className="min-h-12 rounded bg-stone-700 px-4 py-3 text-sm font-black text-white hover:bg-stone-600"
+                onClick={foldPlayer}
+                type="button"
+              >
+                フォールド
+              </button>
+            </div>
+          ) : null}
+
+          {phase === "first-card" ? (
+            <button
+              className="min-h-12 rounded bg-emerald-500 px-4 py-3 text-sm font-black text-stone-950 hover:bg-emerald-400"
+              onClick={() => {
+                setPhase("second-card");
+                revealSecondCard();
+              }}
+              type="button"
+            >
+              {playerHasBlackjack ? "ブラックジャック宣言" : "2枚目を出す"}
+            </button>
+          ) : null}
+
+          {phase === "result" ? (
+            <button
+              className="min-h-12 rounded border border-white/20 bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white/15"
+              onClick={resetRound}
+              type="button"
+            >
+              もう一度確認
+            </button>
+          ) : null}
+        </section>
+      </div>
+
+      <section className="border-t border-white/10 bg-black/28 p-4">
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+          Rule
+        </p>
+        <p className="mt-2 text-sm leading-6 text-stone-200">
+          {blackjackRuleText}
+        </p>
+      </section>
+    </div>
+  );
+}
+
 function HighLowBattle({
   backHref,
   hand,
@@ -552,7 +1074,6 @@ function HighLowBattle({
   const [playerPlacedCardId, setPlayerPlacedCardId] = useState<string | null>(
     null,
   );
-  const [triggerCount, setTriggerCount] = useState(0);
   const [gunResult, setGunResult] = useState<GunResult | null>(null);
   const [battleStarted, setBattleStarted] = useState(false);
   const [canPlaceCard, setCanPlaceCard] = useState(false);
@@ -618,16 +1139,31 @@ function HighLowBattle({
   const playerDefaultCard = defaultPlayerCard ?? null;
 
   useEffect(() => {
-    if (!isGunDialogOpen || gunResult !== "fire") {
+    if (!isGunDialogOpen || !battleStarted) {
       return;
     }
 
-    const closeTimer = window.setTimeout(() => {
-      setIsGunDialogOpen(false);
-    }, 1400);
+    const fireTimer = window.setTimeout(() => {
+      setGunResult("fire");
+    }, GUN_AUTO_FIRE_DELAY_MS);
 
-    return () => window.clearTimeout(closeTimer);
-  }, [gunResult, isGunDialogOpen]);
+    const closeTimer = window.setTimeout(() => {
+      setRobotZone(
+        isTutorial || isExchangeCorrect
+          ? "HIGH"
+          : Math.random() > 0.5
+            ? "HIGH"
+            : "LOW",
+      );
+      setCanPlaceCard(true);
+      setIsGunDialogOpen(false);
+    }, GUN_CUTIN_CLOSE_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(fireTimer);
+      window.clearTimeout(closeTimer);
+    };
+  }, [battleStarted, isExchangeCorrect, isGunDialogOpen, isTutorial]);
 
   useEffect(() => {
     function handleNativeAction(event: PointerEvent) {
@@ -642,12 +1178,11 @@ function HighLowBattle({
           return;
         }
         setExchangeApplied(isExchangeCorrect);
-        setTriggerCount(0);
         setGunResult(null);
         setBattleStarted(true);
         setIsGunDialogOpen(true);
         setCanPlaceCard(false);
-        setRobotZone(isTutorial || isExchangeCorrect ? "HIGH" : null);
+        setRobotZone(null);
         setPlayerZone(null);
         setPlayerPlacedCardId(null);
         setWinOverlayDismissed(false);
@@ -661,26 +1196,6 @@ function HighLowBattle({
         return;
       }
 
-      if (!target?.closest("[data-gun-trigger]")) {
-        return;
-      }
-
-      if (!battleStarted || canPlaceCard || triggerCount >= GUN_MAX_TRIGGERS) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      setTriggerCount((current) => Math.min(current + 1, GUN_MAX_TRIGGERS));
-      setGunResult("fire");
-      setCanPlaceCard(true);
-      setRobotZone(
-        isTutorial || isExchangeApplied
-          ? "HIGH"
-          : Math.random() > 0.5
-            ? "HIGH"
-            : "LOW",
-      );
     }
 
     document.addEventListener("pointerdown", handleNativeAction, true);
@@ -689,13 +1204,9 @@ function HighLowBattle({
       document.removeEventListener("pointerdown", handleNativeAction, true);
     };
   }, [
-    battleStarted,
-    canPlaceCard,
-    isExchangeApplied,
     isExchangeCorrect,
     isTutorial,
     requiresExchangeBeforeStart,
-    triggerCount,
   ]);
 
   const tutorialStep = getHighLowTutorialStepContent({
@@ -741,37 +1252,14 @@ function HighLowBattle({
     }
 
     setExchangeApplied(isExchangeCorrect);
-    setTriggerCount(0);
     setGunResult(null);
     setBattleStarted(true);
     setIsGunDialogOpen(true);
     setCanPlaceCard(false);
-    setRobotZone(isTutorial || isExchangeCorrect ? "HIGH" : null);
+    setRobotZone(null);
     setPlayerZone(null);
     setPlayerPlacedCardId(null);
     setWinOverlayDismissed(false);
-  }
-
-  function pullTrigger() {
-    if (!battleStarted || canPlaceCard || triggerCount >= GUN_MAX_TRIGGERS) {
-      return;
-    }
-
-    const nextCount = triggerCount + 1;
-    const isFire = true;
-    setTriggerCount(nextCount);
-    setGunResult("fire");
-
-    if (isFire) {
-      setCanPlaceCard(true);
-      setRobotZone(
-        isTutorial || isExchangeApplied
-          ? "HIGH"
-          : Math.random() > 0.5
-            ? "HIGH"
-            : "LOW",
-      );
-    }
   }
 
   function placePlayerCard(zone: "HIGH" | "LOW", cardId = playerDefaultCard?.id) {
@@ -897,6 +1385,7 @@ function HighLowBattle({
             <p className="mt-3 text-sm font-bold leading-7 text-stone-200">
               トランプ同士を、事前に指定したゲームの開始時に指定したAKQJ1枚と入れ替える。カード自体は変わらず、数字面の印刷のみ入れ替わる。
             </p>
+            <ExchangeRuleList />
           </section>
 
           <section className="mt-4 rounded border border-white/12 bg-black/35 p-3 sm:p-5">
@@ -959,7 +1448,6 @@ function HighLowBattle({
                   setShowExchangeWarning(false);
                   setWinOverlayDismissed(false);
                   setShowPreparation(false);
-                  setTriggerCount(0);
                 }}
                 type="button"
               >
@@ -1071,8 +1559,6 @@ function HighLowBattle({
               <GunCue
                 gunResult={gunResult}
                 isSpotlight={isTutorial && tutorialStep.target === "trigger"}
-                onPullTrigger={pullTrigger}
-                triggerCount={triggerCount}
               />
             </div>
           </div>
@@ -1164,6 +1650,17 @@ function HighLowBattle({
               </Link>
             </div>
           ) : null}
+
+          {robotId === "high-low-1-2" && highLowResult === "win" ? (
+            <div className="mt-3 flex justify-end">
+              <Link
+                className="grid min-h-11 place-items-center rounded bg-brass px-5 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                href="/?stage=1&battle=high-low&robot=high-low-1-3"
+              >
+                3戦目へ
+              </Link>
+            </div>
+          ) : null}
         </section>
 
         <div className="hidden">
@@ -1181,17 +1678,20 @@ function HighLowBattle({
               ? `プレイヤーは${playerZone}ゾーンへ配置しました。`
               : "発砲。ロボットが先に配置しました。プレイヤーもHIGHかLOWを選べます。"
             : battleStarted
-              ? "引き金を引いて風船を割ると、配置可能になります。"
-              : "ゲームスタートで拳銃の合図を開始します。弾は4発、最大6回までです。"}
+              ? "銃のカットイン演出が終わると、配置可能になります。"
+              : "ゲームスタートで銃のカットイン演出を開始します。"}
         </div>
       </div>
     </div>
   );
 }
 
-function getCardsById(cardIds: string[]) {
+function getCardsById(
+  cardIds: string[],
+  extraCards: Record<string, PlayingCard> = {},
+) {
   return cardIds
-    .map((cardId) => deck.find((card) => card.id === cardId))
+    .map((cardId) => deck.find((card) => card.id === cardId) ?? extraCards[cardId])
     .filter((card): card is PlayingCard => Boolean(card));
 }
 
@@ -1215,8 +1715,213 @@ function swapSelectedCardIds(cardIds: string[], selectedCardIds: string[]) {
   });
 }
 
+function getModalText(modal: {
+  gameType: GameType;
+  kind: ModalKind;
+  robot: Robot;
+}) {
+  if (modal.gameType === "blackjack") {
+    return modal.kind === "rules" ? blackjackRuleText : blackjackSpecText;
+  }
+
+  return modal.kind === "rules" ? modal.robot.ruleText : modal.robot.specText;
+}
+
+function getBlackjackCardValue(card: PlayingCard) {
+  const numericRank = Number(card.rank);
+
+  if (Number.isFinite(numericRank)) {
+    return numericRank;
+  }
+
+  return card.rank === "A" ? 11 : 10;
+}
+
+function getBlackjackScore(cards: PlayingCard[]) {
+  return cards.reduce((total, card) => total + getBlackjackCardValue(card), 0);
+}
+
+function getBlackjackResult(playerCards: PlayingCard[], robotCards: PlayingCard[]) {
+  if (getBlackjackScore(playerCards) === 21) {
+    return "win";
+  }
+
+  const playerDistance = Math.abs(21 - getBlackjackScore(playerCards));
+  const robotDistance = Math.abs(21 - getBlackjackScore(robotCards));
+
+  if (playerDistance < robotDistance) {
+    return "win";
+  }
+
+  if (playerDistance === robotDistance) {
+    return "draw";
+  }
+
+  return "lose";
+}
+
+function getBlackjackRobotAction(
+  playerFirstCard: PlayingCard | null,
+  robotFirstCard: PlayingCard | null,
+) {
+  if (!playerFirstCard || !robotFirstCard) {
+    return "call";
+  }
+
+  const playerIsTen = playerFirstCard.rank !== "A";
+  const robotIsTen = robotFirstCard.rank !== "A";
+
+  if (playerIsTen && robotFirstCard.rank === "A") {
+    return "raise";
+  }
+
+  if (playerFirstCard.rank === "A" && robotIsTen) {
+    return "fold";
+  }
+
+  return "call";
+}
+
+function BlackjackMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded border border-white/10 bg-white/6 p-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-brass">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function BlackjackField({
+  cards,
+  isBlackjack,
+  label,
+  revealSecond,
+  score,
+}: {
+  cards: PlayingCard[];
+  isBlackjack: boolean;
+  label: string;
+  revealSecond: boolean;
+  score: number | null;
+}) {
+  const firstCard = cards[0] ?? null;
+  const secondCard = cards[1] ?? null;
+
+  return (
+    <div className="rounded border border-white/10 bg-black/35 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+          {label}
+        </p>
+        {score !== null ? (
+          <span className="rounded bg-white px-2 py-1 text-xs font-black text-stone-950">
+            {score}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-3 flex min-h-32 items-center justify-center gap-3 rounded border border-white/8 bg-emerald-950/25 p-3">
+        {revealSecond && secondCard && isBlackjack ? (
+          <div className="relative h-28 w-24 sm:h-40 sm:w-32">
+            <div className="absolute left-0 top-0">
+              <PlayingCardView card={firstCard ?? secondCard} size="zone" />
+            </div>
+            <div className="absolute left-3 top-3">
+              <PlayingCardView card={secondCard} size="zone" />
+            </div>
+          </div>
+        ) : (
+          <>
+            {firstCard ? <PlayingCardView card={firstCard} size="zone" /> : null}
+            {revealSecond && secondCard ? (
+              <PlayingCardView card={secondCard} size="zone" />
+            ) : null}
+          </>
+        )}
+      </div>
+      {revealSecond && isBlackjack ? (
+        <p className="mt-2 text-center text-sm font-black text-brass">
+          BLACKJACK
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ExchangeRuleList({
+  disabledTargets = [],
+  showDeckTarget = false,
+  showVisiblePrintTarget = false,
+}: {
+  disabledTargets?: ExchangeTargetId[];
+  showDeckTarget?: boolean;
+  showVisiblePrintTarget?: boolean;
+}) {
+  const items: Array<{
+    id: ExchangeTargetId;
+    label: string;
+    visible: boolean;
+  }> = [
+    {
+      id: "player-hand",
+      label: "プレイヤーの手札",
+      visible: true,
+    },
+    {
+      id: "robot-hand",
+      label: "ロボットの手札",
+      visible: true,
+    },
+    {
+      id: "deck",
+      label: "山札",
+      visible: showDeckTarget,
+    },
+    {
+      id: "visible-print",
+      label: "マークと数字の表記がある印刷面が全て見えているもの",
+      visible: showVisiblePrintTarget,
+    },
+  ];
+
+  return (
+    <div className="mt-4 rounded border border-brass/35 bg-black/25 p-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+        現在交換可能な対象
+      </p>
+      <ul className="mt-2 space-y-2 text-sm font-bold leading-6 text-stone-100">
+        {items
+          .filter((item) => item.visible)
+          .map((item) => {
+            const disabled = disabledTargets.includes(item.id);
+
+            return (
+              <li
+                className={`flex items-start gap-2 ${
+                  disabled ? "text-stone-500 line-through decoration-2" : ""
+                }`}
+                key={item.id}
+              >
+                <span className="mt-0.5 text-brass">・</span>
+                <span>{item.label}</span>
+              </li>
+            );
+          })}
+      </ul>
+    </div>
+  );
+}
+
 function getHighLowCardValue(card: PlayingCard) {
   const rankValues = {
+    "1": 0,
     J: 1,
     Q: 2,
     K: 3,
@@ -1270,8 +1975,8 @@ function getHighLowGuideText({
     }
 
     return battleStarted
-      ? "引き金を引いて風船を割ると、配置可能になります。"
-      : "ゲームスタートで拳銃の合図を開始します。弾は4発、最大6回までです。";
+      ? "銃のカットイン演出が終わると、配置可能になります。"
+      : "ゲームスタートで銃のカットイン演出を開始します。";
   }
 
   if (playerZone === "LOW") {
@@ -1283,10 +1988,10 @@ function getHighLowGuideText({
   }
 
   if (battleStarted) {
-    return "引き金ボタンを押して風船を割りましょう。風船が割れた瞬間にゾーンへ配置できるようになります。";
+    return "銃のカットイン演出が入ります。演出が消えたら、プレイヤーもゾーンへ配置できるようになります。";
   }
 
-  return "まずは実際に1戦やってみましょう。ハイアンドローは、発砲の合図後にHIGHゾーンかLOWゾーンへカードを置くゲームです。ゲームスタートを押してから、自分で引き金を引いて発砲を待ちます。";
+  return "まずは実際に1戦やってみましょう。ハイアンドローは、発砲の合図後にHIGHゾーンかLOWゾーンへカードを置くゲームです。ゲームスタートを押すと銃のカットイン演出が入ります。";
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1319,7 +2024,7 @@ function getHighLowTutorialStep({
   if (battleStarted) {
     return {
       target: "trigger",
-      text: "引き金を押して風船を割りましょう。風船が割れたらカードを置けるようになります。",
+      text: "銃のカットイン演出が入ります。演出が消えたらカードを置けるようになります。",
     };
   }
 
@@ -1368,20 +2073,20 @@ function getHighLowTutorialStepContent({
   if (canPlaceCard) {
     return {
       target: "player-card",
-      text: "風船を割れたので、プレイヤーも配置できるようになりました。手札のAをLOWゾーンへドラッグして置いてみましょう。",
+      text: "カットインが終わり、プレイヤーも配置できるようになりました。手札のAをLOWゾーンへドラッグして置いてみましょう。",
     };
   }
 
   if (battleStarted) {
     return {
       target: "trigger",
-      text: "あなたは銃で風船を割らないと、どちらのゾーンにもカードを置けません。外れても弾は補充できるので心配はいりません。風船が割れるまで撃ちましょう。",
+      text: "銃のカットイン演出が入ります。演出が消えると、ロボットはすでにカードを置き終えています。",
     };
   }
 
   return {
     target: "start",
-    text: "まずは実際に1戦やってみましょう。ゲームスタート時点でロボットはカードを置けますが、あなたは銃で風船を割るまで配置できません。",
+    text: "まずは実際に1戦やってみましょう。ゲームスタート時点でロボットはカードを置けますが、あなたは銃声のカットイン後まで配置できません。",
   };
 }
 
@@ -1408,7 +2113,7 @@ function GunStartCue({
             Start Signal
           </p>
           <p className="mt-1 text-sm text-stone-200">
-            ゲームスタートで銃のダイアログを開きます。
+            ゲームスタートで銃のカットイン演出を開始します。
           </p>
         </div>
         {onPrepare ? (
@@ -1439,17 +2144,11 @@ function GunStartCue({
 function GunCue({
   gunResult,
   isSpotlight,
-  onPullTrigger,
-  triggerCount,
 }: {
   gunResult: GunResult | null;
   isSpotlight: boolean;
-  onPullTrigger: () => void;
-  triggerCount: number;
 }) {
   const isFire = gunResult === "fire";
-  const isTriggerDisabled = triggerCount >= GUN_MAX_TRIGGERS;
-  const isStarted = true;
 
   return (
     <section
@@ -1462,36 +2161,15 @@ function GunCue({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-            Start Signal
+            Cut-In
           </p>
           <p className="mt-1 text-sm text-stone-200">
-            {isStarted ? `${triggerCount}/${GUN_MAX_TRIGGERS}` : "未開始"} /
-            弾丸 {GUN_LIVE_ROUNDS} 発
+            {isFire ? "発砲。風船が割れました。" : "銃声の合図を待っています。"}
           </p>
         </div>
-        {isTriggerDisabled ? (
-          <button
-            className="min-h-11 cursor-not-allowed rounded bg-stone-700 px-4 text-sm font-black text-stone-400"
-            disabled
-            type="button"
-          >
-            引き金
-          </button>
-        ) : (
-          <button
-            className={`grid min-h-11 place-items-center rounded px-4 text-sm font-black ${
-            !isStarted
-              ? "bg-brass text-stone-950 hover:bg-yellow-300"
-              : "bg-casinoRed text-white hover:bg-red-700"
-          }`}
-            data-gun-trigger
-            onClick={onPullTrigger}
-            onPointerDown={onPullTrigger}
-            type="button"
-          >
-            {isStarted ? "引き金" : "ゲームスタート"}
-          </button>
-        )}
+        <div className="rounded border border-brass/70 bg-brass/10 px-3 py-2 text-sm font-black text-brass">
+          AUTO
+        </div>
       </div>
 
       <div className="relative mt-3 h-28 overflow-hidden rounded bg-white sm:h-36">
@@ -1517,9 +2195,9 @@ function GunCue({
         </div>
         <Image
           alt="発砲合図の拳銃"
-          className={`absolute bottom-0 h-full w-auto object-contain transition-transform duration-500 ${
-            isStarted ? "right-0 translate-x-[42%]" : "-right-full"
-          } ${isFire ? "scale-[1.03]" : ""}`}
+          className={`absolute bottom-0 right-0 h-full w-auto translate-x-[42%] object-contain transition-transform duration-500 ${
+            isFire ? "scale-[1.03]" : ""
+          }`}
           height={320}
           priority
           src="/gun.png"
@@ -1726,7 +2404,7 @@ function PlayingCardView({
       ? "h-24 w-[4.25rem] sm:h-36 sm:w-24"
       : size === "field"
         ? "h-16 w-11 sm:h-20 sm:w-14"
-        : "h-20 w-14 sm:h-24 sm:w-16";
+      : "h-20 w-14 sm:h-24 sm:w-16";
   function startCardDrag(event: DragEvent<HTMLDivElement>) {
     if (!draggable) {
       return;
@@ -1743,7 +2421,7 @@ function PlayingCardView({
     onDragStart?.();
   }
 
-  if (!imageFailed) {
+  if (card.imageSrc && !imageFailed) {
     return (
       <div
         className={`relative overflow-hidden rounded border border-brass bg-stone-50 shadow ${sizeClass} ${
