@@ -1,6 +1,6 @@
 export type GameType = "blackjack" | "poker" | "high-low";
 export type Seat = "right" | "top" | "left";
-export type CardRank = "1" | "A" | "J" | "Q" | "K";
+export type CardRank = "0" | "1" | "10" | "A" | "J" | "Q" | "K";
 export type CardSuit = "crub" | "daia" | "heart" | "spade";
 
 export type Robot = {
@@ -44,16 +44,25 @@ const gameSeats: Record<GameType, Seat> = {
 };
 
 const highLowRuleText =
-  "お互いに手札2枚ずつ用意。銃声が鳴ったら、早いもの勝ちで左側のHIGHゾーン or 右側のLOWゾーンに置ける。プレイヤーの勝利条件はカードの大小関係が成り立つこと。ロボットはそれが成り立たないようにカードをHIGHゾーン or LOWゾーンのどちらかに置いてくる。ロボットの方が反射神経が早いため、ロボットよりも先に置くことはできない。※AJQKではないトランプを使った瞬間、使った者の負けとなる。";
+  "お互いに手札2枚ずつ用意。プレイヤーの勝利条件はカードの大小関係が成り立つこと。流れ ①ロボットが大小関係成り立たないよう先に置く ②プレイヤーが置く ③ハイアンドローと宣言して判定する。";
 
 const highLowSpecText =
-  "このロボットだけこちらの手札を透視してくる。ロボットは特殊能力こそ考慮できないが、一番勝率の良いプレイをする。";
+  "こちらの手札を透視できる。結果に差がない場合は大きい数字を優先して出す。";
 
 export const blackjackRuleText =
-  "JQKは10、Aは11として扱い、2〜9は数字の通り扱う。手札から順番に出し、1枚目と2枚目の合計が21に近い方の勝ち。引き分けはあなたの負け。手札にある2枚目で21になる場合、1枚目にピッタリと重ねて2枚目を置き、ブラックジャックと宣言する。";
+  "JQKは10、Aは11として扱い、2〜9は数字の通り。手札から順番に出し、1枚目と2枚目の合計が21に近い方の勝ち。引き分けはあなたの負け。手札にある2枚目で21になる場合、1枚目にピッタリと重ねて2枚目を置き、ブラックジャックと宣言する。";
 
 export const blackjackSpecText =
-  "プレイヤー1枚目がJQK・ロボットがAの場合、50チップレイズ。プレイヤー1枚目がA・ロボットがJQKの場合、フォールド。それ以外はコールする。";
+  "プレイヤー1枚目がA・ロボットがJQKの場合、フォールド。それ以外はコールする。";
+
+const pokerRuleText =
+  "手札は2枚。フィールドに4枚トランプを置く。手札2枚とフィールド4枚の中から好きな2枚の合計4枚を選び役を作る。相手と同じカードを選んでもよい。成立した役名を宣言し、役が強い方の勝ち。流れ ①手札2枚に加えて、フィールド4枚の中から好きな2枚を組み合わせて役を作る ②4枚で出来上がった役名を宣言して判定する。";
+
+const pokerSpecText =
+  "自分の手札とフィールドを常に見ているため、イカサマは許さない。カードが判明したら即座に勝率を計算する。";
+
+export const pokerBettingSpecText =
+  "カード勝率×所持チップの分だけ賭ける。ポーカーでは賭ける要素が発生し、プレイヤーは問答無用でオールインになる。";
 
 export const stages: Stage[] = [
   {
@@ -132,23 +141,31 @@ export const stages: Stage[] = [
     label: "3rd",
     title: "Poker",
     startingChips: 0,
-    clearText: "ポーカーを2戦します。",
+    clearText: "ポーカーを3戦します。",
     robots: [
       {
         id: "poker-3-1",
         name: "PK-01",
         gameType: "poker",
         seat: "left",
-        ruleText: "ダミー",
-        specText: "ダミー",
+        ruleText: pokerRuleText,
+        specText: pokerSpecText,
       },
       {
         id: "poker-3-2",
         name: "PK-02",
         gameType: "poker",
         seat: "left",
-        ruleText: "ダミー",
-        specText: "ダミー",
+        ruleText: pokerRuleText,
+        specText: pokerSpecText,
+      },
+      {
+        id: "poker-3-3",
+        name: "PK-03",
+        gameType: "poker",
+        seat: "left",
+        ruleText: pokerRuleText,
+        specText: pokerSpecText,
       },
     ],
   },
@@ -204,7 +221,7 @@ export function drawOpeningHand(stageId: number): PlayingCard[] {
   const openingHands: Record<number, string[]> = {
     1: ["A_spade", "J_crub"],
     2: ["A_heart", "J_spade"],
-    3: ["A_daia", "J_heart"],
+    3: ["A_daia", "Q_heart"],
     4: ["A_crub", "J_heart"],
   };
   const cardIds = openingHands[stageId] ?? openingHands[1];

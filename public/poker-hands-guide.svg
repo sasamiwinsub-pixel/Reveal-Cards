@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">ポーカー役一覧</title>
+  <desc id="desc">今回のゲームで使うポーカーの役一覧。ワンペア、ツーペア、スリーカード、フォーカードと、参考としてフラッシュを掲載。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#08180f"/>
+      <stop offset="0.52" stop-color="#10291a"/>
+      <stop offset="1" stop-color="#160b0b"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <style>
+      .title { fill: #fff8dc; font-family: "Segoe UI", "Yu Gothic", sans-serif; font-size: 54px; font-weight: 900; letter-spacing: 0; }
+      .subtitle { fill: #f6c35c; font-family: "Segoe UI", "Yu Gothic", sans-serif; font-size: 23px; font-weight: 800; letter-spacing: 0; }
+      .rank { fill: #111827; font-family: Georgia, serif; font-size: 38px; font-weight: 900; }
+      .red { fill: #b91c1c; }
+      .label { fill: #fff8dc; font-family: "Segoe UI", "Yu Gothic", sans-serif; font-size: 33px; font-weight: 900; letter-spacing: 0; }
+      .note { fill: #d6d3d1; font-family: "Segoe UI", "Yu Gothic", sans-serif; font-size: 19px; font-weight: 700; letter-spacing: 0; }
+      .badge { fill: #1c1917; font-family: "Segoe UI", "Yu Gothic", sans-serif; font-size: 18px; font-weight: 900; letter-spacing: 0; }
+      .unused { fill: #fecaca; font-family: "Segoe UI", "Yu Gothic", sans-serif; font-size: 18px; font-weight: 900; letter-spacing: 0; }
+    </style>
+  </defs>
+  <rect width="1400" height="900" fill="url(#bg)"/>
+  <rect x="26" y="26" width="1348" height="848" rx="18" fill="none" stroke="#f6c35c" stroke-opacity="0.55" stroke-width="3"/>
+  <text class="title" x="70" y="92">ポーカー 役一覧</text>
+  <text class="subtitle" x="72" y="132">このゲームで使う役は4種類。</text>
+
+  <g transform="translate(74 182)" filter="url(#shadow)">
+    <rect width="590" height="124" rx="10" fill="#111827" stroke="#f6c35c" stroke-width="2"/>
+    <g transform="translate(28 24)">
+      <rect x="0" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="12" y="48">A</text>
+      <rect x="42" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="54" y="48">A</text>
+      <rect x="84" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="98" y="48">K</text>
+      <rect x="126" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="138" y="48">Q</text>
+    </g>
+    <text class="label" x="238" y="54">ワンペア</text>
+    <text class="note" x="240" y="88">同じ数字が2枚</text>
+  </g>
+
+  <g transform="translate(736 182)" filter="url(#shadow)">
+    <rect width="590" height="124" rx="10" fill="#111827" stroke="#f6c35c" stroke-width="2"/>
+    <g transform="translate(28 24)">
+      <rect x="0" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="12" y="48">A</text>
+      <rect x="42" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="54" y="48">A</text>
+      <rect x="84" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="98" y="48">K</text>
+      <rect x="126" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="138" y="48">K</text>
+    </g>
+    <text class="label" x="238" y="54">ツーペア</text>
+    <text class="note" x="240" y="88">同じ数字の組が2つ</text>
+  </g>
+
+  <g transform="translate(74 356)" filter="url(#shadow)">
+    <rect width="590" height="124" rx="10" fill="#111827" stroke="#f6c35c" stroke-width="2"/>
+    <g transform="translate(28 24)">
+      <rect x="0" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="12" y="48">Q</text>
+      <rect x="42" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="54" y="48">Q</text>
+      <rect x="84" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="96" y="48">Q</text>
+      <rect x="126" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="138" y="48">J</text>
+    </g>
+    <text class="label" x="238" y="54">スリーカード</text>
+    <text class="note" x="240" y="88">同じ数字が3枚</text>
+  </g>
+
+  <g transform="translate(736 356)" filter="url(#shadow)">
+    <rect width="590" height="124" rx="10" fill="#111827" stroke="#f6c35c" stroke-width="2"/>
+    <g transform="translate(28 24)">
+      <rect x="0" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="12" y="48">K</text>
+      <rect x="42" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="54" y="48">K</text>
+      <rect x="84" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="96" y="48">K</text>
+      <rect x="126" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank" x="138" y="48">K</text>
+    </g>
+    <text class="label" x="238" y="54">フォーカード</text>
+    <text class="note" x="240" y="88">同じ数字が4枚</text>
+  </g>
+
+  <g transform="translate(74 552)" filter="url(#shadow)">
+    <rect width="1252" height="142" rx="10" fill="#2a1414" stroke="#ef4444" stroke-width="2" stroke-dasharray="12 9"/>
+    <rect x="24" y="24" width="126" height="34" rx="17" fill="#fecaca"/>
+    <text class="badge" x="47" y="47">参考役</text>
+    <g transform="translate(182 32)">
+      <rect x="0" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="12" y="48">A</text>
+      <rect x="42" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="54" y="48">Q</text>
+      <rect x="84" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="98" y="48">J</text>
+      <rect x="126" y="0" width="52" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="2"/>
+      <text class="rank red" x="138" y="48">K</text>
+    </g>
+    <text class="label" x="432" y="62">フラッシュ</text>
+    <text class="unused" x="434" y="99">今回使わない役。フォーカードと確率が同じ。</text>
+  </g>
+
+  <g transform="translate(74 744)">
+    <rect width="1252" height="82" rx="10" fill="#fff8dc" fill-opacity="0.08" stroke="#fff8dc" stroke-opacity="0.2"/>
+    <text class="subtitle" x="30" y="36">役の強さ</text>
+    <text class="note" x="30" y="66">ワンペア &lt; ツーペア &lt; スリーカード &lt; フォーカード</text>
+  </g>
+</svg>

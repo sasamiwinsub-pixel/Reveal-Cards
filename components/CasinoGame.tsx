@@ -13,7 +13,15 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type DragEvent,
+  type SetStateAction,
+} from "react";
 import {
   blackjackRuleText,
   blackjackSpecText,
@@ -22,6 +30,7 @@ import {
   getGameSeat,
   getGameLabel,
   getRobotGameTypes,
+  pokerBettingSpecText,
   stages,
   type GameType,
   type PlayingCard,
@@ -69,10 +78,19 @@ const gameLogo: Record<GameType, { alt: string; src: string }> = {
   },
 };
 
-const GUN_AUTO_FIRE_DELAY_MS = 650;
-const GUN_CUTIN_CLOSE_DELAY_MS = 1850;
 const HIGH_LOW_TUTORIAL_ROBOT_ID = "high-low-1-1";
 const deck = createDeck();
+
+const scanTargetImages = {
+  haiking: "/scan-targets/haiking.png",
+  hiace: "/scan-targets/hiace.png",
+  jyuusho: "/scan-targets/jyuusho.png",
+  kyuusho: "/scan-targets/kyuusho.png",
+  onepair: "/scan-targets/onepair.png",
+  queen: "/scan-targets/queen.png",
+  rain: "/scan-targets/rain.png",
+  sugoroku: "/scan-targets/sugoroku.png",
+} as const;
 
 const highLowBattleConfigs = {
   "high-low-1-1": {
@@ -99,33 +117,159 @@ const highLowBattleConfigs = {
     initialRobotHandIds: ["A-spade", "K-heart"],
     robotHighCardAfterExchangeId: "K-heart",
   },
+  "all-games-last": {
+    correctExchangePairs: [],
+    initialPlayerHandIds: ["A-daia", "J-heart"],
+    initialRobotHandIds: ["Q-heart", "K-crub"],
+    robotHighCardAfterExchangeId: "K-crub",
+  },
 } as const;
 
 const blackjackBattleConfigs = {
   "blackjack-2-1": {
-    initialPlayerHandIds: ["A-daia", "J-heart"],
+    exchangePlayerCardId: "A-daia",
+    exchangeRobotCardId: "J-spade",
+    highLowRobotHandIds: ["A-crub", "J-crub"],
+    initialPlayerHandIds: ["A-daia", "A-heart"],
     initialRobotHandIds: ["A-spade", "J-spade"],
-    learningRestriction:
-      "勝利後追加: このStageの間、自分の手札のカードはエクスチェンジできない。",
-    requiresRaiseForMaxChips: true,
   },
   "blackjack-2-2": {
+    highLowRobotHandIds: ["J-crub", "J-heart"],
     initialPlayerHandIds: ["A-heart", "A-daia"],
     initialRobotHandIds: ["A-spade", "Q-daia"],
     learningRestriction:
       "勝利後追加: このStageの間、ロボットの手札はエクスチェンジできない。",
-    requiresRaiseForMaxChips: false,
-    scanTargetCardId: "scan-1",
+    scanTargetCardId: "scan-10",
   },
   "blackjack-high-low-2-3": {
     initialPlayerHandIds: ["Q-heart", "A-spade"],
     initialRobotHandIds: ["A-crub", "K-spade"],
-    requiresRaiseForMaxChips: false,
+  },
+  "all-games-last": {
+    highLowRobotHandIds: ["Q-heart", "K-crub"],
+    initialPlayerHandIds: ["A-daia", "J-heart"],
+    initialRobotHandIds: ["K-heart", "Q-daia"],
+  },
+} as const;
+
+const pokerBattleConfigs = {
+  "poker-3-1": {
+    blackjackRobotHandIds: ["K-spade", "J-daia"],
+    exchangePairs: [
+      {
+        firstCardId: "Q-heart",
+        secondCardId: "K-spade",
+      },
+    ],
+    fieldCardIds: ["K-crub", "K-heart", "Q-daia", "J-crub"],
+    highLowRobotHandIds: ["A-crub", "K-daia"],
+    initialPlayerHandIds: ["A-daia", "Q-heart"],
+    initialRobotHandIds: ["A-spade", "A-heart"],
+    maxExchanges: 1,
+    successText:
+      "自分のクイーンとブラックジャックロボットのキングを交換済み。ポーカーはキングのスリーカード、ハイアンドローはAでもKでも後出しで成立、ブラックジャックはA+K=21で勝利できます。",
+  },
+  "poker-3-2": {
+    blackjackRobotHandIds: ["J-daia", "J-spade"],
+    exchangePairs: [
+      {
+        firstCardId: "scan-0",
+        secondCardId: "J-daia",
+      },
+      {
+        firstCardId: "scan-A",
+        secondCardId: "K-spade",
+      },
+    ],
+    fieldCardIds: ["K-daia", "A-heart", "Q-heart", "J-crub"],
+    highLowRobotHandIds: ["A-crub", "A-spade"],
+    initialPlayerHandIds: ["A-daia", "K-spade"],
+    initialRobotHandIds: ["K-crub", "K-heart"],
+    maxExchanges: 2,
+    maxScans: 2,
+    scanRequirements: [
+      {
+        answer: "フエ",
+        cardId: "scan-0",
+        illustration: "れい　ん",
+        riddleSrc: "/riddles/riddle_3.png",
+        targetImageSrc: scanTargetImages.rain,
+      },
+      {
+        answer: "ツーペア",
+        cardId: "scan-A",
+        illustration: "わん　ぺあ",
+        riddleSrc: "/riddles/riddle_4.png",
+        targetImageSrc: scanTargetImages.onepair,
+      },
+    ],
+    successText:
+      "スキャンで生成した0をブラックジャックロボットのJ、生成したAを自分のKと交換済み。ハイアンドローはAを出せば成立し、ブラックジャックはロボット側が10+0、ポーカーはAのスリーカードでKのスリーカードを上回る形になります。",
+  },
+  "poker-3-3": {
+    blackjackRobotHandIds: ["A-spade", "J-spade"],
+    copyPasteTargets: [
+      {
+        id: "copy-red-unlock-zero",
+        label: "コピペ解放小謎: 0",
+        text: "0",
+      },
+      {
+        id: "paste-blackjack-ace",
+        label: "ブラックジャックロボットのA",
+        text: "A",
+      },
+    ],
+    exchangePairs: [],
+    fieldCardIds: ["A-heart", "K-crub", "Q-heart", "J-crub"],
+    highLowRobotHandIds: ["Q-heart", "Q-daia"],
+    initialPlayerHandIds: ["K-spade", "Q-daia"],
+    initialRobotHandIds: ["Q-crub", "J-daia"],
+    maxCopyPastes: 1,
+    maxExchanges: 0,
+    maxScans: 0,
+    successText:
+      "ブラックジャックロボットのAを0へ変更済み。ハイアンドローはそのまま勝利、ブラックジャックは自分がK+Q=20でロボットが0+J=10、ポーカーはロボットの勝率が0%のため0chipを賭け、そのままプレイヤーの勝利です。",
+  },
+  "all-games-last": {
+    blackjackRobotHandIds: ["K-heart", "Q-daia"],
+    exchangePairs: [],
+    fieldCardIds: ["A-crub", "K-spade", "K-daia", "J-crub"],
+    highLowRobotHandIds: ["Q-heart", "K-crub"],
+    initialPlayerHandIds: ["K-crub", "scan-K"],
+    initialRobotHandIds: ["A-spade", "A-heart"],
+    maxCopyPastes: 5,
+    maxExchanges: 0,
+    maxScans: 3,
+    scanRequirements: [
+      {
+        answer: "ハイキング",
+        cardId: "scan-A",
+        illustration: "ハイ　エース",
+        riddleSrc: "/riddles/riddle_4.png",
+        targetImageSrc: scanTargetImages.hiace,
+      },
+      {
+        answer: "ハイキング",
+        cardId: "scan-J",
+        illustration: "ハイ　ジャック",
+        riddleSrc: "/riddles/riddle_4.png",
+        targetImageSrc: scanTargetImages.haiking,
+      },
+      {
+        answer: "に/じゅういち",
+        cardId: "scan-K",
+        illustration: "ブラックジャック",
+        riddleSrc: "/riddles/riddle_5.png",
+        targetImageSrc: scanTargetImages.haiking,
+      },
+    ],
+    successText:
+      "ブラックジャック宣言のタイミングでエクスチェンジが発動済み。ポーカーロボットもオールインし、プレイヤーはK2枚、フィールドにもK2枚があるため、Kフォーカードでポーカーロボットに勝利できます。",
   },
 } as const;
 
 type FocusOption = {
-  gameType: GameType;
   robot: Robot;
 };
 
@@ -134,23 +278,185 @@ type ActiveBattle = {
   robotId: string;
 };
 
-type GunResult = "fire";
+type ExchangeCardSection = {
+  cards: PlayingCard[];
+  id: string;
+  label: string;
+};
+
+type ScanAbility = "なし" | "エクスチェンジ" | "コピーペースト";
+type PlacementStyle = "gentle" | "snap";
+
+type ScanCatalogEntry = {
+  answer: string;
+  ability: ScanAbility;
+  generated: boolean;
+  generatedNumber: string;
+  id: string;
+  illustrationName: string;
+  selected?: boolean;
+  targetImageSrc: string;
+};
+
 type HighLowZoneName = "HIGH" | "LOW";
-type PreparationAbility = "exchange" | "scan";
+type PreparationAbility = "exchange" | "scan" | "copy-paste";
+type TargetSelectionAbility = "exchange" | "copy-paste";
+type CopyPasteFormat = "hiragana" | "katakana" | "kanji" | "number";
 type ExchangeTargetId =
   | "player-hand"
   | "robot-hand"
   | "deck"
+  | "field"
   | "visible-print";
 
 const generatedScanCards: Record<string, PlayingCard> = {
-  "scan-1": {
-    id: "scan-1",
+  "scan-0": {
+    id: "scan-0",
     imageSrc: "",
-    rank: "1",
+    rank: "0",
+    suit: "spade",
+  },
+  "scan-10": {
+    id: "scan-10",
+    imageSrc: "",
+    rank: "10",
+    suit: "spade",
+  },
+  "scan-A": {
+    id: "scan-A",
+    imageSrc: "",
+    rank: "A",
+    suit: "spade",
+  },
+  "scan-J": {
+    id: "scan-J",
+    imageSrc: "",
+    rank: "J",
+    suit: "spade",
+  },
+  "scan-K": {
+    id: "scan-K",
+    imageSrc: "",
+    rank: "K",
     suit: "spade",
   },
 };
+
+const scanRuleText =
+  "小謎内のイラストを対象にスキャンして、法則に従ってトランプ1枚（1〜13）を生成できる。ただし、生成したカードはエクスチェンジ機能を使って初めてゲームへ利用できる。スキャン対象イラストの入力では、数字として読む部分をスペース区切りで空ける。※インクで見えない部分もスキャン可能だが、例示と答えの単語で被りが出ることはない。※トランプのスキャンはできないが、ポーカーとして現物のトランプをセットした時に役名なら生成できる。例：イチ　ゴ→6、フォー　カード→4、レース　クイーン→12、ひ　ふ　み→和名のためNG、レイチ　ョウルイ→0でも1でもないためNG、イチ　モクサン→3が区切られていないためNG";
+
+const scanRiddleImages = [
+  {
+    alt: "小謎 1/2",
+    src: "/riddles/riddle_1.png",
+  },
+  {
+    alt: "小謎 2/2",
+    src: "/riddles/riddle_1-2.png",
+  },
+  {
+    alt: "追加小謎",
+    src: "/riddles/riddle_2.png",
+  },
+];
+
+const initialScanCatalogEntries: ScanCatalogEntry[] = [
+  {
+    answer: "0315",
+    ability: "なし",
+    generated: true,
+    generatedNumber: "9",
+    id: "scan-catalog-vital-0315",
+    illustrationName: "きゅう　しょ",
+    targetImageSrc: scanTargetImages.kyuusho,
+  },
+  {
+    answer: "ななめ",
+    ability: "エクスチェンジ",
+    generated: true,
+    generatedNumber: "10",
+    id: "scan-catalog-address-exchange",
+    illustrationName: "じゅう　しょ",
+    targetImageSrc: scanTargetImages.jyuusho,
+  },
+  {
+    answer: "フエ",
+    ability: "なし",
+    generated: true,
+    generatedNumber: "0",
+    id: "scan-catalog-flute-rain",
+    illustrationName: "れい　ん",
+    targetImageSrc: scanTargetImages.rain,
+  },
+  {
+    answer: "ツーペア",
+    ability: "なし",
+    generated: true,
+    generatedNumber: "1",
+    id: "scan-catalog-one-pair-a",
+    illustrationName: "わん　ぺあ",
+    targetImageSrc: scanTargetImages.onepair,
+  },
+  {
+    answer: "すいり",
+    ability: "なし",
+    generated: false,
+    generatedNumber: "12",
+    id: "scan-catalog-queen-reasoning",
+    illustrationName: "クイーン",
+    targetImageSrc: scanTargetImages.queen,
+  },
+  {
+    answer: "ハイキング",
+    ability: "コピーペースト",
+    generated: false,
+    generatedNumber: "1",
+    id: "scan-catalog-hiace-copy",
+    illustrationName: "ハイ　エース",
+    targetImageSrc: scanTargetImages.hiace,
+  },
+  {
+    answer: "ハイキング",
+    ability: "コピーペースト",
+    generated: false,
+    generatedNumber: "11",
+    id: "scan-catalog-highjack-copy",
+    illustrationName: "ハイ　ジャック",
+    targetImageSrc: scanTargetImages.haiking,
+  },
+];
+
+function normalizeScanIllustrationName(value: string) {
+  return value.trim().replace(/[／/]/g, " ").replace(/[\s\u3000]+/g, " ");
+}
+
+const finalBattleDisclosureSections: ExchangeCardSection[] = [
+  {
+    cards: getCardsById(["A-daia", "J-heart"]),
+    id: "final-player-hand",
+    label: "自分の手札",
+  },
+  {
+    cards: getCardsById(["A-spade", "A-heart"]),
+    id: "final-poker-robot-hand",
+    label: "ポーカーロボットの手札",
+  },
+  {
+    cards: getCardsById(["A-crub", "K-spade", "K-daia", "J-crub"]),
+    id: "final-poker-field",
+    label: "ポーカーのフィールド",
+  },
+  {
+    cards: getCardsById(["K-heart", "Q-daia"]),
+    id: "final-blackjack-robot-hand",
+    label: "ブラックジャックのロボット手札",
+  },
+  {
+    cards: getCardsById(["Q-heart", "K-crub"]),
+    id: "final-high-low-robot-hand",
+    label: "ハイアンドローのロボット手札",
+  },
+];
 
 export default function CasinoGame({
   initialBattle = null,
@@ -173,19 +479,19 @@ export default function CasinoGame({
     initialBattle,
   );
   const [focusedOptionIndex, setFocusedOptionIndex] = useState(0);
-  const [modal, setModal] = useState<{
-    gameType: GameType;
-    kind: ModalKind;
-    robot: Robot;
-  } | null>(null);
+  const [postBattleLine, setPostBattleLine] = useState("");
+  const [finalScanCatalogEntries, setFinalScanCatalogEntries] = useState<
+    ScanCatalogEntry[]
+  >(initialScanCatalogEntries);
+  const [isFinalDisclosureSeen, setIsFinalDisclosureSeen] = useState(false);
+  const [isFinalScanCatalogComplete, setIsFinalScanCatalogComplete] =
+    useState(false);
+  const [isFinalAbilitySpecSeen, setIsFinalAbilitySpecSeen] = useState(false);
 
   const stage = stages.find((item) => item.id === stageId) ?? stages[0];
   const hand = useMemo(() => drawOpeningHand(stage.id), [stage.id]);
   const focusOptions = useMemo<FocusOption[]>(
-    () =>
-      stage.robots.flatMap((robot) =>
-        getRobotGameTypes(robot).map((gameType) => ({ gameType, robot })),
-      ),
+    () => stage.robots.map((robot) => ({ robot })),
     [stage],
   );
   const boundedFocusedOptionIndex = Math.min(
@@ -195,6 +501,16 @@ export default function CasinoGame({
   const focusedOption =
     focusOptions[boundedFocusedOptionIndex] ?? null;
   const focusedRobot = focusedOption?.robot ?? null;
+  const focusedGameTypes = focusedRobot ? getRobotGameTypes(focusedRobot) : [];
+  const focusGameTypeKeys = focusOptions.map(
+    (option) => getRobotGameTypes(option.robot)[0],
+  );
+  const hasMultipleVisibleGameTypes = new Set(focusGameTypeKeys).size > 1;
+  const canFocusPrevious =
+    hasMultipleVisibleGameTypes && boundedFocusedOptionIndex > 0;
+  const canFocusNext =
+    hasMultipleVisibleGameTypes &&
+    boundedFocusedOptionIndex < focusOptions.length - 1;
   const selectedRobot =
     stage.robots.find((robot) => robot.id === selectedRobotId) ?? null;
   const activeBattleRobot =
@@ -202,37 +518,77 @@ export default function CasinoGame({
   const isHighLowBattle = activeBattle?.gameType === "high-low" && activeBattleRobot;
   const isBlackjackBattle =
     activeBattle?.gameType === "blackjack" && activeBattleRobot;
+  const isPokerBattle = activeBattle?.gameType === "poker" && activeBattleRobot;
   const allRobotsPlayed = playedRobotIds.length === stage.robots.length;
   const isStageClear = allRobotsPlayed;
+  const nextStage = stages.find((item) => item.id === stage.id + 1) ?? null;
+  const shouldShowFinalDisclosure =
+    stage.id === 4 &&
+    !activeBattle &&
+    !isFinalDisclosureSeen &&
+    !isFinalScanCatalogComplete;
+  const shouldShowFinalScanCatalog =
+    stage.id === 4 &&
+    !activeBattle &&
+    isFinalDisclosureSeen &&
+    !isFinalScanCatalogComplete;
+  const shouldShowFinalAbilitySpec =
+    stage.id === 4 &&
+    !activeBattle &&
+    isFinalDisclosureSeen &&
+    isFinalScanCatalogComplete &&
+    !isFinalAbilitySpecSeen;
+  const [modal, setModal] = useState<{
+    gameType: GameType;
+    kind: ModalKind;
+    robot: Robot;
+  } | null>(null);
 
-  function resetCurrentStage() {
-    setStageId(stage.id);
-    setChips(stage.startingChips);
+  function goToStage(nextStageId: number) {
+    const destinationStage =
+      stages.find((item) => item.id === nextStageId) ?? stage;
+
+    setStageId(destinationStage.id);
+    setChips(destinationStage.startingChips);
     setPlayedRobotIds([]);
     setSelectedRobotId(null);
     setSelectedGameType(null);
     setActiveBattle(null);
     setFocusedOptionIndex(0);
     setModal(null);
+    setPostBattleLine("");
+    setIsFinalDisclosureSeen(false);
+    setIsFinalScanCatalogComplete(false);
+    setIsFinalAbilitySpecSeen(false);
+  }
+
+  function resetCurrentStage() {
+    goToStage(stage.id);
   }
 
   function focusRobot(offset: number) {
     setFocusedOptionIndex((current) => {
       const robotCount = focusOptions.length;
+      if (robotCount === 0) {
+        return 0;
+      }
+
       const next = current + offset;
 
-      return (next + robotCount) % robotCount;
+      return Math.min(Math.max(next, 0), robotCount - 1);
     });
   }
 
-  function selectRobot(robot: Robot, gameType: GameType) {
+  function selectRobot(robot: Robot, gameType?: GameType) {
     if (playedRobotIds.includes(robot.id) || isStageClear) {
       return;
     }
 
+    const firstGameType = gameType ?? getRobotGameTypes(robot)[0];
+    setPostBattleLine("");
     setSelectedRobotId(robot.id);
-    setSelectedGameType(gameType);
-    setActiveBattle({ gameType, robotId: robot.id });
+    setSelectedGameType(firstGameType);
+    setActiveBattle({ gameType: firstGameType, robotId: robot.id });
   }
 
   function resolveRound(outcome: Outcome) {
@@ -240,17 +596,42 @@ export default function CasinoGame({
       return;
     }
 
+    const battleGameTypes = getRobotGameTypes(selectedRobot);
+    const currentBattleIndex = activeBattle
+      ? battleGameTypes.indexOf(activeBattle.gameType)
+      : -1;
+    const nextGameType = battleGameTypes[currentBattleIndex + 1];
+
+    if (outcome === "win" && nextGameType) {
+      setSelectedGameType(nextGameType);
+      setActiveBattle({ gameType: nextGameType, robotId: selectedRobot.id });
+      return;
+    }
+
     const reward = outcome === "win" ? selectedRobot.rewardChips ?? 0 : chipDelta[outcome];
+
+    const nextUnplayedIndex = stage.robots.findIndex(
+      (robot) =>
+        robot.id !== selectedRobot.id && !playedRobotIds.includes(robot.id),
+    );
 
     setChips((current) => Math.max(0, current + reward));
     setPlayedRobotIds((current) => [...current, selectedRobot.id]);
+    setPostBattleLine(
+      outcome === "win" && selectedRobot.id === "poker-3-3"
+        ? "少しおかしいな...準備段階ではポーカーロボットの勝率は0%だったはず..."
+        : "",
+    );
+    if (nextUnplayedIndex >= 0) {
+      setFocusedOptionIndex(nextUnplayedIndex);
+    }
     setSelectedRobotId(null);
     setSelectedGameType(null);
     setActiveBattle(null);
   }
 
   return (
-    <main className="min-h-screen px-3 py-3 sm:px-5 lg:px-8 lg:py-6">
+    <main className="min-h-screen px-3 py-3 max-[424px]:px-2 max-[374px]:px-1.5 sm:px-5 lg:px-8 lg:py-6">
       <section className="mx-auto flex max-w-7xl flex-col gap-3 sm:gap-5">
         <header className="rounded border border-white/12 bg-black/30 p-3 sm:p-4">
           <div className="flex items-start justify-between gap-3">
@@ -300,14 +681,65 @@ export default function CasinoGame({
                 robotId={activeBattle.robotId}
                 stageId={stage.id}
               />
+            ) : isPokerBattle ? (
+              <PokerBattle
+                backHref={`/?stage=${stage.id}`}
+                hand={hand}
+                onBack={() => {
+                  setSelectedRobotId(null);
+                  setSelectedGameType(null);
+                  setActiveBattle(null);
+                }}
+                robot={activeBattleRobot}
+                robotId={activeBattle.robotId}
+              />
+            ) : shouldShowFinalDisclosure ? (
+              <FinalDisclosure
+                onContinue={() => setIsFinalDisclosureSeen(true)}
+              />
+            ) : shouldShowFinalScanCatalog ? (
+              <FinalScanCatalogBuilder
+                entries={finalScanCatalogEntries}
+                onComplete={() => setIsFinalScanCatalogComplete(true)}
+                onMarkGenerated={(entryId) =>
+                  setFinalScanCatalogEntries((current) =>
+                    current.map((entry) =>
+                      entry.id === entryId
+                        ? {
+                            ...entry,
+                            generated: true,
+                          }
+                        : entry,
+                    ),
+                  )
+                }
+                onToggleEntry={(entryId) =>
+                  setFinalScanCatalogEntries((current) =>
+                    current.map((entry) =>
+                      entry.id === entryId
+                        ? {
+                            ...entry,
+                            selected: !entry.selected,
+                          }
+                        : entry,
+                    ),
+                  )
+                }
+              />
+            ) : shouldShowFinalAbilitySpec ? (
+              <FinalAbilitySpecDisclosure
+                onContinue={() => setIsFinalAbilitySpecSeen(true)}
+              />
             ) : (
               <OpponentSelector
-                focusedGameType={focusedOption?.gameType ?? null}
+                focusedGameType={focusedGameTypes[0] ?? null}
+                focusedGameTypes={focusedGameTypes}
                 focusedRobot={focusedRobot}
                 hand={hand}
                 isStageClear={isStageClear}
+                canFocusNext={canFocusNext}
+                canFocusPrevious={canFocusPrevious}
                 onFocusRobot={focusRobot}
-                stageId={stage.id}
                 onOpenModal={(robot, kind, gameType) =>
                   setModal({ gameType, kind, robot })
                 }
@@ -362,23 +794,57 @@ export default function CasinoGame({
                   </div>
                 </div>
               ) : (
-                <p className="mt-3 text-sm leading-6 text-stone-300">
-                  矢印で対戦相手を選び、未対戦のロボットを選択してください。謎や正式な勝敗判定は後から差し替えできます。
-                </p>
+                <>
+                  {postBattleLine ? (
+                    <div className="mt-3 rounded border border-sky-300/40 bg-sky-950/30 p-3 text-sm font-black leading-6 text-sky-50">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-sky-200">
+                        Player
+                      </p>
+                      <p className="mt-1">{postBattleLine}</p>
+                    </div>
+                  ) : null}
+                  <p className="mt-3 text-sm leading-6 text-stone-300">
+                    {isStageClear
+                      ? "ステージクリアです。次のStageへ進めます。"
+                      : "矢印で対戦相手を選び、未対戦のロボットを選択してください。謎や正式な勝敗判定は後から差し替えできます。"}
+                  </p>
+                  {isStageClear && nextStage ? (
+                    <button
+                      className="mt-3 min-h-12 w-full rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                      onClick={() => goToStage(nextStage.id)}
+                      type="button"
+                    >
+                      {nextStage.label} Stageへ進む
+                    </button>
+                  ) : null}
+                </>
               )}
             </section>
 
             <section className="rounded border border-white/12 bg-black/30 p-3 sm:p-4">
               <h2 className="text-base font-bold sm:text-lg">共通ルール</h2>
-              <p className="mt-3 text-sm leading-6 text-stone-300">ダミー</p>
+              {stage.id === 4 && isFinalAbilitySpecSeen ? (
+                <FinalAbilitySpecTable compact />
+              ) : (
+                <p className="mt-3 text-sm leading-6 text-stone-300">ダミー</p>
+              )}
             </section>
           </aside>
         </div>
       </section>
 
       {modal ? (
-        <div className="fixed inset-0 z-30 grid place-items-end bg-black/70 p-3 sm:place-items-center sm:p-4">
-          <section className="max-h-[86vh] w-full overflow-auto rounded border border-white/14 bg-stone-950 p-4 shadow-2xl sm:max-w-lg sm:p-5">
+        <div
+          className="fixed inset-0 z-50 grid place-items-end bg-black/70 p-3 sm:place-items-center sm:p-4"
+          onClick={() => {
+            window.dispatchEvent(new Event("casino-rule-modal-closed"));
+            setModal(null);
+          }}
+        >
+          <section
+            className="max-h-[86vh] w-full overflow-auto rounded border border-white/14 bg-stone-950 p-4 shadow-2xl sm:max-w-lg sm:p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-brass">
@@ -390,15 +856,39 @@ export default function CasinoGame({
               </div>
               <button
                 aria-label="閉じる"
-                className="grid h-10 w-10 shrink-0 place-items-center rounded border border-white/12 bg-white/8 hover:bg-white/14"
-                onClick={() => setModal(null)}
+                className="grid h-10 w-10 shrink-0 animate-pulse place-items-center rounded border border-brass bg-brass/15 hover:bg-white/14"
+                onClick={() => {
+                  window.dispatchEvent(new Event("casino-rule-modal-closed"));
+                  setModal(null);
+                }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  window.dispatchEvent(new Event("casino-rule-modal-closed"));
+                  setModal(null);
+                }}
                 type="button"
               >
                 <X size={18} />
               </button>
             </div>
             <p className="mt-5 min-h-28 rounded border border-white/10 bg-white/6 p-4 leading-7 text-stone-200">
-              {getModalText(modal)}
+              {modal.gameType === "blackjack" && modal.kind === "rules" ? (
+                <HighlightedBlackjackRuleText />
+              ) : modal.gameType === "high-low" && modal.kind === "rules" ? (
+                <HighlightedHighLowRuleText />
+              ) : modal.gameType === "poker" && modal.kind === "rules" ? (
+                <PokerRuleContent
+                  ruleText={getModalText(modal)}
+                  showRobotWinRate={modal.robot.id === "poker-3-3"}
+                />
+              ) : modal.gameType === "poker" && modal.kind === "spec" ? (
+                <PokerRobotSpecContent
+                  specText={getModalText(modal)}
+                  showBettingSpec={modal.robot.id === "poker-3-3"}
+                />
+              ) : (
+                getModalText(modal)
+              )}
             </p>
           </section>
         </div>
@@ -407,8 +897,596 @@ export default function CasinoGame({
   );
 }
 
+function FinalScanCatalogBuilder({
+  entries,
+  onComplete,
+  onMarkGenerated,
+  onToggleEntry,
+}: {
+  entries: ScanCatalogEntry[];
+  onComplete: () => void;
+  onMarkGenerated: (entryId: string) => void;
+  onToggleEntry: (entryId: string) => void;
+}) {
+  const [illustrationName, setIllustrationName] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [ability, setAbility] = useState<ScanAbility>("なし");
+  const [generatedNumber, setGeneratedNumber] = useState("");
+  const [scanMessage, setScanMessage] = useState("");
+  const [generatedPreviewSrc, setGeneratedPreviewSrc] = useState<string | null>(
+    null,
+  );
+  const [finalCopyPasteStep, setFinalCopyPasteStep] = useState<
+    "source" | "target" | null
+  >(null);
+  const [isFinalCopySourceSelected, setIsFinalCopySourceSelected] =
+    useState(false);
+  const [isFinalCopyTargetSelected, setIsFinalCopyTargetSelected] =
+    useState(false);
+  const isFinalCopyPasteApplied =
+    isFinalCopySourceSelected && isFinalCopyTargetSelected;
+  const pendingCount = entries.filter((entry) => !entry.generated).length;
+  const allEntriesGenerated = pendingCount === 0;
+  const canAddEntry =
+    illustrationName.trim().length > 0 &&
+    answer.trim().length > 0 &&
+    generatedNumber.trim().length > 0;
+
+  function resolveEntry() {
+    if (!canAddEntry) {
+      return;
+    }
+
+    const normalizedAnswer = answer.trim();
+    const normalizedIllustrationName =
+      normalizeScanIllustrationName(illustrationName);
+    const normalizedGeneratedNumber = generatedNumber.trim();
+    const matchedEntry = entries.find(
+      (entry) =>
+        !entry.generated &&
+        entry.answer === normalizedAnswer &&
+        normalizeScanIllustrationName(entry.illustrationName) ===
+          normalizedIllustrationName &&
+        entry.ability === ability &&
+        entry.generatedNumber === normalizedGeneratedNumber,
+    );
+
+    if (matchedEntry) {
+      if (matchedEntry.ability === "コピーペースト" && !isFinalCopyPasteApplied) {
+        setGeneratedPreviewSrc(null);
+        setScanMessage("先にコピーペーストで青字のコピー元と上書き先を選択してください。");
+        return;
+      }
+
+      onMarkGenerated(matchedEntry.id);
+      setGeneratedPreviewSrc(matchedEntry.targetImageSrc);
+      setScanMessage("未生成の項目を生成済みにしました。");
+      setIllustrationName("");
+      setAnswer("");
+      setAbility("なし");
+      setGeneratedNumber("");
+      return;
+    }
+
+        setGeneratedPreviewSrc(null);
+        setScanMessage("未生成の項目と一致しません。答え、イラスト読み方、使用能力、生成した数字を確認してください。数字として読む部分はスペース区切りで入力します。");
+  }
+
+  return (
+    <div className="min-h-[680px] bg-[#071b12] p-3 text-white sm:p-5">
+      <div className="rounded border border-brass/50 bg-black/35 p-4 sm:p-5">
+        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-brass">
+          Final Preparation
+        </p>
+        <h2 className="mt-2 text-2xl font-black">スキャン生成可能一覧</h2>
+        <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
+          ファイナルゲームの手札が公開されました。まずはスキャン一覧を完成させてから、最後の事前準備へ進みます。
+          生成済みの情報はすでに埋まっています。空欄の項目は、このタイミングで答え、イラスト読み方、使用能力、生成したい数字を考えて入力します。
+          イラスト読み方は、数字として読む部分をスペース区切りで空けます。
+        </p>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          {[
+            ["Exchange", "自由"],
+            ["Scan", "自由"],
+            ["Copy Paste", "自由"],
+          ].map(([label, value]) => (
+            <div
+              className="rounded border border-white/10 bg-white/8 p-3"
+              key={label}
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-300">
+                {label}
+              </p>
+              <p className="mt-1 text-lg font-black text-brass">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_320px]">
+        <section className="rounded border border-white/12 bg-black/28 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Catalog
+              </p>
+              <h3 className="mt-1 text-xl font-black">生成できるカード</h3>
+            </div>
+            <p className="rounded border border-brass/40 bg-brass/10 px-3 py-2 text-sm font-black text-brass">
+              未生成 {pendingCount}件
+            </p>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {entries.map((entry, index) => (
+              <button
+                aria-pressed={Boolean(entry.selected)}
+                className={`grid gap-3 rounded border p-3 text-left transition sm:grid-cols-[56px_126px_1fr] ${
+                  entry.selected
+                    ? "border-brass bg-brass/15 ring-2 ring-brass/45"
+                    : !entry.generated
+                      ? "border-casinoRed/70 bg-red-950/20 hover:bg-red-950/30"
+                    : "border-white/10 bg-white/6 hover:bg-white/10"
+                } ${index === 4 ? "mt-4" : ""}`}
+                key={entry.id}
+                onClick={() => onToggleEntry(entry.id)}
+                type="button"
+              >
+                <div
+                  className={`grid h-14 w-14 place-items-center rounded border text-xl font-black ${
+                    entry.generated
+                      ? "border-brass/55 bg-stone-50 text-stone-950"
+                      : "border-casinoRed/60 bg-black/35 text-casinoRed"
+                  }`}
+                >
+                  {entry.generated ? "〇" : ""}
+                </div>
+                <div className="min-h-20">
+                  {entry.generated ? (
+                    <ScanTargetPreview
+                      alt={`${entry.illustrationName}のスキャン対象`}
+                      src={entry.targetImageSrc}
+                    />
+                  ) : (
+                    <div className="grid min-h-20 place-items-center rounded border border-dashed border-white/15 bg-black/25 px-3 text-center text-xs font-bold leading-5 text-stone-500">
+                      正解後に表示
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-black/35 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-stone-300">
+                      #{index + 1}
+                    </span>
+                    <span
+                      className={`rounded px-2 py-1 text-[10px] font-black ${
+                        !entry.generated
+                          ? "bg-white/10 text-stone-300"
+                          : entry.ability === "コピーペースト"
+                          ? "bg-casinoRed text-white"
+                          : entry.ability === "エクスチェンジ"
+                            ? "bg-cyan-300 text-stone-950"
+                            : "bg-white/10 text-stone-200"
+                      }`}
+                    >
+                      {entry.generated ? entry.ability : "未入力"}
+                    </span>
+                    {!entry.generated ? (
+                      <span className="rounded bg-casinoRed px-2 py-1 text-[10px] font-black text-white">
+                        入力待ち
+                      </span>
+                    ) : null}
+                    {entry.selected ? (
+                      <span className="rounded bg-brass px-2 py-1 text-[10px] font-black text-stone-950">
+                        FINAL候補
+                      </span>
+                    ) : null}
+                  </div>
+                  <dl className="mt-3 grid gap-2 text-sm font-bold leading-6 text-stone-100 sm:grid-cols-4">
+                    <div>
+                      <dt className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
+                        答え
+                      </dt>
+                      <dd>{entry.generated ? entry.answer : "未入力"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
+                        イラスト読み方
+                      </dt>
+                      <dd>{entry.generated ? entry.illustrationName : "未入力"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
+                        使用能力
+                      </dt>
+                      <dd>{entry.generated ? entry.ability : "未入力"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
+                        生成した（い）数字
+                      </dt>
+                      <dd>{entry.generated ? entry.generatedNumber : "未入力"}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded border border-white/12 bg-black/28 p-3 sm:p-4">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+            Scan Input
+          </p>
+          <h3 className="mt-1 text-xl font-black">スキャン実行</h3>
+          <p className="mt-2 text-sm font-bold leading-6 text-stone-300">
+            空欄の項目と一致する答え、イラスト読み方、使用能力、生成した数字を入力すると、その行が生成済みになります。
+            入力例は「イチ　ゴ→6」「フォー　カード→4」「レース　クイーン→12」です。
+          </p>
+          <FinalCopyPasteWorkbench
+            isApplied={isFinalCopyPasteApplied}
+            isSourceSelected={isFinalCopySourceSelected}
+            isTargetSelected={isFinalCopyTargetSelected}
+            onSelectSource={() => {
+              setIsFinalCopySourceSelected(true);
+              setFinalCopyPasteStep("target");
+            }}
+            onSelectTarget={() => {
+              setIsFinalCopyTargetSelected(true);
+              setFinalCopyPasteStep(null);
+            }}
+            onStart={() => {
+              setIsFinalCopySourceSelected(false);
+              setIsFinalCopyTargetSelected(false);
+              setFinalCopyPasteStep("source");
+              setScanMessage("");
+            }}
+            step={finalCopyPasteStep}
+          />
+          <div className="mt-4 grid gap-3">
+            <FinalCatalogInput
+              label="答え"
+              onChange={setAnswer}
+              placeholder="例: すいり"
+              value={answer}
+            />
+            <FinalCatalogInput
+              label="イラスト読み方"
+              onChange={setIllustrationName}
+              placeholder="例: クイーン"
+              value={illustrationName}
+            />
+            <FinalCatalogInput
+              label="生成した（い）数字"
+              onChange={setGeneratedNumber}
+              placeholder="例: 12"
+              value={generatedNumber}
+            />
+            <label className="grid gap-1 text-xs font-black uppercase tracking-[0.14em] text-brass">
+              使用能力
+              <select
+                className="min-h-11 rounded border border-white/14 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-brass"
+                onChange={(event) => setAbility(event.target.value as ScanAbility)}
+                value={ability}
+              >
+                <option value="なし">なし</option>
+                <option value="エクスチェンジ">エクスチェンジ</option>
+                <option value="コピーペースト">コピーペースト</option>
+              </select>
+            </label>
+            <button
+              className={`min-h-12 rounded px-4 py-3 text-sm font-black ${
+                canAddEntry
+                  ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                  : "cursor-not-allowed bg-stone-700 text-stone-400"
+              }`}
+              disabled={!canAddEntry}
+              onClick={resolveEntry}
+              type="button"
+            >
+              入力内容を生成済みにする
+            </button>
+            {scanMessage ? (
+              <div className="rounded border border-white/10 bg-white/8 p-3">
+                {generatedPreviewSrc ? (
+                  <ScanTargetPreview
+                    alt="今回スキャンした対象"
+                    src={generatedPreviewSrc}
+                  />
+                ) : null}
+                <p className="mt-3 text-sm font-bold leading-6 text-stone-100">
+                  {scanMessage}
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-4 rounded border border-casinoRed/45 bg-red-950/20 p-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
+              Final Battle
+            </p>
+            <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
+              一覧作成が完了したら、最後の1戦へ進みます。最後の1戦では、この一覧から必要な行を選択して勝負に挑みます。
+            </p>
+            <button
+              className={`mt-3 min-h-12 w-full rounded px-4 py-3 text-sm font-black ${
+                allEntriesGenerated
+                  ? "bg-casinoRed text-white hover:bg-red-500"
+                  : "cursor-not-allowed bg-stone-700 text-stone-400"
+              }`}
+              disabled={!allEntriesGenerated}
+              onClick={onComplete}
+              type="button"
+            >
+              {allEntriesGenerated
+                ? "一覧作成を完了して最後の1戦へ"
+                : "未生成項目をすべて埋めてください"}
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
+  return (
+    <div className="min-h-[680px] bg-[#071b12] p-3 text-white sm:p-5">
+      <section className="grid min-h-[640px] place-items-center rounded border border-brass/50 bg-black/45 p-4 shadow-[inset_0_0_80px_rgba(0,0,0,0.45)]">
+        <div className="w-full max-w-2xl rounded border border-white/12 bg-stone-950/92 p-5 shadow-2xl sm:p-6">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-brass">
+            Final Disclosure
+          </p>
+          <h2 className="mt-2 text-2xl font-black">ファイナルゲームの手札公開</h2>
+          <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
+            最後の1戦で使われる手札とフィールドが開示されました。このまま事前準備へ入る前に、まずはスキャン一覧を完成させる必要があります。
+          </p>
+          <div className="mt-5 grid gap-3">
+            {finalBattleDisclosureSections.map((section) => (
+              <FinalDisclosureCardSection
+                cards={section.cards}
+                key={section.id}
+                label={section.label}
+              />
+            ))}
+          </div>
+          <h3 className="mt-5 text-lg font-black">最後の情報開示</h3>
+          <div className="mt-5 grid gap-3 text-sm font-bold leading-7 text-stone-100">
+            <p className="rounded border border-white/10 bg-white/6 p-3">
+              ・ゲームにおける能力の発動は、
+              <span className="font-black text-sky-300">ゲームスタート</span>
+              が宣言されたタイミング
+            </p>
+            <p className="rounded border border-white/10 bg-white/6 p-3">
+              ・このゲームに登場する車の車種は必ずハイエースを用いる
+            </p>
+          </div>
+          <button
+            className="mt-5 min-h-12 w-full rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
+            onClick={onContinue}
+            type="button"
+          >
+            スキャン一覧を作成する
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FinalDisclosureCardSection({
+  cards,
+  label,
+}: {
+  cards: PlayingCard[];
+  label: string;
+}) {
+  return (
+    <section className="rounded border border-white/10 bg-white/6 p-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-brass">
+        {label}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {cards.map((card) => (
+          <PlayingCardView card={card} key={card.id} size="hand" />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FinalAbilitySpecDisclosure({
+  onContinue,
+}: {
+  onContinue: () => void;
+}) {
+  return (
+    <div className="min-h-[680px] bg-[#071b12] p-3 text-white sm:p-5">
+      <section className="grid min-h-[640px] place-items-center rounded border border-brass/50 bg-black/45 p-4 shadow-[inset_0_0_80px_rgba(0,0,0,0.45)]">
+        <div className="w-full max-w-2xl rounded border border-white/12 bg-stone-950/92 p-5 shadow-2xl sm:p-6">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-brass">
+            Final Specification
+          </p>
+          <h2 className="mt-2 text-2xl font-black">最後の仕様公開</h2>
+          <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
+            スキャン一覧が完成しました。最後の1戦では、各能力の発動タイミングと持続時間を確認しながら事前準備を進めます。
+          </p>
+          <FinalAbilitySpecTable />
+          <button
+            className="mt-5 min-h-12 w-full rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
+            onClick={onContinue}
+            type="button"
+          >
+            仕様を確認して最後の1戦へ
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FinalAbilitySpecTable({ compact = false }: { compact?: boolean }) {
+  const rows = [
+    {
+      ability: "エクスチェンジ",
+      duration: "1Stage",
+      timing: (
+        <>
+          <span className="font-black text-sky-300">ゲームスタート</span>
+          宣言時
+        </>
+      ),
+    },
+    {
+      ability: "スキャン",
+      duration: "1ゲーム",
+      timing: "即時",
+    },
+    {
+      ability: "コピーペースト",
+      duration: "1ゲーム",
+      timing: "即時",
+    },
+  ];
+
+  return (
+    <div
+      className={`mt-4 overflow-hidden rounded border border-white/12 bg-white/6 ${
+        compact ? "text-xs" : "text-sm"
+      }`}
+    >
+      <div className="grid grid-cols-[1.15fr_1fr_0.85fr] border-b border-white/12 bg-black/35 font-black text-brass">
+        <div className="p-2 sm:p-3">能力</div>
+        <div className="border-l border-white/12 p-2 sm:p-3">発動タイミング</div>
+        <div className="border-l border-white/12 p-2 sm:p-3">持続時間</div>
+      </div>
+      {rows.map((row) => (
+        <div
+          className="grid grid-cols-[1.15fr_1fr_0.85fr] border-b border-white/10 last:border-b-0"
+          key={row.ability}
+        >
+          <div className="p-2 font-black text-stone-100 sm:p-3">{row.ability}</div>
+          <div className="border-l border-white/10 p-2 font-bold text-stone-200 sm:p-3">
+            {row.timing}
+          </div>
+          <div className="border-l border-white/10 p-2 font-bold text-stone-200 sm:p-3">
+            {row.duration}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FinalCatalogInput({
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  return (
+    <label className="grid gap-1 text-xs font-black uppercase tracking-[0.14em] text-brass">
+      {label}
+      <input
+        className="min-h-11 rounded border border-white/14 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-brass"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        type="text"
+        value={value}
+      />
+    </label>
+  );
+}
+
+function ScanTargetPreview({ alt, src }: { alt: string; src: string }) {
+  return (
+    <div className="overflow-hidden rounded border border-white/12 bg-white">
+      <Image
+        alt={alt}
+        className="h-auto w-full"
+        height={900}
+        src={src}
+        width={1600}
+      />
+    </div>
+  );
+}
+
+function TutorialDialog({
+  actionLabel,
+  onDismiss,
+  onAction,
+  text,
+  tone,
+}: {
+  actionLabel?: string;
+  onDismiss: () => void;
+  onAction?: () => void;
+  text: string;
+  tone: "hands" | "rules" | "spec" | "start";
+}) {
+  const toneClass = {
+    hands: "border-cyan-300 bg-cyan-950/92 text-cyan-50",
+    rules: "border-sky-400 bg-sky-50 text-stone-950",
+    spec: "border-emerald-400 bg-emerald-50 text-stone-950",
+    start: "border-casinoRed bg-red-50 text-stone-950",
+  }[tone];
+
+  return (
+    <div
+      className="fixed inset-0 z-40 grid cursor-default place-items-center bg-black/45 p-4 text-left backdrop-blur-[2px]"
+      onClick={onDismiss}
+      onPointerDown={onDismiss}
+    >
+      <div
+        className={`w-full max-w-2xl rounded border-2 px-5 py-5 text-base font-black leading-7 shadow-2xl sm:px-7 sm:py-6 sm:text-lg ${toneClass}`}
+        onClick={actionLabel ? undefined : onDismiss}
+        onPointerDown={actionLabel ? undefined : onDismiss}
+      >
+        <p>{text}</p>
+        {actionLabel && onAction ? (
+          <button
+            className="mt-3 min-h-10 w-full rounded bg-white px-4 text-sm font-black text-stone-950 hover:bg-stone-100"
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction();
+              onDismiss();
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            type="button"
+          >
+            {actionLabel}
+          </button>
+        ) : (
+          <button
+            className="mt-3 min-h-10 w-full rounded bg-white px-4 text-sm font-black text-stone-950 hover:bg-stone-100"
+            onClick={onDismiss}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              onDismiss();
+            }}
+            type="button"
+          >
+            閉じる
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OpponentSelector({
+  canFocusNext,
+  canFocusPrevious,
   focusedGameType,
+  focusedGameTypes,
   focusedRobot,
   hand,
   isStageClear,
@@ -416,9 +1494,11 @@ function OpponentSelector({
   onOpenModal,
   onSelectRobot,
   playedRobotIds,
-  stageId,
 }: {
+  canFocusNext: boolean;
+  canFocusPrevious: boolean;
   focusedGameType: GameType | null;
+  focusedGameTypes: GameType[];
   focusedRobot: Robot | null;
   hand: PlayingCard[];
   isStageClear: boolean;
@@ -426,8 +1506,12 @@ function OpponentSelector({
   onOpenModal: (robot: Robot, kind: ModalKind, gameType: GameType) => void;
   onSelectRobot: (robot: Robot, gameType: GameType) => void;
   playedRobotIds: string[];
-  stageId: number;
 }) {
+  const [isAutoSelecting, setIsAutoSelecting] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState<
+    "rules" | "rules-close" | "spec" | "spec-close" | "hands" | "start" | "done"
+  >("rules");
+  const [isTutorialDialogVisible, setIsTutorialDialogVisible] = useState(true);
   const currentSeat = focusedGameType ? getGameSeat(focusedGameType) : "top";
   const currentImage = viewImage[currentSeat];
   const isFocusedPlayed = focusedRobot
@@ -457,9 +1541,90 @@ function OpponentSelector({
     : hand.slice().reverse();
   const shouldShowFieldCards = focusedGameType === "poker";
 
+  useEffect(() => {
+    if (!isAutoSelecting || !focusedRobot || !focusedGameType) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setIsAutoSelecting(false);
+      onSelectRobot(focusedRobot, focusedGameType);
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [focusedGameType, focusedRobot, isAutoSelecting, onSelectRobot]);
+
+  useEffect(() => {
+    function handleModalClosed() {
+      setTutorialStep((current) => {
+        if (current === "rules-close") {
+          setIsTutorialDialogVisible(true);
+          return "spec";
+        }
+
+        if (current === "spec-close") {
+          setIsTutorialDialogVisible(true);
+          return "hands";
+        }
+
+        return current;
+      });
+    }
+
+    window.addEventListener("casino-rule-modal-closed", handleModalClosed);
+
+    return () => {
+      window.removeEventListener("casino-rule-modal-closed", handleModalClosed);
+    };
+  }, []);
+
+  function advanceTutorial(nextStep: typeof tutorialStep) {
+    setTutorialStep(nextStep);
+    setIsTutorialDialogVisible(true);
+  }
+
   return (
     <div className="relative bg-black">
-      <div className="relative aspect-[1402/1124] min-h-[330px] overflow-visible sm:min-h-[560px]">
+      {isTutorialDialogVisible && tutorialStep === "rules" ? (
+        <TutorialDialog
+          onDismiss={() => setIsTutorialDialogVisible(false)}
+          text="まずゲームのルールを確認します。青く光っている本のボタンを押してください。"
+          tone="rules"
+        />
+      ) : isTutorialDialogVisible && tutorialStep === "rules-close" ? (
+        <TutorialDialog
+          onDismiss={() => setIsTutorialDialogVisible(false)}
+          text="ゲームルールを確認したら、右上の×ボタンで閉じてください。"
+          tone="rules"
+        />
+      ) : isTutorialDialogVisible && tutorialStep === "spec" ? (
+        <TutorialDialog
+          onDismiss={() => setIsTutorialDialogVisible(false)}
+          text="次にロボットの仕様を確認します。緑に光っている情報ボタンを押してください。"
+          tone="spec"
+        />
+      ) : isTutorialDialogVisible && tutorialStep === "spec-close" ? (
+        <TutorialDialog
+          onDismiss={() => setIsTutorialDialogVisible(false)}
+          text="ロボットの仕様を確認したら、右上の×ボタンで閉じてください。"
+          tone="spec"
+        />
+      ) : isTutorialDialogVisible && tutorialStep === "hands" ? (
+        <TutorialDialog
+          actionLabel="手札を確認する"
+          onAction={() => advanceTutorial("start")}
+          onDismiss={() => setIsTutorialDialogVisible(false)}
+          text="ゲームスタート前に、あなたの手札とロボットの手札を確認できます。確認できたら「ゲームスタート」してみましょう"
+          tone="hands"
+        />
+      ) : isTutorialDialogVisible && tutorialStep === "start" ? (
+        <TutorialDialog
+          onDismiss={() => setIsTutorialDialogVisible(false)}
+          text="確認できました。ゲームスタートを押して対戦を始めます。"
+          tone="start"
+        />
+      ) : null}
+      <div className="relative aspect-[1402/1124] min-h-[330px] overflow-visible max-[424px]:min-h-[270px] max-[374px]:min-h-[240px] max-[340px]:min-h-[220px] sm:min-h-[560px]">
         <Image
           alt={currentImage.alt}
           className="absolute inset-0 h-full w-full object-contain"
@@ -485,24 +1650,46 @@ function OpponentSelector({
               </div>
             ) : null}
 
-            <div className="absolute inset-x-3 bottom-0 z-20 translate-y-[78%] rounded border border-stone-200 bg-white p-3 text-stone-950 shadow-[0_12px_28px_rgba(0,0,0,0.45)] sm:inset-x-6 sm:p-4">
-              <div className="grid grid-cols-[44px_1fr_44px] items-center gap-2">
+            <div className="absolute inset-x-3 bottom-0 z-20 translate-y-[78%] rounded border border-stone-200 bg-white p-3 text-stone-950 shadow-[0_12px_28px_rgba(0,0,0,0.45)] max-[424px]:inset-x-1.5 max-[424px]:p-2 max-[374px]:inset-x-0 sm:inset-x-6 sm:p-4">
+              <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 max-[424px]:grid-cols-[38px_minmax(0,1fr)_38px] max-[424px]:gap-1.5 max-[374px]:grid-cols-[34px_minmax(0,1fr)_34px]">
                 <button
-                  aria-label="前の対戦相手"
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded border border-stone-300 bg-stone-100 text-stone-950 hover:bg-stone-200"
+                  aria-label="前のゲーム種類"
+                  className={`grid h-11 w-11 shrink-0 place-items-center rounded border border-stone-300 max-[424px]:h-[38px] max-[424px]:w-[38px] max-[374px]:h-[34px] max-[374px]:w-[34px] ${
+                    canFocusPrevious
+                      ? "bg-stone-100 text-stone-950 hover:bg-stone-200"
+                      : "cursor-not-allowed bg-stone-200 text-stone-400 opacity-45"
+                  }`}
+                  disabled={!canFocusPrevious}
                   onClick={() => onFocusRobot(-1)}
                   type="button"
                 >
                   <ChevronLeft size={22} />
                 </button>
 
-                <div className="flex min-h-36 min-w-0 flex-col items-center justify-center gap-2 text-center sm:min-h-56">
+                <div className="flex min-h-36 min-w-0 flex-col items-center justify-center gap-2 text-center max-[424px]:min-h-28 max-[424px]:gap-1.5 max-[374px]:min-h-24 sm:min-h-56">
                   {focusedGameType ? <GameLogo gameType={focusedGameType} /> : null}
+                  {focusedGameTypes.length > 1 ? (
+                    <div className="flex flex-wrap justify-center gap-1">
+                      {focusedGameTypes.map((gameType, index) => (
+                        <span
+                          className="rounded border border-stone-300 bg-stone-100 px-2 py-1 text-[10px] font-black text-stone-700"
+                          key={gameType}
+                        >
+                          {index + 1}. {getGameLabel(gameType)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
 
                 <button
-                  aria-label="次の対戦相手"
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded border border-stone-300 bg-stone-100 text-stone-950 hover:bg-stone-200"
+                  aria-label="次のゲーム種類"
+                  className={`grid h-11 w-11 shrink-0 place-items-center rounded border border-stone-300 max-[424px]:h-[38px] max-[424px]:w-[38px] max-[374px]:h-[34px] max-[374px]:w-[34px] ${
+                    canFocusNext
+                      ? "bg-stone-100 text-stone-950 hover:bg-stone-200"
+                      : "cursor-not-allowed bg-stone-200 text-stone-400 opacity-45"
+                  }`}
+                  disabled={!canFocusNext}
                   onClick={() => onFocusRobot(1)}
                   type="button"
                 >
@@ -510,17 +1697,36 @@ function OpponentSelector({
                 </button>
               </div>
 
-              <div className="mt-3 grid grid-cols-[44px_44px_1fr] gap-2">
+              <div className="mt-3 grid grid-cols-[44px_44px_minmax(0,1fr)] gap-2 max-[424px]:mt-2 max-[424px]:grid-cols-[38px_38px_minmax(0,1fr)] max-[424px]:gap-1.5 max-[374px]:grid-cols-[34px_34px_minmax(0,1fr)]">
                 <button
                   aria-label={`${focusedRobot.name}のルール`}
-                  className="grid h-11 place-items-center rounded border border-stone-300 bg-stone-100 text-stone-950 hover:bg-stone-200"
-                  onClick={() =>
+                  className={`grid h-11 place-items-center rounded border text-stone-950 max-[424px]:h-[38px] max-[374px]:h-[34px] ${
+                    tutorialStep === "rules"
+                      ? "animate-pulse border-2 border-sky-500 bg-sky-50 shadow-[0_0_0_4px_rgba(14,165,233,0.24)]"
+                      : "border-stone-300 bg-stone-100 hover:bg-stone-200"
+                  }`}
+                  onClick={() => {
+                    if (tutorialStep === "rules") {
+                      setTutorialStep("rules-close");
+                      setIsTutorialDialogVisible(false);
+                    }
                     onOpenModal(
                       focusedRobot,
                       "rules",
                       focusedGameType ?? focusedRobot.gameType,
-                    )
-                  }
+                    );
+                  }}
+                  onPointerDown={() => {
+                    if (tutorialStep === "rules") {
+                      setTutorialStep("rules-close");
+                      setIsTutorialDialogVisible(false);
+                    }
+                    onOpenModal(
+                      focusedRobot,
+                      "rules",
+                      focusedGameType ?? focusedRobot.gameType,
+                    );
+                  }}
                   title="ルール"
                   type="button"
                 >
@@ -528,14 +1734,33 @@ function OpponentSelector({
                 </button>
                 <button
                   aria-label={`${focusedRobot.name}の仕様`}
-                  className="grid h-11 place-items-center rounded border border-stone-300 bg-stone-100 text-stone-950 hover:bg-stone-200"
-                  onClick={() =>
+                  className={`grid h-11 place-items-center rounded border text-stone-950 max-[424px]:h-[38px] max-[374px]:h-[34px] ${
+                    tutorialStep === "spec"
+                      ? "animate-pulse border-2 border-emerald-500 bg-emerald-50 shadow-[0_0_0_4px_rgba(16,185,129,0.24)]"
+                      : "border-stone-300 bg-stone-100 hover:bg-stone-200"
+                  }`}
+                  onClick={() => {
+                    if (tutorialStep === "spec") {
+                      setTutorialStep("spec-close");
+                      setIsTutorialDialogVisible(false);
+                    }
                     onOpenModal(
                       focusedRobot,
                       "spec",
                       focusedGameType ?? focusedRobot.gameType,
-                    )
-                  }
+                    );
+                  }}
+                  onPointerDown={() => {
+                    if (tutorialStep === "spec") {
+                      setTutorialStep("spec-close");
+                      setIsTutorialDialogVisible(false);
+                    }
+                    onOpenModal(
+                      focusedRobot,
+                      "spec",
+                      focusedGameType ?? focusedRobot.gameType,
+                    );
+                  }}
                   title="仕様"
                   type="button"
                 >
@@ -543,28 +1768,72 @@ function OpponentSelector({
                 </button>
                 {isFocusedPlayed || isStageClear || !focusedGameType ? (
                   <button
-                    className="h-11 cursor-not-allowed rounded bg-stone-700 px-3 text-sm font-bold text-stone-400"
+                    className="h-11 cursor-not-allowed rounded bg-stone-700 px-3 text-sm font-bold text-stone-400 max-[424px]:h-[38px] max-[424px]:px-2 max-[424px]:text-xs max-[374px]:h-[34px]"
                     disabled
                     type="button"
                   >
                     {isFocusedPlayed ? "対戦済み" : "対戦"}
                   </button>
                 ) : (
-                  <a
-                    className="grid h-11 place-items-center rounded bg-casinoRed px-3 text-sm font-bold text-white hover:bg-red-700"
-                    href={`/?stage=${stageId}&battle=${focusedGameType}&robot=${focusedRobot.id}`}
-                    onClick={() => onSelectRobot(focusedRobot, focusedGameType)}
+                  <button
+                    className={`grid h-11 place-items-center rounded px-3 text-sm font-bold text-white max-[424px]:h-[38px] max-[424px]:px-2 max-[424px]:text-xs max-[374px]:h-[34px] ${
+                      tutorialStep === "start"
+                        ? "animate-pulse bg-casinoRed shadow-[0_0_0_4px_rgba(180,31,44,0.26)] hover:bg-red-700"
+                        : "bg-casinoRed hover:bg-red-700"
+                    }`}
+                    onClick={() => {
+                      setTutorialStep("done");
+                      setIsAutoSelecting(true);
+                    }}
+                    type="button"
                   >
-                    対戦
-                  </a>
+                    ゲームスタート
+                  </button>
                 )}
               </div>
             </div>
           </>
         ) : null}
+
+        {isAutoSelecting && focusedRobot && focusedGameType ? (
+          <div className="absolute inset-0 z-30 grid place-items-center bg-black/72 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded border border-brass bg-white p-4 text-center text-stone-950 shadow-2xl">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-casinoRed">
+                Battle Select
+              </p>
+              <p className="mt-2 text-lg font-black">
+                {getGameLabel(focusedGameType)} を開始します
+              </p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {focusedGameTypes.map((gameType, index) => (
+                  <div
+                    className={`rounded border px-3 py-2 text-xs font-black ${
+                      index === 0
+                        ? "border-casinoRed bg-casinoRed text-white"
+                        : "border-stone-300 bg-stone-100 text-stone-500"
+                    }`}
+                    key={gameType}
+                  >
+                    {index + 1}. {getGameLabel(gameType)}
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-sm font-bold leading-6 text-stone-700">
+                登場した種目順に自動で選ばれます。
+              </p>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="border-t border-brass/25 bg-black/72 px-3 pb-4 pt-48 text-center backdrop-blur-sm sm:px-6 sm:pt-72">
+        <div
+          className={`mx-auto max-w-2xl rounded p-3 ${
+            tutorialStep === "hands"
+              ? "animate-pulse border-2 border-cyan-300 bg-cyan-950/20 shadow-[0_0_0_4px_rgba(103,232,249,0.14)]"
+              : "border border-white/10 bg-black/20"
+          }`}
+        >
         {shouldShowFieldCards ? (
           <>
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">
@@ -607,6 +1876,7 @@ function OpponentSelector({
             <PlayingCardView card={card} key={`hand-${card.id}`} size="hand" />
           ))}
         </div>
+        </div>
       </div>
     </div>
   );
@@ -615,7 +1885,6 @@ function OpponentSelector({
 type BlackjackPhase =
   | "idle"
   | "first-card"
-  | "raise"
   | "second-card"
   | "result";
 
@@ -635,19 +1904,56 @@ function BlackjackBattle({
       ? blackjackBattleConfigs[robotId as keyof typeof blackjackBattleConfigs]
       : null;
   const canExchangePlayerHand =
-    robotId === "blackjack-2-1" && config?.requiresRaiseForMaxChips === true;
+    robotId === "blackjack-2-1";
   const canUseScan = robotId === "blackjack-2-2";
+  const isFinalBattle = robotId === "all-games-last";
   const [isPlayerHandExchanged, setIsPlayerHandExchanged] = useState(false);
   const [preparationAbility, setPreparationAbility] =
     useState<PreparationAbility>("exchange");
   const [scannedItems, setScannedItems] = useState<string[]>([]);
+  const [scanTutorialAnswer, setScanTutorialAnswer] = useState("");
+  const [isScanTutorialAnswerSolved, setIsScanTutorialAnswerSolved] =
+    useState(false);
+  const [scanTutorialIllustrationName, setScanTutorialIllustrationName] =
+    useState("");
+  const [scanTutorialSplit, setScanTutorialSplit] = useState("");
+  const [isScanTutorialComplete, setIsScanTutorialComplete] = useState(false);
+  const [scanTutorialMessage, setScanTutorialMessage] = useState("");
+  const [scanAnswer, setScanAnswer] = useState("");
+  const [scanIllustrationName, setScanIllustrationName] = useState("");
+  const [scanGeneratedPreviewSrc, setScanGeneratedPreviewSrc] = useState<
+    string | null
+  >(null);
   const [isScanCardExchanged, setIsScanCardExchanged] = useState(false);
-  const scannedOneCard = generatedScanCards["scan-1"];
+  const [selectedRiddlePrintIds, setSelectedRiddlePrintIds] = useState<string[]>(
+    [],
+  );
+  const scannedOneCard = generatedScanCards["scan-10"];
+  const isScanCardGenerated = scannedItems.includes(scannedOneCard.id);
+  const canGenerateScanCard =
+    isScanTutorialComplete &&
+    scanAnswer.trim().length > 0 &&
+    scanIllustrationName.trim().length > 0;
+  const canSelectRiddlePrints = robotId === "blackjack-high-low-2-3";
+  const configuredExchange =
+    config &&
+    isPlayerHandExchanged &&
+    "exchangePlayerCardId" in config &&
+    "exchangeRobotCardId" in config
+      ? {
+          playerCardId: config.exchangePlayerCardId,
+          robotCardId: config.exchangeRobotCardId,
+        }
+      : null;
   const playerHandIds =
     config && isScanCardExchanged && canUseScan
       ? ["A-heart", scannedOneCard.id]
-      : config && isPlayerHandExchanged
-      ? [...config.initialPlayerHandIds].reverse()
+      : config && configuredExchange
+        ? [...config.initialPlayerHandIds].map((cardId) =>
+            cardId === configuredExchange.playerCardId
+              ? configuredExchange.robotCardId
+              : cardId,
+          )
       : config
         ? [...config.initialPlayerHandIds]
         : [];
@@ -656,33 +1962,53 @@ function BlackjackBattle({
     : hand;
   const robotHandIds =
     config && isScanCardExchanged && canUseScan
-      ? ["Q-daia", "A-spade"]
+      ? [...config.initialRobotHandIds]
+      : config && configuredExchange
+        ? [...config.initialRobotHandIds].map((cardId) =>
+            cardId === configuredExchange.robotCardId
+              ? configuredExchange.playerCardId
+              : cardId,
+          )
       : config
         ? [...config.initialRobotHandIds]
         : [];
   const robotHand = config
     ? getCardsById(robotHandIds, generatedScanCards)
     : hand.slice().reverse();
+  const highLowRobotHand =
+    config && "highLowRobotHandIds" in config
+      ? getCardsById([...config.highLowRobotHandIds], generatedScanCards)
+      : [];
   const [phase, setPhase] = useState<BlackjackPhase>("idle");
-  const [playerChips, setPlayerChips] = useState(150);
-  const [pot, setPot] = useState(0);
-  const [playerBet, setPlayerBet] = useState(0);
-  const [robotBet, setRobotBet] = useState(0);
   const [settledResult, setSettledResult] = useState<Outcome | null>(null);
-  const [message, setMessage] = useState(
-    "1ゲーム参加ごとに50チップ支払います。",
-  );
+  const [message, setMessage] = useState("全ての対戦に勝利しましょう。");
+  const [placementStyle, setPlacementStyle] =
+    useState<PlacementStyle>("gentle");
+  const [placementAnimation, setPlacementAnimation] =
+    useState<PlacementStyle | null>(null);
+  const [showBlackjackDeclaration, setShowBlackjackDeclaration] =
+    useState(false);
+  const [isFinalPreparationApplied, setIsFinalPreparationApplied] =
+    useState(false);
   const playerFirstCard = playerHand[0] ?? null;
   const robotFirstCard = robotHand[0] ?? null;
   const playerScore = getBlackjackScore(playerHand);
   const robotScore = getBlackjackScore(robotHand);
   const playerHasBlackjack = playerScore === 21;
-  const robotAction = getBlackjackRobotAction(playerFirstCard, robotFirstCard);
-  const requiresRaiseForMaxChips = config?.requiresRaiseForMaxChips === true;
+  const highLowChainResult =
+    isFinalBattle
+      ? "win"
+      : robotId === "blackjack-2-2" && isScanCardExchanged
+      ? "win"
+      : highLowRobotHand.length > 0 && highLowRobotHand[0] && playerHand[0]
+      ? getHighLowResult(highLowRobotHand[0], playerHand[0])
+      : null;
+  const robotAction = isFinalBattle
+    ? "call"
+    : getBlackjackRobotAction(playerFirstCard, robotFirstCard);
   const learningRestriction =
     config && "learningRestriction" in config ? config.learningRestriction : null;
   const disabledExchangeTargets: ExchangeTargetId[] = [
-    ...(robotId === "blackjack-2-2" ? (["player-hand"] as const) : []),
     ...(robotId === "blackjack-high-low-2-3"
       ? (["player-hand", "robot-hand"] as const)
       : []),
@@ -692,46 +2018,34 @@ function BlackjackBattle({
       ? settledResult ?? getBlackjackResult(playerHand, robotHand)
       : null;
   const resultDisabledExchangeTargets: ExchangeTargetId[] = [
-    ...(result === "win" && robotId === "blackjack-2-1"
-      ? (["player-hand"] as const)
-      : []),
     ...(result === "win" && robotId === "blackjack-2-2"
       ? (["player-hand", "robot-hand"] as const)
       : []),
   ];
+  const resultExchangeRankRestrictions =
+    result === "win" && robotId === "blackjack-2-2"
+      ? ["エースはエクスチェンジ不可"]
+      : [];
   const robotFolded =
     phase === "result" && settledResult === "win" && robotAction === "fold";
 
   function startRound() {
-    if (playerChips < 50 || !playerFirstCard || !robotFirstCard) {
-      setMessage("チップか手札が足りません。");
+    if (!playerFirstCard || !robotFirstCard) {
+      setMessage("手札が足りません。");
       return;
     }
 
-    const startingBet = 50;
+    if (isFinalBattle && !isFinalPreparationApplied) {
+      setMessage("先にファイナルゲーム用の事前準備を完了してください。");
+      return;
+    }
+
     setSettledResult(null);
-    setPlayerChips((current) => current - startingBet);
-    setPlayerBet(startingBet);
-    setRobotBet(startingBet);
-    setPot(startingBet * 2);
 
     if (robotAction === "fold") {
-      setMessage(
-        "ロボットはフォールドしました。プレイヤーがポットを獲得します。",
-      );
-      setPlayerChips((current) => current + startingBet * 2);
+      setMessage("ロボットはフォールドしました。プレイヤーの勝利です。");
       setSettledResult("win");
       setPhase("result");
-      return;
-    }
-
-    if (robotAction === "raise") {
-      setRobotBet(100);
-      setPot(150);
-      setMessage(
-        "ロボットは50チップをレイズしました。応じるには50チップを追加するか、手持ち全てを賭けます。",
-      );
-      setPhase("raise");
       return;
     }
 
@@ -739,65 +2053,94 @@ function BlackjackBattle({
     setPhase("first-card");
   }
 
-  function callRaise(allIn = false) {
-    const callCost = allIn ? playerChips : Math.min(50, playerChips);
-
-    if (callCost <= 0) {
-      setMessage("追加で賭けられるチップがありません。");
-      return;
-    }
-
-    setPlayerChips((current) => current - callCost);
-    setPlayerBet((current) => current + callCost);
-    setPot((current) => current + callCost);
-    setMessage(
-      allIn
-        ? "手持ちチップ全てで応じました。2枚目を出して勝負します。"
-        : "レイズに応じました。2枚目を出して勝負します。",
-    );
-    setPhase("first-card");
-  }
-
-  function foldPlayer() {
-    setMessage("あなたはフォールドしました。賭け金はロボットが獲得します。");
-    setSettledResult("lose");
-    setPhase("result");
-  }
-
   function revealSecondCard() {
-    const outcome = getBlackjackResult(playerHand, robotHand);
-    const isMaximizedWin =
-      outcome === "win" && (!requiresRaiseForMaxChips || robotBet > 50);
-
-    if (isMaximizedWin) {
-      setPlayerChips((current) => current + pot);
-    }
-
-    setSettledResult(isMaximizedWin ? outcome : "lose");
-    if (outcome === "win" && !isMaximizedWin) {
-      setMessage(
-        "勝利はできましたが、チップ最大化に失敗しました。ロボットにレイズさせる必要があります。",
-      );
-      setPhase("result");
-      return;
-    }
+    const blackjackOutcome = getBlackjackResult(playerHand, robotHand);
+    const outcome =
+      blackjackOutcome === "win" &&
+      (highLowChainResult === null || highLowChainResult === "win")
+        ? "win"
+        : "lose";
+    setSettledResult(outcome);
     setMessage(
       outcome === "win"
-        ? "YOU WIN。賭け金を総取りしました。"
-        : outcome === "draw"
+        ? highLowChainResult
+          ? "YOU WIN。ブラックジャックとハイアンドローの両方に勝利しました。"
+          : "YOU WIN。勝利条件を満たしました。"
+        : blackjackOutcome === "draw"
           ? "引き分けのため、あなたの負けです。"
-          : "YOU LOSE。ロボットが賭け金を獲得します。",
+          : highLowChainResult === "lose"
+            ? "YOU LOSE。ハイアンドローの条件を満たせませんでした。"
+            : "YOU LOSE。ロボットの勝利です。",
     );
     setPhase("result");
+  }
+
+  function placeSecondCard() {
+    setPhase("second-card");
+    setPlacementAnimation(placementStyle);
+    if (playerHasBlackjack) {
+      setShowBlackjackDeclaration(true);
+    }
+    window.setTimeout(() => {
+      setPlacementAnimation(null);
+      revealSecondCard();
+    }, playerHasBlackjack ? 1180 : 760);
+    if (playerHasBlackjack) {
+      window.setTimeout(() => {
+        setShowBlackjackDeclaration(false);
+      }, 1500);
+    }
   }
 
   function resetRound() {
     setPhase("idle");
-    setPot(0);
-    setPlayerBet(0);
-    setRobotBet(0);
     setSettledResult(null);
-    setMessage("1ゲーム参加ごとに50チップ支払います。");
+    setPlacementAnimation(null);
+    setShowBlackjackDeclaration(false);
+    setMessage("全ての対戦に勝利しましょう。");
+  }
+
+  function solveScanTutorialRiddle() {
+    if (scanTutorialAnswer.trim() !== "りすく") {
+      setScanTutorialMessage("答えが違うようです。小謎をもう一度確認してください。");
+      return;
+    }
+
+    setIsScanTutorialAnswerSolved(true);
+    setScanTutorialMessage(
+      "正解です。次に、この小謎内のイラストを対象にスキャンしてみましょう。",
+    );
+  }
+
+  function runScanTutorial() {
+    const normalizedSplit = normalizeScanIllustrationName(scanTutorialSplit);
+
+    if (
+      scanTutorialIllustrationName.trim() !== "すごろく" ||
+      normalizedSplit !== "す ご ろく"
+    ) {
+      setScanTutorialMessage(
+        "スキャン対象のイラスト名と文字の区切り方を確認してください。",
+      );
+      return;
+    }
+
+    setIsScanTutorialComplete(true);
+    setScanTutorialMessage(
+      "スキャン成功。すごろくを「す　ご　ろく」に区切ると、5 + 6 = 11。11のトランプを生成できます。",
+    );
+  }
+
+  function generateScanCard() {
+    setScannedItems((current) =>
+      current.includes(scannedOneCard.id)
+        ? current
+        : [...current, scannedOneCard.id],
+    );
+    setScanGeneratedPreviewSrc(scanTargetImages.jyuusho);
+    setScanTutorialMessage(
+      "スキャン対象: じゅうしょ。ななめの答えから10のトランプを生成しました。",
+    );
   }
 
   return (
@@ -814,18 +2157,17 @@ function BlackjackBattle({
         >
           <ArrowLeft size={18} />
         </a>
-        <GameLogo gameType="blackjack" compact />
+        <div className="flex flex-wrap items-center gap-2">
+          <GameLogo gameType="blackjack" compact />
+          {highLowRobotHand.length > 0 ? (
+            <GameLogo gameType="high-low" compact />
+          ) : null}
+        </div>
       </div>
 
       <div className="grid gap-3 p-4 sm:grid-cols-[1fr_220px]">
         <section className="rounded border border-white/12 bg-black/28 p-3">
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <BlackjackMetric label="PLAYER" value={`${playerChips} chips`} />
-            <BlackjackMetric label="POT" value={`${pot} chips`} />
-            <BlackjackMetric label="ROBOT BET" value={`${robotBet} chips`} />
-          </div>
-
-          <div className="mt-4 grid gap-3">
+          <div className="grid gap-3">
             <BlackjackField
               cards={robotHand}
               isBlackjack={robotScore === 21}
@@ -837,9 +2179,22 @@ function BlackjackBattle({
               cards={playerHand}
               isBlackjack={playerHasBlackjack}
               label="PLAYER FIELD"
+              placementAnimation={placementAnimation}
               revealSecond={phase === "second-card" || phase === "result"}
               score={phase === "second-card" || phase === "result" ? playerScore : null}
             />
+            {showBlackjackDeclaration ? (
+              <BlackjackDeclarationOverlay />
+            ) : null}
+            {highLowRobotHand.length > 0 ? (
+              <BlackjackField
+                cards={highLowRobotHand}
+                isBlackjack={false}
+                label="HIGH AND LOW ROBOT HAND"
+                revealSecond
+                score={null}
+              />
+            ) : null}
           </div>
 
           <div className="mt-4 rounded border border-brass/60 bg-black/50 p-4">
@@ -861,6 +2216,15 @@ function BlackjackBattle({
                     </p>
                     <ExchangeRuleList
                       disabledTargets={resultDisabledExchangeTargets}
+                      rankRestrictions={resultExchangeRankRestrictions}
+                      showVisiblePrintTarget={
+                        result === "win" && robotId === "blackjack-2-2"
+                      }
+                      visiblePrintRemaining={
+                        result === "win" && robotId === "blackjack-2-2"
+                          ? 1
+                          : undefined
+                      }
                     />
                   </>
                 ) : null}
@@ -870,7 +2234,6 @@ function BlackjackBattle({
         </section>
 
         <section className="flex flex-col gap-3 rounded border border-white/12 bg-black/28 p-3">
-          <BlackjackMetric label="PLAYER BET" value={`${playerBet} chips`} />
           <div className="rounded border border-white/10 bg-white/6 p-3">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
               Robot Logic
@@ -886,7 +2249,7 @@ function BlackjackBattle({
                 Exchange
               </p>
               <p className="mt-2 text-sm leading-6 text-stone-100">
-                チップ最大化には、ロボットにレイズさせる必要があります。
+                ブラックジャックのロボットのJと自分のAをエクスチェンジすれば勝てます。
               </p>
               <ExchangeRuleList />
               <button
@@ -898,7 +2261,7 @@ function BlackjackBattle({
                 onClick={() => setIsPlayerHandExchanged((current) => !current)}
                 type="button"
               >
-                自分のAとJをエクスチェンジ
+                BJロボットのJと自分のAをエクスチェンジ
               </button>
             </div>
           ) : null}
@@ -907,6 +2270,10 @@ function BlackjackBattle({
             <div className="rounded border border-brass/50 bg-brass/10 p-3">
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
                 Preparation
+              </p>
+              <p className="mt-2 rounded border border-white/12 bg-black/35 p-3 text-sm font-bold leading-6 text-stone-100">
+                自分とハイアンドロー・ブラックジャックのロボットの手札が開示されました。
+                このままでは勝てないので、追加で能力を使えるようにします。
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 {(["exchange", "scan"] as const).map((ability) => (
@@ -928,98 +2295,301 @@ function BlackjackBattle({
               {preparationAbility === "exchange" ? (
                 <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
                   <p className="text-sm leading-6 text-stone-100">
-                    1戦目の勝利後、自分の手札のカードはエクスチェンジできません。生成したカードとロボットのカードのみ交換できます。
+                    生成したカードはエクスチェンジの候補に追加されます。
+                    生成した10と自分のAを交換してから勝負を始めます。
                   </p>
                   <ExchangeRuleList disabledTargets={disabledExchangeTargets} />
+                  <div className="mt-3 rounded border border-white/12 bg-white/8 p-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                      Scan Generated Card
+                    </p>
+                    <div className="mt-3 flex min-h-28 items-center justify-center rounded border border-dashed border-white/20 bg-black/25 p-3">
+                      {isScanCardGenerated ? (
+                        <PlayingCardView card={scannedOneCard} size="hand" />
+                      ) : (
+                        <p className="text-center text-sm font-bold leading-6 text-stone-400">
+                          まだ生成されていません。スキャンでカードを生成すると、
+                          ここに候補として追加されます。
+                        </p>
+                      )}
+                    </div>
+                  </div>
                   <button
                     className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
                       isScanCardExchanged
                         ? "bg-emerald-500 text-stone-950"
-                        : scannedItems.includes("イチ")
+                        : isScanCardGenerated
                           ? "bg-brass text-stone-950 hover:bg-yellow-300"
                           : "cursor-not-allowed bg-stone-700 text-stone-400"
                     }`}
-                    disabled={!scannedItems.includes("イチ")}
+                    disabled={!isScanCardGenerated}
                     onClick={() => setIsScanCardExchanged(true)}
                     type="button"
                   >
-                    生成した1とロボットのAをエクスチェンジ
+                    生成した10と自分のAをエクスチェンジ
                   </button>
                 </div>
               ) : (
                 <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
-                  <p className="text-sm leading-6 text-stone-100">
-                    足し算により算出された数字のトランプを生成します。今回は「イチ」をスキャンして1を生成します。
-                  </p>
-                  <button
-                    className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
-                      scannedItems.includes("イチ")
-                        ? "bg-emerald-500 text-stone-950"
-                        : "bg-brass text-stone-950 hover:bg-yellow-300"
-                    }`}
-                    onClick={() =>
-                      setScannedItems((current) =>
-                        current.includes("イチ") ? current : [...current, "イチ"],
-                      )
-                    }
-                    type="button"
-                  >
-                    {scannedItems.includes("イチ")
-                      ? "1を生成済み"
-                      : "イチをスキャンして1を生成"}
-                  </button>
+                  {!isScanTutorialAnswerSolved ? (
+                    <>
+                      <p className="text-sm font-bold leading-6 text-stone-100">
+                        スキャン機能を使う前に、まずはこの小謎を普通に解いてください。
+                      </p>
+                      <div className="mt-3 overflow-hidden rounded border border-white/12 bg-white">
+                        <Image
+                          alt="スキャン機能チュートリアル小謎"
+                          className="h-auto w-full"
+                          height={900}
+                          src="/riddles/riddle_0.png"
+                          width={1600}
+                        />
+                      </div>
+                      <label className="mt-3 grid gap-2 text-sm font-bold text-stone-100">
+                        小謎の答え
+                        <input
+                          className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20"
+                          onChange={(event) =>
+                            setScanTutorialAnswer(event.target.value)
+                          }
+                          placeholder="答えを入力"
+                          value={scanTutorialAnswer}
+                        />
+                      </label>
+                      <button
+                        className="mt-3 min-h-11 w-full rounded bg-brass px-3 py-2 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                        onClick={solveScanTutorialRiddle}
+                        type="button"
+                      >
+                        答えを確認
+                      </button>
+                    </>
+                  ) : !isScanTutorialComplete ? (
+                    <>
+                      <p className="text-sm font-bold leading-6 text-stone-100">
+                        正解です。次は同じ小謎内のイラストを対象に、スキャン機能を実際に使います。
+                      </p>
+                      <div className="mt-3 overflow-hidden rounded border border-white/12 bg-white">
+                        <Image
+                          alt="スキャン機能チュートリアル小謎"
+                          className="h-auto w-full"
+                          height={900}
+                          src="/riddles/riddle_0.png"
+                          width={1600}
+                        />
+                      </div>
+                      <div className="mt-3 rounded border border-brass/45 bg-black/30 p-3">
+                        <p className="text-sm font-black text-brass">
+                          スキャンには「小謎の答え」「スキャン対象のイラスト名」「文字の区切り方」が必要です。
+                        </p>
+                        <div className="mt-3 grid gap-3">
+                          <label className="grid gap-2 text-sm font-bold text-stone-100">
+                            スキャン対象のイラスト名
+                            <input
+                              className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none"
+                              onChange={(event) =>
+                                setScanTutorialIllustrationName(event.target.value)
+                              }
+                              placeholder="スキャン対象のイラスト名を入力"
+                              value={scanTutorialIllustrationName}
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-bold text-stone-100">
+                            文字の区切り方
+                            <input
+                              className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none"
+                              onChange={(event) =>
+                                setScanTutorialSplit(event.target.value)
+                              }
+                              placeholder="数字部分をスペース区切りで入力"
+                              value={scanTutorialSplit}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                      <button
+                        className="mt-3 min-h-11 w-full rounded bg-brass px-3 py-2 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                        onClick={runScanTutorial}
+                        type="button"
+                      >
+                        チュートリアルスキャンを実行
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <ScanTargetPreview
+                        alt="チュートリアルでスキャンしたすごろく"
+                        src={scanTargetImages.sugoroku}
+                      />
+                      <p className="rounded border border-emerald-300/45 bg-emerald-950/35 p-3 text-sm font-black leading-6 text-emerald-100">
+                        チュートリアル完了。すごろくを「す　ご　ろく」に区切ると、5 + 6 = 11。
+                        11のトランプが生成されることを確認できました。
+                        ゴールは5を含んでいますが、イラストではなく文字のため生成できません。
+                        下部に信号機のようなものも見えますが、謎内で信号機と呼んでいないためスキャン対象にはできません。
+                      </p>
+                      <p className="mt-3 text-sm leading-6 text-stone-100">
+                        {scanRuleText}
+                      </p>
+                      <div className="mt-3 rounded border border-brass/45 bg-black/30 p-3">
+                        <p className="text-sm font-black text-brass">
+                          生成には「小謎の答え」と「小謎内でのイラストの呼称」の入力が必要です。
+                        </p>
+                        <div className="mt-3 grid gap-3">
+                          <label className="grid gap-2 text-sm font-bold text-stone-100">
+                            小謎の答え
+                            <input
+                              className={`min-h-11 rounded border bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ${
+                                scanAnswer.trim()
+                                  ? "border-emerald-400"
+                                  : "animate-pulse border-brass ring-4 ring-brass/30"
+                              }`}
+                              onChange={(event) => setScanAnswer(event.target.value)}
+                              placeholder="小謎の答えを入力"
+                              value={scanAnswer}
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-bold text-stone-100">
+                            イラストの呼称
+                            <input
+                              className={`min-h-11 rounded border bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ${
+                                scanIllustrationName.trim()
+                                  ? "border-emerald-400"
+                                  : "animate-pulse border-brass ring-4 ring-brass/30"
+                              }`}
+                              onChange={(event) =>
+                                setScanIllustrationName(event.target.value)
+                              }
+                              placeholder="イラストの呼称を入力"
+                              value={scanIllustrationName}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                      <div className="mt-3 rounded border border-white/12 bg-white p-3 text-stone-950">
+                        <div className="grid gap-2 text-sm font-black sm:grid-cols-2">
+                          <p className="rounded border border-stone-300 bg-stone-100 px-3 py-2">
+                            漢数字はその数字のトランプに変化
+                          </p>
+                          <p className="rounded border border-stone-300 bg-stone-100 px-3 py-2">
+                            インクで見えない箇所の追加
+                          </p>
+                        </div>
+                        <div className="mt-3 grid gap-3">
+                          {scanRiddleImages.map((image) => (
+                            <div
+                              className="overflow-hidden rounded border border-stone-300 bg-white"
+                              key={image.src}
+                            >
+                              <Image
+                                alt={image.alt}
+                                className="h-auto w-full"
+                                height={900}
+                                src={image.src}
+                                width={1600}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <button
+                        className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                          isScanCardGenerated
+                            ? "bg-emerald-500 text-stone-950"
+                            : canGenerateScanCard
+                              ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                              : "cursor-not-allowed bg-stone-700 text-stone-400"
+                        }`}
+                        disabled={!canGenerateScanCard && !isScanCardGenerated}
+                        onClick={generateScanCard}
+                        type="button"
+                      >
+                        {isScanCardGenerated
+                          ? "10のトランプを生成済み"
+                          : "入力内容をスキャンして10を生成"}
+                      </button>
+                    </>
+                  )}
+                  {scanTutorialMessage ? (
+                    <div className="mt-3 rounded border border-white/12 bg-white/8 p-3">
+                      {scanGeneratedPreviewSrc ? (
+                        <ScanTargetPreview
+                          alt="今回スキャンした対象"
+                          src={scanGeneratedPreviewSrc}
+                        />
+                      ) : null}
+                      <p className="mt-3 text-sm font-bold leading-6 text-stone-100">
+                        {scanTutorialMessage}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
           ) : null}
 
-          {phase === "idle" ? (
-            <button
-              className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-              onClick={startRound}
-              type="button"
-            >
-              参加する -50
-            </button>
-          ) : null}
-
-          {phase === "raise" ? (
-            <div className="grid gap-2">
-              <button
-                className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-                onClick={() => callRaise(false)}
-                type="button"
-              >
-                コール +50
-              </button>
-              <button
-                className="min-h-12 rounded bg-casinoRed px-4 py-3 text-sm font-black text-white hover:bg-red-700"
-                onClick={() => callRaise(true)}
-                type="button"
-              >
-                オールイン
-              </button>
-              <button
-                className="min-h-12 rounded bg-stone-700 px-4 py-3 text-sm font-black text-white hover:bg-stone-600"
-                onClick={foldPlayer}
-                type="button"
-              >
-                フォールド
-              </button>
+          {phase === "idle" && canSelectRiddlePrints ? (
+            <div className="rounded border border-brass/50 bg-brass/10 p-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Exchange Target
+              </p>
+              <p className="mt-2 text-sm leading-6 text-stone-100">
+                小謎画像内のトランプをタップして、交換対象を2枚選択します。
+                中央行左側とど真ん中のトランプを選択できます。
+              </p>
+              <ExchangeRuleList
+                rankRestrictions={["エースはエクスチェンジ不可"]}
+                showVisiblePrintTarget
+                visiblePrintRemaining={1}
+              />
+              <RiddlePrintTargetPicker
+                selectedIds={selectedRiddlePrintIds}
+                setSelectedIds={setSelectedRiddlePrintIds}
+              />
             </div>
           ) : null}
 
-          {phase === "first-card" ? (
-            <button
-              className="min-h-12 rounded bg-emerald-500 px-4 py-3 text-sm font-black text-stone-950 hover:bg-emerald-400"
-              onClick={() => {
-                setPhase("second-card");
-                revealSecondCard();
+          {phase === "idle" && isFinalBattle ? (
+            <FinalBattlePreparationPanel
+              isApplied={isFinalPreparationApplied}
+              onApply={() => {
+                setIsFinalPreparationApplied(true);
+                setMessage(
+                  "ファイナルゲームの事前準備が完了しました。Aを先に出し、Jをそっと置いてブラックジャックを宣言します。",
+                );
               }}
+            />
+          ) : null}
+
+          {phase === "idle" ? (
+            <button
+              className={`min-h-12 rounded px-4 py-3 text-sm font-black ${
+                isFinalBattle && !isFinalPreparationApplied
+                  ? "cursor-not-allowed bg-stone-700 text-stone-400"
+                  : "bg-brass text-stone-950 hover:bg-yellow-300"
+              }`}
+              disabled={isFinalBattle && !isFinalPreparationApplied}
+              onClick={startRound}
               type="button"
             >
-              {playerHasBlackjack ? "ブラックジャック宣言" : "2枚目を出す"}
+              勝負開始
             </button>
+          ) : null}
+
+          {phase === "first-card" ? (
+            <>
+              <PlacementStyleSelector
+                label="2枚目の置き方"
+                onChange={setPlacementStyle}
+                value={placementStyle}
+              />
+              <button
+                className="min-h-12 rounded bg-emerald-500 px-4 py-3 text-sm font-black text-stone-950 hover:bg-emerald-400"
+                onClick={placeSecondCard}
+                type="button"
+              >
+                {playerHasBlackjack ? "ブラックジャック宣言" : "2枚目を出す"}
+              </button>
+            </>
           ) : null}
 
           {phase === "result" ? (
@@ -1039,10 +2609,1565 @@ function BlackjackBattle({
           Rule
         </p>
         <p className="mt-2 text-sm leading-6 text-stone-200">
-          {blackjackRuleText}
+          <HighlightedBlackjackRuleText />
         </p>
       </section>
     </div>
+  );
+}
+
+function BlackjackDeclarationOverlay() {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-black/20 p-4">
+      <div className="rounded border border-brass bg-stone-950/92 px-8 py-6 text-center shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
+        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-brass">
+          Declare
+        </p>
+        <p className="mt-2 text-4xl font-black text-sky-300 drop-shadow sm:text-6xl">
+          ブラックジャック
+        </p>
+        <p className="mt-3 text-sm font-black text-stone-100">
+          2枚目を重ねた瞬間に宣言
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function FinalBattlePreparationPanel({
+  isApplied,
+  onApply,
+}: {
+  isApplied: boolean;
+  onApply: () => void;
+}) {
+  const steps = [
+    "スキャン一覧の「ハイキング / ハイ　エース」と「ハイキング / ハイ　ジャック」を使用する",
+    "コピーペーストで、スキャン仕様の青字「ポーカー」を「ブラックジャック」に上書きする",
+    "コピーペーストで、スキャン仕様の「役名」を青字11の平仮名「じゅういち」に上書きする",
+    "1と11の組をブラックジャックとして21にし、「に/じゅういち」から13のトランプを生成する",
+    "コピーペーストで、発動タイミングの青字「ゲームスタート」を「ブラックジャック」に上書きする",
+    "ブラックジャック宣言のタイミングで、ハイアンドローのKと自分のJ、自分のAと生成済みKをエクスチェンジできるようにする",
+  ];
+
+  return (
+    <div className="rounded border border-brass/55 bg-brass/10 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+            Final Preparation
+          </p>
+          <h3 className="mt-1 text-lg font-black">最後の勝利手順</h3>
+        </div>
+        <span
+          className={`rounded px-2 py-1 text-xs font-black ${
+            isApplied
+              ? "bg-emerald-400 text-stone-950"
+              : "bg-casinoRed text-white"
+          }`}
+        >
+          {isApplied ? "準備済み" : "未準備"}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        {[
+          ["Exchange", "1回"],
+          ["Scan", "3回"],
+          ["Copy Paste", "5回"],
+        ].map(([label, value]) => (
+          <div className="rounded border border-white/10 bg-black/28 p-2" key={label}>
+            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-stone-300">
+              {label}
+            </p>
+            <p className="mt-1 text-sm font-black text-brass">{value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded border border-sky-300/40 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
+        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-200">
+          Poker Robot
+        </p>
+        <p className="mt-2">
+          事前準備時点のポーカーロボット目線の勝率：97.78%
+        </p>
+        <p className="mt-1">
+          最終的にプレイヤーが勝つための行動をとると、ポーカーロボット側もオールインします。
+        </p>
+      </div>
+      <div className="mt-3 rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-stone-100">
+        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-200">
+          Copy Paste Targets
+        </p>
+        <p className="mt-2">
+          スキャン仕様の青字:
+          <span className="mx-1 font-black text-sky-300 underline decoration-sky-300 decoration-2 underline-offset-4">
+            ポーカー
+          </span>
+          /
+          <span className="mx-1 font-black text-sky-300 underline decoration-sky-300 decoration-2 underline-offset-4">
+            役名
+          </span>
+          を上書き対象として扱います。発動タイミングの青字
+          <span className="mx-1 font-black text-sky-300 underline decoration-sky-300 decoration-2 underline-offset-4">
+            ゲームスタート
+          </span>
+          もブラックジャックへ上書きします。
+        </p>
+      </div>
+      <ol className="mt-3 grid gap-2 text-sm font-bold leading-6 text-stone-100">
+        {steps.map((step, index) => (
+          <li className="rounded border border-white/10 bg-black/25 p-2" key={step}>
+            {index + 1}. {step}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 rounded border border-white/10 bg-black/25 p-3 text-sm font-bold leading-6 text-stone-100">
+        ブラックジャックではAを先に出し、Jを「そっとおく」で手に隠しながら重ねて置きます。
+        宣言の瞬間にエクスチェンジが発動し、最終的にポーカーはKフォーカードで勝利します。
+      </p>
+      <button
+        className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+          isApplied
+            ? "bg-emerald-500 text-stone-950"
+            : "bg-brass text-stone-950 hover:bg-yellow-300"
+        }`}
+        onClick={onApply}
+        type="button"
+      >
+        {isApplied ? "ファイナル事前準備を適用済み" : "この内容で事前準備を適用"}
+      </button>
+    </div>
+  );
+}
+
+function FinalCopyPasteWorkbench({
+  isApplied,
+  isSourceSelected,
+  isTargetSelected,
+  onSelectSource,
+  onSelectTarget,
+  onStart,
+  step,
+}: {
+  isApplied: boolean;
+  isSourceSelected: boolean;
+  isTargetSelected: boolean;
+  onSelectSource: () => void;
+  onSelectTarget: () => void;
+  onStart: () => void;
+  step: "source" | "target" | null;
+}) {
+  return (
+    <div className="mt-4 rounded border border-casinoRed/45 bg-red-950/20 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
+            Copy Paste
+          </p>
+          <h4 className="mt-1 text-base font-black text-white">
+            青字のコピー元と上書き先を選択
+          </h4>
+        </div>
+        <button
+          className="min-h-10 rounded bg-casinoRed px-3 py-2 text-xs font-black text-white hover:bg-red-500"
+          onClick={onStart}
+          type="button"
+        >
+          対象選択開始
+        </button>
+      </div>
+      <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
+        コピー元はハイアンドローのルールにある青字の「ハイアンドロー」。上書き先は
+        riddle_4.png の中央から上にある青字です。
+      </p>
+      {step ? (
+        <p className="mt-2 rounded border border-casinoRed/50 bg-black/35 p-2 text-xs font-black leading-5 text-red-100">
+          {step === "source"
+            ? "コピー元の青字を押してください。"
+            : "上書き先の青字を押してください。"}
+        </p>
+      ) : null}
+
+      <div className="mt-3 grid gap-3">
+        <div className="rounded border border-white/12 bg-black/35 p-3 text-sm font-bold leading-6 text-stone-100">
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-100">
+            Copy Source
+          </p>
+          <p className="mt-2">
+            流れ ①ロボットが大小関係成り立たないよう先に置く ②プレイヤーが置く ③
+            <CopyPasteTarget
+              active={step === "source"}
+              isSelected={isSourceSelected}
+              label="ハイアンドローのルールの青字"
+              onSelect={onSelectSource}
+            >
+              ハイアンドロー
+            </CopyPasteTarget>
+            と宣言して判定する。
+          </p>
+        </div>
+
+        <div className="rounded border border-white/12 bg-white p-2 text-stone-950">
+          <p className="px-1 pb-2 text-[10px] font-black uppercase tracking-[0.16em] text-sky-500">
+            Paste Target
+          </p>
+          <div className="relative overflow-hidden rounded border border-stone-300 bg-white">
+            <Image
+              alt="コピーペースト上書き対象の小謎"
+              className={`h-auto w-full ${isApplied ? "opacity-45" : ""}`}
+              height={900}
+              src="/riddles/riddle_4.png"
+              width={1600}
+            />
+            <button
+              aria-label="riddle_4.png 中央上部の青字"
+              className={`absolute left-[40%] top-[5%] h-[10%] w-[23%] rounded border-2 transition ${
+                isTargetSelected
+                  ? "border-sky-500 bg-sky-400/25 shadow-[0_0_0_4px_rgba(14,165,233,0.28)]"
+                  : step === "target"
+                    ? "border-sky-500 bg-sky-400/15 hover:bg-sky-400/25"
+                    : "border-transparent bg-transparent"
+              }`}
+              onClick={(event) => {
+                event.preventDefault();
+                if (step === "target") {
+                  onSelectTarget();
+                }
+              }}
+              type="button"
+            >
+              <span className="absolute left-1 top-1 rounded bg-sky-500 px-2 py-1 text-[10px] font-black text-white">
+                {isTargetSelected ? "SELECTED" : step === "target" ? "選択" : ""}
+              </span>
+            </button>
+            {isApplied ? (
+              <div className="absolute inset-0 grid place-items-center bg-black/45 p-4">
+                <div className="rounded border border-red-200 bg-stone-950/90 p-4 text-center text-white shadow-2xl">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
+                    Dummy Preview
+                  </p>
+                  <p className="mt-2 text-sm font-black leading-6">
+                    コピーペースト変更後画像
+                    <br />
+                    ここは後で差し替え予定
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs font-black leading-5 text-stone-100">
+        <p>コピー元: {isSourceSelected ? "選択済み" : "未選択"}</p>
+        <p>上書き先: {isTargetSelected ? "選択済み" : "未選択"}</p>
+      </div>
+    </div>
+  );
+}
+
+function PlacementStyleSelector({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: PlacementStyle) => void;
+  value: PlacementStyle;
+}) {
+  const options: Array<{
+    id: PlacementStyle;
+    label: string;
+  }> = [
+    {
+      id: "gentle",
+      label: "そっとおく",
+    },
+    {
+      id: "snap",
+      label: "バシッと置く",
+    },
+  ];
+
+  return (
+    <div className="mt-3 rounded border border-white/10 bg-black/30 p-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+        {label}
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {options.map((option) => (
+          <button
+            aria-pressed={value === option.id}
+            className={`min-h-14 rounded border px-3 py-2 text-left transition ${
+              value === option.id
+                ? "border-brass bg-brass text-stone-950"
+                : "border-white/10 bg-white/8 text-white hover:bg-white/14"
+            }`}
+            key={option.id}
+            onClick={() => onChange(option.id)}
+            type="button"
+          >
+            <span className="block text-sm font-black">{option.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CardPlacementAnimation({
+  mode = "release",
+  styleType,
+}: {
+  mode?: "hold" | "release";
+  styleType: PlacementStyle;
+}) {
+  const isGentle = styleType === "gentle";
+  const animationClass = mode === "hold" ? "holdingHand" : isGentle ? "gentleHand" : "snapHand";
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center overflow-hidden">
+      <div className={animationClass}>
+        <Image
+          alt=""
+          className="object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.34)]"
+          fill
+          priority
+          sizes="144px"
+          src="/hand.png"
+        />
+      </div>
+      <style jsx>{`
+        .gentleHand,
+        .holdingHand,
+        .snapHand {
+          position: absolute;
+          height: 174px;
+          width: 154px;
+          transform-origin: center;
+        }
+
+        .holdingHand {
+          opacity: 1;
+          transform: translate(-4px, 8px) scale(1.18);
+        }
+
+        .gentleHand {
+          animation: gentle-place 760ms ease-out both;
+        }
+
+        .snapHand {
+          animation: snap-place 760ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+        }
+
+        @keyframes gentle-place {
+          0% {
+            opacity: 1;
+            transform: translate(-4px, 8px) scale(1.18);
+          }
+          38% {
+            opacity: 1;
+            transform: translate(-4px, 8px) scale(1.18);
+          }
+          62% {
+            opacity: 1;
+            transform: translate(-4px, -2px) scale(1.02);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(-4px, -36px) scale(1);
+          }
+        }
+
+        @keyframes snap-place {
+          0% {
+            opacity: 1;
+            transform: translate(-4px, 8px) rotate(-7deg) scale(1.18);
+          }
+          32% {
+            opacity: 1;
+            transform: translate(-4px, 8px) rotate(-7deg) scale(1.18);
+          }
+          48% {
+            transform: translate(-6px, -1px) rotate(-10deg) scale(1.02);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(-10px, -34px) rotate(-4deg) scale(1);
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function DraggingCardPreview({
+  card,
+  point,
+}: {
+  card: PlayingCard;
+  point: { x: number; y: number };
+}) {
+  return (
+    <div
+      className="pointer-events-none fixed z-[70] h-28 w-28"
+      style={{
+        left: point.x,
+        top: point.y,
+        transform: "translate(-42%, -48%)",
+      }}
+    >
+      <div className="absolute left-7 top-8 rotate-[-5deg]">
+        <PlayingCardView card={card} size="hand" />
+      </div>
+      <div className="absolute left-[-0.8rem] top-[-1.6rem] h-40 w-36 rotate-[-7deg]">
+        <Image
+          alt=""
+          className="object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.34)]"
+          fill
+          priority
+          sizes="144px"
+          src="/hand.png"
+        />
+      </div>
+    </div>
+  );
+}
+
+function HighlightedBlackjackRuleText() {
+  return (
+    <>
+      JQKは10、Aは
+      <span className="font-black text-sky-300">11</span>
+      として扱い、2〜9は数字の通り。手札から順番に出し、1枚目と2枚目の合計が21に近い方の勝ち。引き分けはあなたの負け。手札にある2枚目で21になる場合、1枚目にピッタリと重ねて2枚目を置き、
+      <span className="font-black text-sky-300">ブラックジャック</span>
+      と宣言する。
+    </>
+  );
+}
+
+function HighlightedHighLowRuleText() {
+  return (
+    <>
+      お互いに手札2枚ずつ用意。プレイヤーの勝利条件はカードの大小関係が成り立つこと。流れ
+      ①ロボットが大小関係成り立たないよう先に置く ②プレイヤーが置く ③
+      <span className="font-black text-sky-300">ハイアンドロー</span>
+      と宣言して判定する。
+    </>
+  );
+}
+
+function PokerRuleContent({
+  ruleText,
+  showRobotWinRate = false,
+}: {
+  ruleText: string;
+  showRobotWinRate?: boolean;
+}) {
+  return (
+    <>
+      {ruleText}
+      {showRobotWinRate ? (
+        <span className="mt-3 block rounded border border-sky-300/40 bg-sky-950/35 p-3 text-base font-black text-sky-100">
+          現在算出した勝率：0% / ベット：0chip
+        </span>
+      ) : null}
+      <span className="mt-3 block overflow-hidden rounded border border-white/12 bg-white p-1">
+        <Image
+          alt="4枚ポーカー役一覧"
+          className="h-auto w-full"
+          height={900}
+          src="/poker-hands-guide.svg"
+          width={1400}
+        />
+      </span>
+    </>
+  );
+}
+
+function PokerRobotSpecContent({
+  specText,
+  showBettingSpec = false,
+}: {
+  specText: string;
+  showBettingSpec?: boolean;
+}) {
+  return (
+    <>
+      {specText}
+      {showBettingSpec ? (
+        <span className="mt-3 block rounded border border-sky-300/40 bg-sky-950/35 p-3 font-bold text-sky-50">
+          コピーペースト機能解放と同時に開示:
+          <span className="mt-1 block">{pokerBettingSpecText}</span>
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function PokerBattle({
+  backHref,
+  hand,
+  onBack,
+  robot,
+  robotId,
+}: {
+  backHref: string;
+  hand: PlayingCard[];
+  onBack: () => void;
+  robot: Robot;
+  robotId: string;
+}) {
+  const config =
+    robotId in pokerBattleConfigs
+      ? pokerBattleConfigs[robotId as keyof typeof pokerBattleConfigs]
+      : null;
+  const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+  const [exchangeCardIds, setExchangeCardIds] = useState<string[]>([]);
+  const [isExchangeApplied, setIsExchangeApplied] = useState(false);
+  const [scannedPokerCardIds, setScannedPokerCardIds] = useState<string[]>([]);
+  const [pokerScanAnswer, setPokerScanAnswer] = useState("");
+  const [pokerScanIllustration, setPokerScanIllustration] = useState("");
+  const [pokerScanMessage, setPokerScanMessage] = useState("");
+  const [pokerScanPreviewSrc, setPokerScanPreviewSrc] = useState<string | null>(
+    null,
+  );
+  const [pokerPreparationAbility, setPokerPreparationAbility] =
+    useState<PreparationAbility>("exchange");
+  const [targetSelectionAbility, setTargetSelectionAbility] =
+    useState<TargetSelectionAbility | null>(null);
+  const [copyPasteStep, setCopyPasteStep] = useState<"source" | "target">(
+    "source",
+  );
+  const [copiedTargetId, setCopiedTargetId] = useState<string | null>(null);
+  const [pasteTargetId, setPasteTargetId] = useState<string | null>(null);
+  const [copyPasteFormat, setCopyPasteFormat] =
+    useState<CopyPasteFormat>("number");
+  const [isCopyPasteApplied, setIsCopyPasteApplied] = useState(false);
+  const exchangePairs = config ? [...config.exchangePairs] : [];
+  const maxExchanges = config ? config.maxExchanges : 1;
+  const maxExchangeCardSelections = maxExchanges * 2;
+  const scanRequirements =
+    config && "scanRequirements" in config ? [...config.scanRequirements] : [];
+  const maxScans =
+    config && "maxScans" in config ? config.maxScans : scanRequirements.length;
+  const isPokerSecondBattle = robotId === "poker-3-2";
+  const isPokerThirdBattle = robotId === "poker-3-3";
+  const isFinalAllGamesBattle = robotId === "all-games-last";
+  const maxCopyPastes =
+    config && "maxCopyPastes" in config ? config.maxCopyPastes : 0;
+  const copyPasteTargets =
+    config && "copyPasteTargets" in config ? [...config.copyPasteTargets] : [];
+  const copiedTarget = copyPasteTargets.find(
+    (target) => target.id === copiedTargetId,
+  );
+  const pasteTarget = copyPasteTargets.find(
+    (target) => target.id === pasteTargetId,
+  );
+  const copyPasteFormatLabel: Record<CopyPasteFormat, string> = {
+    hiragana: "平仮名",
+    katakana: "カタカナ",
+    kanji: "漢字",
+    number: "数字",
+  };
+  const isCorrectExchange =
+    config !== null &&
+    maxExchanges > 0 &&
+    exchangePairs.every(
+      (pair) =>
+        exchangeCardIds.includes(pair.firstCardId) &&
+        exchangeCardIds.includes(pair.secondCardId),
+    ) &&
+    scanRequirements.every((requirement) =>
+      scannedPokerCardIds.includes(requirement.cardId),
+    );
+  const playerHandIds =
+    config && isExchangeApplied
+      ? applyExchangePairs([...config.initialPlayerHandIds], exchangePairs)
+      : config
+        ? [...config.initialPlayerHandIds]
+        : hand.map((card) => card.id);
+  const blackjackRobotHandIds =
+    config && isPokerThirdBattle && isCopyPasteApplied
+      ? [...config.blackjackRobotHandIds].map((cardId) =>
+          cardId === "A-spade" ? "scan-0" : cardId,
+        )
+      : config && isExchangeApplied
+      ? applyExchangePairs([...config.blackjackRobotHandIds], exchangePairs)
+      : config
+        ? [...config.blackjackRobotHandIds]
+        : [];
+  const playerHand = getCardsById(playerHandIds, generatedScanCards);
+  const robotHand = getCardsById(
+    config
+      ? [...config.initialRobotHandIds]
+      : robotId === "poker-3-2"
+        ? ["K-crub", "Q-heart"]
+        : ["Q-crub", "J-heart"],
+    generatedScanCards,
+  );
+  const fieldCards = getCardsById(
+    config
+      ? [...config.fieldCardIds]
+      : ["A-spade", "K-heart", "Q-daia", "J-crub", "A-daia"],
+    generatedScanCards,
+  );
+  const highLowRobotHand = config
+    ? getCardsById([...config.highLowRobotHandIds], generatedScanCards)
+    : [];
+  const blackjackRobotHand = getCardsById(blackjackRobotHandIds, generatedScanCards);
+  const scannedPokerCards = getCardsById(scannedPokerCardIds, generatedScanCards);
+  const selectableCards = [...playerHand, ...fieldCards];
+  const visiblePokerCardIds = new Set(
+    [
+      ...playerHand,
+      ...robotHand,
+      ...fieldCards,
+      ...highLowRobotHand,
+      ...blackjackRobotHand,
+    ].map((card) => card.id),
+  );
+  const remainingDeckCards = deck.filter(
+    (card) => !visiblePokerCardIds.has(card.id),
+  );
+  const exchangeSections: ExchangeCardSection[] = isPokerSecondBattle
+    ? [
+        {
+          cards: scannedPokerCards,
+          id: "scan-generated",
+          label: "スキャン生成カード",
+        },
+        {
+          cards: playerHand,
+          id: "player-hand",
+          label: "プレイヤーの手札",
+        },
+        {
+          cards: blackjackRobotHand,
+          id: "blackjack-robot-hand",
+          label: "ブラックジャックのロボット手札",
+        },
+      ]
+    : [
+        {
+          cards: playerHand,
+          id: "player-hand",
+          label: "プレイヤーの手札",
+        },
+        ...(highLowRobotHand.length > 0
+          ? [
+              {
+                cards: highLowRobotHand,
+                id: "high-low-robot-hand",
+                label: "ハイアンドローのロボット手札",
+              },
+            ]
+          : []),
+        ...(blackjackRobotHand.length > 0
+          ? [
+              {
+                cards: blackjackRobotHand,
+                id: "blackjack-robot-hand",
+                label: "ブラックジャックのロボット手札",
+              },
+            ]
+          : []),
+        {
+          cards: remainingDeckCards,
+          id: "deck",
+          label: "山札",
+        },
+      ];
+
+  function resolvePokerScan() {
+    const answer = pokerScanAnswer.trim();
+    const illustration = normalizeScanIllustrationName(pokerScanIllustration);
+    const requirement = scanRequirements.find(
+      (item) =>
+        item.answer === answer &&
+        normalizeScanIllustrationName(item.illustration) === illustration,
+    );
+
+    if (!requirement) {
+      setPokerScanPreviewSrc(null);
+      setPokerScanMessage("この答えと対象イラストでは、カードを生成できません。");
+      return;
+    }
+
+    if (scannedPokerCardIds.includes(requirement.cardId)) {
+      setPokerScanPreviewSrc(requirement.targetImageSrc);
+      setPokerScanMessage("同じ小謎と対象は、すでにスキャン済みです。");
+      return;
+    }
+
+    if (scannedPokerCardIds.length >= maxScans) {
+      setPokerScanPreviewSrc(null);
+      setPokerScanMessage(`この戦いでスキャンできるのは${maxScans}回までです。`);
+      return;
+    }
+
+    setScannedPokerCardIds((current) => [...current, requirement.cardId]);
+    setPokerScanPreviewSrc(requirement.targetImageSrc);
+    setPokerScanAnswer("");
+    setPokerScanIllustration("");
+    setPokerScanMessage(
+      `${generatedScanCards[requirement.cardId].rank}のカードを生成しました。エクスチェンジの候補に追加されます。`,
+    );
+  }
+
+  function toggleSelectedCard(cardId: string) {
+    setSelectedCardIds((current) => {
+      if (current.includes(cardId)) {
+        return current.filter((id) => id !== cardId);
+      }
+
+      return [...current, cardId].slice(-2);
+    });
+  }
+
+  function toggleExchangeCard(cardId: string) {
+    if (maxExchangeCardSelections === 0) {
+      return;
+    }
+
+    setIsExchangeApplied(false);
+    setExchangeCardIds((current) => {
+      if (current.includes(cardId)) {
+        return current.filter((id) => id !== cardId);
+      }
+
+      return [...current, cardId].slice(-maxExchangeCardSelections);
+    });
+  }
+
+  function handleCopyPasteTargetSelect(targetId: string) {
+    if (copyPasteStep === "source") {
+      setCopiedTargetId(targetId);
+      setPasteTargetId(null);
+      setCopyPasteStep("target");
+      return;
+    }
+
+    if (targetId === copiedTargetId) {
+      return;
+    }
+
+    setPasteTargetId(targetId);
+    setTargetSelectionAbility(null);
+    setIsCopyPasteApplied(true);
+  }
+
+  return (
+    <div
+      className={`relative min-h-[620px] bg-[#071b12] text-white ${
+        targetSelectionAbility === "exchange"
+          ? "ring-4 ring-inset ring-cyan-400"
+          : targetSelectionAbility === "copy-paste"
+            ? "ring-4 ring-inset ring-casinoRed"
+            : ""
+      }`}
+    >
+      {targetSelectionAbility ? (
+        <div
+          className={`fixed inset-x-3 top-3 z-50 rounded border px-4 py-3 text-sm font-black shadow-2xl ${
+            targetSelectionAbility === "exchange"
+              ? "border-cyan-200 bg-cyan-950 text-cyan-50"
+              : "border-red-200 bg-red-950 text-red-50"
+          }`}
+        >
+          {targetSelectionAbility === "exchange"
+            ? "エクスチェンジ対象選択中です。対象カードを長押ししてください。"
+            : copyPasteStep === "source"
+              ? "コピー元の青字を押してください。"
+              : "上書き先の青字を押してください。"}
+        </div>
+      ) : null}
+      <div className="flex items-center gap-3 border-b border-white/10 bg-black/28 p-4">
+        <a
+          aria-label="戻る"
+          className="grid h-12 w-12 shrink-0 place-items-center rounded border border-white/30 bg-black/30 hover:bg-white/10"
+          href={backHref}
+          onClick={(event) => {
+            event.preventDefault();
+            onBack();
+          }}
+        >
+          <ArrowLeft size={18} />
+        </a>
+        <GameLogo gameType="poker" compact />
+      </div>
+
+      <div className="grid gap-3 p-4 sm:grid-cols-[1fr_220px]">
+        <section className="rounded border border-white/12 bg-black/28 p-3">
+          <div className="grid gap-3">
+            <PokerCardGroup cards={robotHand} label="POKER ROBOT HAND" />
+            <PokerSelectableGroup
+              cards={fieldCards}
+              label="SHARED FIELD"
+              onToggle={toggleSelectedCard}
+              selectedCardIds={selectedCardIds}
+            />
+            <PokerSelectableGroup
+              cards={playerHand}
+              label="PLAYER HAND"
+              onToggle={toggleSelectedCard}
+              selectedCardIds={selectedCardIds}
+            />
+            {highLowRobotHand.length > 0 ? (
+              <PokerCardGroup
+                cards={highLowRobotHand}
+                label="HIGH AND LOW ROBOT HAND"
+              />
+            ) : null}
+            {blackjackRobotHand.length > 0 ? (
+              isPokerThirdBattle ? (
+                <PokerCardGroup
+                  cards={blackjackRobotHand}
+                  copyPasteTarget={{
+                    active:
+                      targetSelectionAbility === "copy-paste" &&
+                      copyPasteStep === "target" &&
+                      !isCopyPasteApplied,
+                    cardId: "A-spade",
+                    isSelected: pasteTargetId === "paste-blackjack-ace",
+                    label: "ブラックジャックロボットのA",
+                    onSelect: () =>
+                      handleCopyPasteTargetSelect("paste-blackjack-ace"),
+                  }}
+                  label="BLACKJACK ROBOT HAND"
+                />
+              ) : (
+                <PokerCardGroup
+                  cards={blackjackRobotHand}
+                  label="BLACKJACK ROBOT HAND"
+                />
+              )
+            ) : null}
+          </div>
+
+          <div className="mt-4 rounded border border-brass/60 bg-black/50 p-4">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+              Selected Hand
+            </p>
+            <div className="mt-3 flex min-h-28 items-center justify-center gap-3 rounded border border-dashed border-white/20 bg-black/25 p-3">
+              {selectedCardIds.length > 0 ? (
+                selectedCardIds.map((cardId) => {
+                  const card = selectableCards.find((item) => item.id === cardId);
+
+                  return card ? (
+                    <PlayingCardView card={card} key={card.id} size="hand" />
+                  ) : null;
+                })
+              ) : (
+                <p className="text-center text-sm font-bold leading-6 text-stone-400">
+                  手札2枚とフィールド{fieldCards.length}枚から、役に使う2枚を選択します。
+                </p>
+              )}
+            </div>
+            <p className="mt-3 text-sm font-bold leading-6 text-stone-100">
+              {selectedCardIds.length === 2
+                ? "2枚選択済みです。役判定は今後の謎内容に合わせて接続します。"
+                : "2枚選択してください。"}
+            </p>
+          </div>
+
+          {config ? (
+            <div className="mt-4 rounded border border-emerald-400/45 bg-emerald-950/30 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Win Route
+              </p>
+              <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
+                {isExchangeApplied || isCopyPasteApplied
+                  ? config.successText
+                  : isFinalAllGamesBattle
+                    ? config.successText
+                  : isPokerSecondBattle
+                    ? "riddle_3.pngで0、riddle_4.pngでAをスキャン生成し、生成カードを使って2回エクスチェンジすると勝てる形になります。"
+                    : isPokerThirdBattle
+                      ? "先にコピペ解放小謎を解き、青字の0をブラックジャックロボットのAへ数字書式で上書きすると勝てる形になります。"
+                    : "自分のクイーンとブラックジャックロボットのキング1枚をエクスチェンジすると、3つのゲームすべてで勝てる形になります。"}
+              </p>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="flex flex-col gap-3 rounded border border-white/12 bg-black/28 p-3">
+          <div className="rounded border border-brass/45 bg-brass/10 p-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+              Preparation
+            </p>
+            {isFinalAllGamesBattle ? (
+              <div className="mt-3 rounded border border-emerald-300/45 bg-emerald-950/30 p-3 text-sm font-bold leading-6 text-emerald-100">
+                <p className="font-black">ファイナル事前準備は反映済みです。</p>
+                <p className="mt-2">
+                  ブラックジャック宣言のタイミングで発動したエクスチェンジにより、ポーカーではKフォーカードを作れる状態になっています。ポーカーロボット側もオールインします。
+                </p>
+              </div>
+            ) : isPokerThirdBattle ? (
+              <>
+                <AbilityUsageTabs
+                  activeAbility={pokerPreparationAbility}
+                  counts={{
+                    "copy-paste": maxCopyPastes,
+                    exchange: maxExchanges,
+                    scan: maxScans,
+                  }}
+                  onSelect={setPokerPreparationAbility}
+                />
+                <div className="mt-3 rounded border border-sky-300/40 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
+                  コピーペースト機能解放と同時に、ポーカーの賭け仕様が開示されました。ポーカーでは賭ける要素が新たに発生し、プレイヤーは問答無用でオールインになります。
+                </div>
+                {pokerPreparationAbility === "exchange" ? (
+                  <DisabledAbilityNotice
+                    abilityName="エクスチェンジ"
+                    tone="exchange"
+                  />
+                ) : null}
+                {pokerPreparationAbility === "scan" ? (
+                  <DisabledAbilityNotice abilityName="スキャン" tone="scan" />
+                ) : null}
+                {pokerPreparationAbility === "copy-paste" ? (
+                  <CopyPastePreparationPanel
+                    copiedTarget={copiedTarget}
+                    format={copyPasteFormat}
+                    formatLabel={copyPasteFormatLabel[copyPasteFormat]}
+                    isApplied={isCopyPasteApplied}
+                    maxCopyPastes={maxCopyPastes}
+                    onChooseFormat={setCopyPasteFormat}
+                    onSelectSource={() =>
+                      handleCopyPasteTargetSelect("copy-red-unlock-zero")
+                    }
+                    onStart={() => {
+                      setCopyPasteStep("source");
+                      setCopiedTargetId(null);
+                      setPasteTargetId(null);
+                      setIsCopyPasteApplied(false);
+                      setTargetSelectionAbility("copy-paste");
+                    }}
+                    pasteTarget={pasteTarget}
+                    sourceActive={
+                      targetSelectionAbility === "copy-paste" &&
+                      copyPasteStep === "source"
+                    }
+                  />
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-sm font-black text-stone-100">
+                  エクスチェンジ使用可能回数: {maxExchanges}回 / スキャン使用可能回数:{" "}
+                  {maxScans}回
+                </p>
+                {maxExchanges > 0 ? (
+                  <button
+                    className="mt-3 min-h-10 w-full rounded border border-cyan-200/60 bg-cyan-950/45 px-3 py-2 text-sm font-black text-cyan-50 hover:bg-cyan-900"
+                    onClick={() => setTargetSelectionAbility("exchange")}
+                    type="button"
+                  >
+                    エクスチェンジ対象選択モード
+                  </button>
+                ) : null}
+              </>
+            )}
+            {!isPokerThirdBattle ? (
+              <>
+            <ExchangeRuleList
+              disabledTargets={
+                isPokerSecondBattle
+                  ? ["robot-hand", "deck", "field"]
+                  : ["robot-hand", "field"]
+              }
+              showDeckTarget
+              showFieldTarget
+              targetLabels={{
+                deck: "山札",
+                field: "フィールド",
+                "robot-hand": "ポーカーのロボットの手札",
+              }}
+            />
+            {config ? (
+              <>
+                {scanRequirements.length > 0 ? (
+                  <div className="mt-4 rounded border border-cyan-300/35 bg-cyan-950/25 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-100">
+                        Scan
+                      </p>
+                      <p className="text-xs font-black text-cyan-100">
+                        {scannedPokerCardIds.length}/{maxScans}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
+                      小謎の答えと対象イラストの呼称を入力すると、カードを生成できます。生成したカードは下のエクスチェンジ候補に追加されます。
+                    </p>
+                    <div className="mt-3 grid gap-3">
+                      {scanRequirements.map((requirement, index) => (
+                        <div
+                          className="overflow-hidden rounded border border-white/15 bg-white"
+                          key={requirement.riddleSrc}
+                        >
+                          <Image
+                            alt={`スキャン用小謎 ${index + 1}`}
+                            className="h-auto w-full"
+                            height={900}
+                            src={requirement.riddleSrc}
+                            width={1600}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 grid gap-2">
+                      <label className="grid gap-1 text-xs font-black uppercase tracking-[0.14em] text-cyan-100">
+                        小謎の答え
+                        <input
+                          className="min-h-11 rounded border border-white/20 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-cyan-200"
+                          onChange={(event) => setPokerScanAnswer(event.target.value)}
+                          placeholder="例: フエ"
+                          type="text"
+                          value={pokerScanAnswer}
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-black uppercase tracking-[0.14em] text-cyan-100">
+                        対象イラスト
+                        <input
+                          className="min-h-11 rounded border border-white/20 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-cyan-200"
+                          onChange={(event) =>
+                            setPokerScanIllustration(event.target.value)
+                          }
+                          placeholder="例: イチ　ゴ"
+                          type="text"
+                          value={pokerScanIllustration}
+                        />
+                      </label>
+                      <button
+                        className="min-h-11 rounded bg-cyan-200 px-4 text-sm font-black text-stone-950 hover:bg-cyan-100"
+                        onClick={resolvePokerScan}
+                        type="button"
+                      >
+                        スキャン実行
+                      </button>
+                    </div>
+                    {pokerScanMessage ? (
+                      <div className="mt-3 rounded border border-white/15 bg-black/25 p-3">
+                        {pokerScanPreviewSrc ? (
+                          <ScanTargetPreview
+                            alt="今回スキャンした対象"
+                            src={pokerScanPreviewSrc}
+                          />
+                        ) : null}
+                        <p className="mt-3 text-sm font-bold leading-6 text-cyan-50">
+                          {pokerScanMessage}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <ExchangeCardSectionPicker
+                  longPressMode={targetSelectionAbility === "exchange"}
+                  sections={exchangeSections}
+                  selectedCardIds={exchangeCardIds}
+                  onToggleCard={(cardId) => {
+                    toggleExchangeCard(cardId);
+                    if (
+                      targetSelectionAbility === "exchange" &&
+                      exchangeCardIds.length + 1 >= maxExchangeCardSelections
+                    ) {
+                      setTargetSelectionAbility(null);
+                    }
+                  }}
+                />
+                {exchangeCardIds.length === maxExchangeCardSelections &&
+                !isCorrectExchange ? (
+                  <p className="mt-3 rounded border border-casinoRed/50 bg-casinoRed/15 p-3 text-sm font-bold leading-6 text-red-100">
+                    この組み合わせでは、3つのゲームすべてを勝てる形にはならなさそうです。
+                  </p>
+                ) : null}
+                <button
+                  className={`mt-3 min-h-12 w-full rounded px-4 py-3 text-sm font-black ${
+                    isExchangeApplied
+                      ? "bg-emerald-500 text-stone-950"
+                      : exchangeCardIds.length === maxExchangeCardSelections &&
+                          isCorrectExchange
+                        ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                        : "cursor-not-allowed bg-stone-700 text-stone-400"
+                  }`}
+                  disabled={
+                    exchangeCardIds.length !== maxExchangeCardSelections ||
+                    !isCorrectExchange
+                  }
+                  onClick={() => setIsExchangeApplied(true)}
+                  type="button"
+                >
+                  {isExchangeApplied
+                    ? `交換済み: ${maxExchanges}回`
+                    : `エクスチェンジ決定 (${exchangeCardIds.length}/${maxExchangeCardSelections})`}
+                </button>
+              </>
+            ) : null}
+              </>
+            ) : null}
+          </div>
+          <div className="rounded border border-white/10 bg-white/6 p-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+              Robot Logic
+            </p>
+            {isPokerThirdBattle ? (
+              <p className="mt-2 text-sm leading-6 text-stone-200">
+                <PokerRobotSpecContent
+                  specText={robot.specText}
+                  showBettingSpec
+                />
+              </p>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-stone-200">
+                {robot.specText}
+              </p>
+            )}
+          </div>
+          <div className="rounded border border-white/10 bg-white/6 p-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+              Rule
+            </p>
+            {isPokerThirdBattle ? (
+              <p className="mt-2 text-sm leading-6 text-stone-200">
+                {robot.gameType === "high-low" ? (
+                  <HighlightedHighLowRuleText />
+                ) : robot.gameType === "poker" ? (
+                  <PokerRuleContent
+                    ruleText={robot.ruleText}
+                    showRobotWinRate={isPokerThirdBattle}
+                  />
+                ) : (
+                  robot.ruleText
+                )}
+              </p>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-stone-200">
+                {robot.gameType === "high-low" ? (
+                  <HighlightedHighLowRuleText />
+                ) : robot.gameType === "poker" ? (
+                  <PokerRuleContent
+                    ruleText={robot.ruleText}
+                    showRobotWinRate={isPokerThirdBattle}
+                  />
+                ) : (
+                  robot.ruleText
+                )}
+              </p>
+            )}
+          </div>
+          <button
+            className={`min-h-12 rounded px-4 py-3 text-sm font-black ${
+              selectedCardIds.length === 2
+                ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                : "cursor-not-allowed bg-stone-700 text-stone-400"
+            }`}
+            disabled={selectedCardIds.length !== 2}
+            type="button"
+          >
+            役を決定
+          </button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function AbilityUsageTabs({
+  activeAbility,
+  counts,
+  onSelect,
+}: {
+  activeAbility: PreparationAbility;
+  counts: Record<PreparationAbility, number>;
+  onSelect: (ability: PreparationAbility) => void;
+}) {
+  const labels: Record<PreparationAbility, string> = {
+    "copy-paste": "コピーペースト",
+    exchange: "エクスチェンジ",
+    scan: "スキャン",
+  };
+
+  return (
+    <div className="mt-3 grid grid-cols-3 gap-2">
+      {(["exchange", "scan", "copy-paste"] as const).map((ability) => {
+        const active = activeAbility === ability;
+
+        return (
+          <button
+            className={`min-h-12 rounded border px-2 py-2 text-xs font-black leading-5 ${
+              active
+                ? "border-brass bg-brass text-stone-950"
+                : "border-white/10 bg-white/8 text-white hover:bg-white/14"
+            }`}
+            key={ability}
+            onClick={() => onSelect(ability)}
+            type="button"
+          >
+            {labels[ability]}
+            <span className="block text-[11px]">残{counts[ability]}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function DisabledAbilityNotice({
+  abilityName,
+  tone,
+}: {
+  abilityName: string;
+  tone: "exchange" | "scan";
+}) {
+  return (
+    <div
+      className={`mt-3 rounded border p-3 text-sm font-bold leading-6 ${
+        tone === "exchange"
+          ? "border-cyan-300/35 bg-cyan-950/25 text-cyan-50"
+          : "border-white/15 bg-black/25 text-stone-200"
+      }`}
+    >
+      {abilityName}の使用可能回数は0です。この戦いでは使用できません。
+    </div>
+  );
+}
+
+function CopyPastePreparationPanel({
+  copiedTarget,
+  format,
+  formatLabel,
+  isApplied,
+  maxCopyPastes,
+  onChooseFormat,
+  onSelectSource,
+  onStart,
+  pasteTarget,
+  sourceActive,
+}: {
+  copiedTarget?: { label: string; text: string };
+  format: CopyPasteFormat;
+  formatLabel: string;
+  isApplied: boolean;
+  maxCopyPastes: number;
+  onChooseFormat: (format: CopyPasteFormat) => void;
+  onSelectSource: () => void;
+  onStart: () => void;
+  pasteTarget?: { label: string; text: string };
+  sourceActive: boolean;
+}) {
+  const formatOptions: Array<{ id: CopyPasteFormat; label: string }> = [
+    { id: "hiragana", label: "平仮名" },
+    { id: "katakana", label: "カタカナ" },
+    { id: "kanji", label: "漢字" },
+    { id: "number", label: "数字" },
+  ];
+
+  return (
+    <div className="mt-3 rounded border border-casinoRed/50 bg-red-950/20 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
+          Copy Paste
+        </p>
+        <p className="text-xs font-black text-red-100">残{maxCopyPastes}</p>
+      </div>
+      <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
+        青字をコピーし、別の青字へ上書きペーストします。ペースト時の書式は自由に選択できます。
+      </p>
+      <div className="mt-3 rounded border border-white/15 bg-black/30 p-3 text-sm font-bold leading-6 text-stone-100">
+        コピペ解放小謎で得た青字:
+        <CopyPasteTarget
+          active={sourceActive && !copiedTarget}
+          isSelected={copiedTarget?.text === "0"}
+          label="コピペ解放小謎: 0"
+          onSelect={onSelectSource}
+        >
+          0
+        </CopyPasteTarget>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {formatOptions.map((option) => (
+          <button
+            className={`min-h-10 rounded border px-3 py-2 text-sm font-black ${
+              format === option.id
+                ? "border-red-100 bg-red-200 text-stone-950"
+                : "border-white/10 bg-white/8 text-white hover:bg-white/14"
+            }`}
+            key={option.id}
+            onClick={() => onChooseFormat(option.id)}
+            type="button"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <button
+        className="mt-3 min-h-11 w-full rounded bg-casinoRed px-4 text-sm font-black text-white hover:bg-red-500"
+        disabled={maxCopyPastes === 0}
+        onClick={onStart}
+        type="button"
+      >
+        対象選択を開始
+      </button>
+      <div className="mt-3 grid gap-2 text-sm font-bold leading-6 text-stone-100">
+        <p>コピー元: {copiedTarget ? copiedTarget.label : "未選択"}</p>
+        <p>上書き先: {pasteTarget ? pasteTarget.label : "未選択"}</p>
+        <p>書式: {formatLabel}</p>
+      </div>
+      {isApplied && copiedTarget && pasteTarget ? (
+        <p className="mt-3 rounded border border-emerald-300/45 bg-emerald-950/40 p-3 text-sm font-black leading-6 text-emerald-100">
+          {copiedTarget.text} を {formatLabel} として {pasteTarget.text} に上書きしました。
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function CopyPasteTarget({
+  active,
+  children,
+  isSelected,
+  label,
+  onSelect,
+}: {
+  active: boolean;
+  children: string;
+  isSelected: boolean;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={`mx-1 rounded px-1 font-black text-sky-300 underline decoration-sky-300 decoration-2 underline-offset-4 transition ${
+        active ? "bg-sky-400/25 ring-2 ring-sky-300" : ""
+      } ${isSelected ? "bg-sky-200 text-stone-950" : ""}`}
+      onClick={(event) => {
+        event.preventDefault();
+        if (active) {
+          onSelect();
+        }
+      }}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
+function PokerCardGroup({
+  cards,
+  copyPasteTarget,
+  label,
+}: {
+  cards: PlayingCard[];
+  copyPasteTarget?: {
+    active: boolean;
+    cardId: string;
+    isSelected: boolean;
+    label: string;
+    onSelect: () => void;
+  };
+  label: string;
+}) {
+  return (
+    <div className="rounded border border-white/10 bg-black/35 p-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+        {label}
+      </p>
+      <div className="mt-3 flex min-h-32 flex-wrap items-center justify-center gap-3 rounded border border-white/8 bg-emerald-950/25 p-3">
+        {cards.map((card) =>
+          copyPasteTarget && card.id === copyPasteTarget.cardId ? (
+            <CopyPasteCardTarget
+              card={card}
+              key={card.id}
+              target={copyPasteTarget}
+            />
+          ) : (
+            <PlayingCardView card={card} key={card.id} size="zone" />
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CopyPasteCardTarget({
+  card,
+  target,
+}: {
+  card: PlayingCard;
+  target: {
+    active: boolean;
+    isSelected: boolean;
+    label: string;
+    onSelect: () => void;
+  };
+}) {
+  return (
+    <button
+      aria-label={target.label}
+      className={`rounded border p-1 transition ${
+        target.isSelected
+          ? "border-sky-200 bg-sky-200/30 ring-4 ring-sky-400/60"
+          : target.active
+            ? "border-sky-300 bg-sky-300/20 hover:bg-sky-300/30"
+            : "border-transparent bg-transparent"
+      }`}
+      onClick={(event) => {
+        event.preventDefault();
+        if (target.active) {
+          target.onSelect();
+        }
+      }}
+      type="button"
+    >
+      <PlayingCardView card={card} size="zone" />
+    </button>
+  );
+}
+
+function PokerSelectableGroup({
+  cards,
+  label,
+  onToggle,
+  selectedCardIds,
+}: {
+  cards: PlayingCard[];
+  label: string;
+  onToggle: (cardId: string) => void;
+  selectedCardIds: string[];
+}) {
+  return (
+    <div className="rounded border border-white/10 bg-black/35 p-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+        {label}
+      </p>
+      <div className="mt-3 flex min-h-32 flex-wrap items-center justify-center gap-3 rounded border border-white/8 bg-emerald-950/25 p-3">
+        {cards.map((card) => {
+          const selected = selectedCardIds.includes(card.id);
+
+          return (
+            <button
+              aria-pressed={selected}
+              className={`rounded p-1 transition ${
+                selected
+                  ? "bg-emerald-400 shadow-[0_0_0_3px_rgba(16,185,129,0.45)]"
+                  : "bg-transparent hover:bg-white/10"
+              }`}
+              key={card.id}
+              onClick={() => onToggle(card.id)}
+              type="button"
+            >
+              <PlayingCardView card={card} size="zone" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ExchangeCardSectionPicker({
+  longPressMode = false,
+  onToggleCard,
+  sections,
+  selectedCardIds,
+}: {
+  longPressMode?: boolean;
+  onToggleCard: (cardId: string) => void;
+  sections: ExchangeCardSection[];
+  selectedCardIds: string[];
+}) {
+  const visibleSections = sections.filter((section) => section.cards.length > 0);
+
+  return (
+    <div className="mt-4 grid gap-3">
+      {visibleSections.map((section) => (
+        <section
+          className="rounded border border-white/10 bg-black/25 p-3"
+          key={section.id}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+              {section.label}
+            </p>
+            <p className="text-xs font-bold text-stone-400">
+              {section.cards.length}枚
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap justify-center gap-3">
+            {section.cards.map((card) => (
+              <ExchangeCardButton
+                card={card}
+                key={`${section.id}-${card.id}`}
+                longPressMode={longPressMode}
+                onSelect={() => onToggleCard(card.id)}
+                selected={selectedCardIds.includes(card.id)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function ExchangeCardButton({
+  card,
+  longPressMode,
+  onSelect,
+  selected,
+}: {
+  card: PlayingCard;
+  longPressMode: boolean;
+  onSelect: () => void;
+  selected: boolean;
+}) {
+  const timerRef = useRef<number | null>(null);
+
+  function clearLongPress() {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function startLongPress() {
+    if (!longPressMode) {
+      return;
+    }
+
+    clearLongPress();
+    timerRef.current = window.setTimeout(() => {
+      onSelect();
+      timerRef.current = null;
+    }, 520);
+  }
+
+  return (
+    <button
+      aria-pressed={selected}
+      className={`rounded border p-1 transition ${
+        selected
+          ? "border-brass bg-brass/20 ring-4 ring-brass/45"
+          : longPressMode
+            ? "border-cyan-300 bg-cyan-300/15 hover:bg-cyan-300/25"
+            : "border-white/10 bg-white/5 hover:bg-white/10"
+      }`}
+      onClick={() => {
+        if (!longPressMode) {
+          onSelect();
+        }
+      }}
+      onPointerCancel={clearLongPress}
+      onPointerDown={startLongPress}
+      onPointerLeave={clearLongPress}
+      onPointerUp={clearLongPress}
+      type="button"
+    >
+      <PlayingCardView card={card} size="hand" />
+    </button>
   );
 }
 
@@ -1060,6 +4185,7 @@ function HighLowBattle({
   stageId: number;
 }) {
   const isTutorial = stageId === 1 && robotId === HIGH_LOW_TUTORIAL_ROBOT_ID;
+  const isFinalHighLowBattle = robotId === "all-games-last";
   const highLowConfig =
     robotId in highLowBattleConfigs
       ? highLowBattleConfigs[robotId as keyof typeof highLowBattleConfigs]
@@ -1071,17 +4197,19 @@ function HighLowBattle({
     ? getCardsById([...highLowConfig.initialRobotHandIds])
     : hand.slice().reverse();
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+  const [dragPreviewPoint, setDragPreviewPoint] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [playerPlacedCardId, setPlayerPlacedCardId] = useState<string | null>(
     null,
   );
-  const [gunResult, setGunResult] = useState<GunResult | null>(null);
-  const [battleStarted, setBattleStarted] = useState(false);
-  const [canPlaceCard, setCanPlaceCard] = useState(false);
+  const [battleStarted, setBattleStarted] = useState(true);
+  const [canPlaceCard, setCanPlaceCard] = useState(true);
   const [robotZone, setRobotZone] = useState<HighLowZoneName | null>(
-    null,
+    () => getRobotOpeningZone({ isExchangeCorrect: false, isFinalHighLowBattle, isTutorial }),
   );
   const [playerZone, setPlayerZone] = useState<HighLowZoneName | null>(null);
-  const [isGunDialogOpen, setIsGunDialogOpen] = useState(false);
   const [showPreparationVehicle, setShowPreparationVehicle] = useState(false);
   const [showPreparation, setShowPreparation] = useState(false);
   const [showPreparationIntro, setShowPreparationIntro] = useState(true);
@@ -1091,6 +4219,13 @@ function HighLowBattle({
   const [exchangeCardIds, setExchangeCardIds] = useState<string[]>([]);
   const [exchangeConfirmed, setExchangeConfirmed] = useState(false);
   const [exchangeApplied, setExchangeApplied] = useState(false);
+  const [placementAnimation, setPlacementAnimation] = useState<{
+    mode: "hold" | "release";
+    styleType: PlacementStyle;
+    zone: HighLowZoneName;
+  } | null>(null);
+  const [placementPendingConfirm, setPlacementPendingConfirm] = useState(false);
+  const [placementConfirmed, setPlacementConfirmed] = useState(false);
   const isExchangeCorrect =
     Boolean(highLowConfig) &&
     exchangeConfirmed &&
@@ -1099,7 +4234,9 @@ function HighLowBattle({
     ) === true;
   const isExchangeApplied = isExchangeCorrect && exchangeApplied;
   const requiresExchangeBeforeStart =
-    Boolean(highLowConfig) && (!isTutorial || hasEnteredPreparation);
+    Boolean(highLowConfig) &&
+    !isFinalHighLowBattle &&
+    (!isTutorial || hasEnteredPreparation);
   const exchangedPlayerHandIds =
     isExchangeApplied && highLowConfig
       ? swapSelectedCardIds(
@@ -1130,6 +4267,9 @@ function HighLowBattle({
         robotHand.find((card) => card.rank === "A")
       : null;
   const defaultRobotCard =
+    isFinalHighLowBattle
+      ? robotHand.find((card) => card.rank === "K") ?? robotHand[0]
+      :
     configuredRobotHighCard ??
     (isTutorial ? initialRobotHand.find((card) => card.rank === "K") : robotHand[0]);
   const defaultPlayerCard = isTutorial
@@ -1137,57 +4277,14 @@ function HighLowBattle({
     : playerHand[0];
   const robotPlacedCard = defaultRobotCard ?? null;
   const playerDefaultCard = defaultPlayerCard ?? null;
-
-  useEffect(() => {
-    if (!isGunDialogOpen || !battleStarted) {
-      return;
-    }
-
-    const fireTimer = window.setTimeout(() => {
-      setGunResult("fire");
-    }, GUN_AUTO_FIRE_DELAY_MS);
-
-    const closeTimer = window.setTimeout(() => {
-      setRobotZone(
-        isTutorial || isExchangeCorrect
-          ? "HIGH"
-          : Math.random() > 0.5
-            ? "HIGH"
-            : "LOW",
-      );
-      setCanPlaceCard(true);
-      setIsGunDialogOpen(false);
-    }, GUN_CUTIN_CLOSE_DELAY_MS);
-
-    return () => {
-      window.clearTimeout(fireTimer);
-      window.clearTimeout(closeTimer);
-    };
-  }, [battleStarted, isExchangeCorrect, isGunDialogOpen, isTutorial]);
+  const visibleRobotHand = robotPlacedCard
+    ? robotHand.filter((card) => card.id !== robotPlacedCard.id)
+    : robotHand;
 
   useEffect(() => {
     function handleNativeAction(event: PointerEvent) {
       const target =
         event.target instanceof Element ? event.target : null;
-
-      if (target?.closest("[data-high-low-start]")) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (requiresExchangeBeforeStart && !isExchangeCorrect) {
-          setShowExchangeWarning(true);
-          return;
-        }
-        setExchangeApplied(isExchangeCorrect);
-        setGunResult(null);
-        setBattleStarted(true);
-        setIsGunDialogOpen(true);
-        setCanPlaceCard(false);
-        setRobotZone(null);
-        setPlayerZone(null);
-        setPlayerPlacedCardId(null);
-        setWinOverlayDismissed(false);
-        return;
-      }
 
       if (target?.closest("[data-high-low-prepare]")) {
         event.preventDefault();
@@ -1226,6 +4323,11 @@ function HighLowBattle({
       : [];
   const playerPlacedCard =
     playerHand.find((card) => card.id === playerPlacedCardId) ?? null;
+  const visiblePlayerHand = playerPlacedCard
+    ? playerHand.filter((card) => card.id !== playerPlacedCard.id)
+    : playerHand;
+  const draggingCard =
+    playerHand.find((card) => card.id === draggingCardId) ?? null;
   const highZoneCard =
     robotZone === "HIGH"
       ? robotPlacedCard
@@ -1239,36 +4341,76 @@ function HighLowBattle({
         ? playerPlacedCard
         : null;
   const highLowResult =
-    highZoneCard && lowZoneCard
+    placementConfirmed && highZoneCard && lowZoneCard
       ? getHighLowResult(highZoneCard, lowZoneCard)
       : null;
+  const exchangeSections: ExchangeCardSection[] = [
+    {
+      cards: playerHand,
+      id: "player-hand",
+      label: "プレイヤーの手札",
+    },
+    {
+      cards: robotHand,
+      id: "high-low-robot-hand",
+      label: "ハイアンドローのロボット手札",
+    },
+    ...(stageId >= 3
+      ? [
+          {
+            cards: deck,
+            id: "deck",
+            label: "山札",
+          },
+        ]
+      : []),
+  ];
 
   const showWinOverlay = highLowResult === "win" && !winOverlayDismissed;
-
-  function startGunSequence() {
-    if (requiresExchangeBeforeStart && !isExchangeCorrect) {
-      setShowExchangeWarning(true);
-      return;
-    }
-
-    setExchangeApplied(isExchangeCorrect);
-    setGunResult(null);
-    setBattleStarted(true);
-    setIsGunDialogOpen(true);
-    setCanPlaceCard(false);
-    setRobotZone(null);
-    setPlayerZone(null);
-    setPlayerPlacedCardId(null);
-    setWinOverlayDismissed(false);
-  }
 
   function placePlayerCard(zone: "HIGH" | "LOW", cardId = playerDefaultCard?.id) {
     if (!canPlaceCard) {
       return;
     }
 
+    setDragPreviewPoint(null);
     setPlayerPlacedCardId(cardId ?? null);
     setPlayerZone(zone);
+    setPlacementAnimation({
+      mode: "hold",
+      styleType: "gentle",
+      zone,
+    });
+    setPlacementPendingConfirm(true);
+    setPlacementConfirmed(false);
+  }
+
+  function confirmPlayerPlacement() {
+    if (!placementAnimation) {
+      return;
+    }
+
+    const zone = placementAnimation.zone;
+    setPlacementPendingConfirm(false);
+    setPlacementAnimation({
+      mode: "release",
+      styleType: "gentle",
+      zone,
+    });
+    window.setTimeout(() => {
+      setPlacementAnimation((current) =>
+        current?.zone === zone ? null : current,
+      );
+      setPlacementConfirmed(true);
+    }, 760);
+  }
+
+  function resetPlayerPlacement() {
+    setPlayerPlacedCardId(null);
+    setPlayerZone(null);
+    setPlacementAnimation(null);
+    setPlacementPendingConfirm(false);
+    setPlacementConfirmed(false);
   }
 
   function dropPlayerCard(zone: "HIGH" | "LOW") {
@@ -1278,6 +4420,25 @@ function HighLowBattle({
 
     placePlayerCard(zone, draggingCardId);
     setDraggingCardId(null);
+    setDragPreviewPoint(null);
+  }
+
+  function startDraggingCard(cardId: string, point: { x: number; y: number } | null) {
+    setDraggingCardId(cardId);
+    setDragPreviewPoint(point);
+  }
+
+  function moveDraggingCard(point: { x: number; y: number } | null) {
+    if (!point) {
+      return;
+    }
+
+    setDragPreviewPoint(point);
+  }
+
+  function endDraggingCard() {
+    setDraggingCardId(null);
+    setDragPreviewPoint(null);
   }
 
   function toggleExchangeCard(cardId: string) {
@@ -1323,31 +4484,52 @@ function HighLowBattle({
             src="/preparation-vehicle.png"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/75" />
-          <div className="absolute inset-x-0 bottom-0 p-4 sm:p-6">
-            <div className="mx-auto max-w-3xl rounded border border-brass bg-stone-950/88 p-4 shadow-2xl backdrop-blur sm:p-5">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-                Preparation Vehicle
-              </p>
-              <h3 className="mt-2 text-2xl font-black">隣の車両で事前準備を行う</h3>
-              <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
-                この車両では、対戦前に特殊な能力を使うことができます。
-                まずはエクスチェンジの準備へ進みましょう。
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/42 to-transparent px-4 pb-5 pt-16 sm:px-6 sm:pb-6">
+            <div className="mx-auto flex max-w-4xl flex-col gap-3 border-l-4 border-brass/80 bg-black/40 px-4 py-3 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-base font-black text-white sm:text-lg">
+                車内で準備をすることができます。
               </p>
               <button
-                className="mt-4 min-h-11 w-full rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300 sm:w-auto sm:px-6"
+                className="min-h-11 w-full rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300 sm:w-auto sm:px-6"
                 onClick={() => {
                   setShowPreparationVehicle(false);
                   setShowPreparation(true);
-                  setShowPreparationIntro(true);
+                  setShowPreparationIntro(false);
                   setHasEnteredPreparation(true);
                 }}
                 type="button"
               >
-                事前準備へ
+                車内へ入る
               </button>
             </div>
           </div>
         </section>
+
+        {showPreparationIntro ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/78 p-3 sm:p-4">
+            <section className="w-full max-w-lg rounded border border-brass bg-stone-950 p-4 text-white shadow-2xl sm:p-5">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                Preparation
+              </p>
+              <h3 className="mt-2 text-xl font-black">事前準備</h3>
+              <p className="mt-4 text-sm font-bold leading-7 text-stone-100">
+                <span className="block">
+                  このままではプレイヤーが勝つことはできません。
+                </span>
+                <span className="mt-2 block font-black">
+                  そこで、車内に特殊な能力を用意しました。この能力を駆使して全勝を目指してください。
+                </span>
+              </p>
+              <button
+                className="mt-5 min-h-11 w-full rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                onClick={() => setShowPreparationIntro(false)}
+                type="button"
+              >
+                確認
+              </button>
+            </section>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -1372,7 +4554,10 @@ function HighLowBattle({
           <div className="hidden">
           <TutorialBubble>
             <span className="block">
-              このままではプレイヤーが圧倒的に不利です。そこで、あなたは事前に準備をすることが可能です。隣にある車の中で特殊な能力を使うことが可能です。
+              このままではプレイヤーが勝つことはできません。
+            </span>
+            <span className="mt-2 block font-black">
+              そこで、車内に特殊な能力を用意しました。この能力を駆使して全勝を目指してください。
             </span>
           </TutorialBubble>
           </div>
@@ -1401,26 +4586,11 @@ function HighLowBattle({
               </p>
             </div>
 
-            <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-8">
-              {deck.map((card) => {
-                const selected = exchangeCardIds.includes(card.id);
-
-                return (
-                  <button
-                    className={`rounded border p-1 transition ${
-                      selected
-                        ? "border-brass bg-brass/20 ring-4 ring-brass/45"
-                        : "border-white/10 bg-white/5 hover:bg-white/10"
-                    }`}
-                    key={`exchange-${card.id}`}
-                    onClick={() => toggleExchangeCard(card.id)}
-                    type="button"
-                  >
-                    <PlayingCardView card={card} size="hand" />
-                  </button>
-                );
-              })}
-            </div>
+            <ExchangeCardSectionPicker
+              sections={exchangeSections}
+              selectedCardIds={exchangeCardIds}
+              onToggleCard={toggleExchangeCard}
+            />
 
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
               {exchangeConfirmed ? (
@@ -1437,14 +4607,21 @@ function HighLowBattle({
                 disabled={exchangeCardIds.length !== 2}
                 onClick={() => {
                   setExchangeConfirmed(true);
-                  setExchangeApplied(false);
-                  setBattleStarted(false);
-                  setCanPlaceCard(false);
-                  setGunResult(null);
-                  setIsGunDialogOpen(false);
+                  setExchangeApplied(isExchangeCorrect);
+                  setBattleStarted(true);
+                  setCanPlaceCard(true);
+                  setRobotZone(
+                    getRobotOpeningZone({
+                      isExchangeCorrect,
+                      isFinalHighLowBattle,
+                      isTutorial,
+                    }),
+                  );
                   setPlayerPlacedCardId(null);
+                  setPlacementAnimation(null);
+                  setPlacementPendingConfirm(false);
+                  setPlacementConfirmed(false);
                   setPlayerZone(null);
-                  setRobotZone(null);
                   setShowExchangeWarning(false);
                   setWinOverlayDismissed(false);
                   setShowPreparation(false);
@@ -1456,27 +4633,6 @@ function HighLowBattle({
             </div>
           </section>
         </div>
-
-        {showPreparationIntro ? (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-black/78 p-3 sm:p-4">
-            <section className="w-full max-w-lg rounded border border-brass bg-stone-950 p-4 text-white shadow-2xl sm:p-5">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-                Preparation
-              </p>
-              <h3 className="mt-2 text-xl font-black">事前準備</h3>
-              <p className="mt-4 text-sm font-bold leading-7 text-stone-100">
-                このままではプレイヤーが圧倒的に不利です。そこで、あなたは事前に準備をすることが可能です。隣にある車の中で特殊な能力を使うことが可能です。
-              </p>
-              <button
-                className="mt-5 min-h-11 w-full rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
-                onClick={() => setShowPreparationIntro(false)}
-                type="button"
-              >
-                確認
-              </button>
-            </section>
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -1534,44 +4690,35 @@ function HighLowBattle({
           </button>
         ) : null}
 
-        {!battleStarted ? (
-          <GunStartCue
-            isSpotlight={isTutorial && tutorialStep.target === "start"}
-            onPrepare={
-              requiresExchangeBeforeStart
-                ? () => setShowPreparationVehicle(true)
-                : undefined
-            }
-            onStart={startGunSequence}
-          />
+        {draggingCard && dragPreviewPoint ? (
+          <DraggingCardPreview card={draggingCard} point={dragPreviewPoint} />
         ) : null}
 
-        {isTutorial && tutorialStep.target === "start" ? (
-          <TutorialBubble>{tutorialStep.text}</TutorialBubble>
-        ) : null}
-
-        {battleStarted && isGunDialogOpen ? (
-          <div className="fixed inset-0 z-40 grid place-items-center bg-black/78 p-3 sm:p-4">
-            <div className="w-full max-w-3xl rounded border border-brass bg-stone-950 p-3 shadow-2xl sm:p-4">
-              {isTutorial && tutorialStep.target === "trigger" ? (
-                <TutorialBubble className="mb-3">{tutorialStep.text}</TutorialBubble>
-              ) : null}
-              <GunCue
-                gunResult={gunResult}
-                isSpotlight={isTutorial && tutorialStep.target === "trigger"}
-              />
-            </div>
+        {requiresExchangeBeforeStart && !exchangeApplied ? (
+          <div className="mx-auto mb-4 flex max-w-4xl justify-end">
+            <button
+              className="grid min-h-11 place-items-center rounded border border-brass bg-black/35 px-4 text-sm font-black text-brass hover:bg-brass/10"
+              data-high-low-prepare
+              onClick={() => setShowPreparationVehicle(true)}
+              onPointerDown={() => setShowPreparationVehicle(true)}
+              type="button"
+            >
+              事前準備
+            </button>
           </div>
         ) : null}
 
         <section className="mx-auto max-w-4xl rounded border border-emerald-200/20 bg-emerald-950/45 p-3 shadow-[inset_0_0_70px_rgba(0,0,0,0.35)] sm:p-5">
           <div className="grid grid-cols-2 gap-2 sm:gap-4">
             <HighLowZone
-              canPlace={canPlaceCard}
+              canPlace={canPlaceCard && !placementPendingConfirm && !playerZone}
               label="HIGH"
               onPlace={() => placePlayerCard("HIGH")}
               playerPlaced={playerZone === "HIGH"}
               playerCard={playerZone === "HIGH" ? playerPlacedCard : null}
+              placementAnimation={
+                placementAnimation?.zone === "HIGH" ? placementAnimation : null
+              }
               placeDisabled={robotZone === "HIGH"}
               spotlight={false}
               onDropCard={() => dropPlayerCard("HIGH")}
@@ -1580,11 +4727,14 @@ function HighLowBattle({
               tone="high"
             />
             <HighLowZone
-              canPlace={canPlaceCard}
+              canPlace={canPlaceCard && !placementPendingConfirm && !playerZone}
               label="LOW"
               onPlace={() => placePlayerCard("LOW")}
               playerPlaced={playerZone === "LOW"}
               playerCard={playerZone === "LOW" ? playerPlacedCard : null}
+              placementAnimation={
+                placementAnimation?.zone === "LOW" ? placementAnimation : null
+              }
               placeDisabled={robotZone === "LOW"}
               spotlight={isTutorial && tutorialStep.target === "player-card"}
               onDropCard={() => dropPlayerCard("LOW")}
@@ -1594,17 +4744,38 @@ function HighLowBattle({
             />
           </div>
 
+          {placementPendingConfirm ? (
+            <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-brass/45 bg-black/35 p-3">
+              <button
+                className="min-h-11 rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                onClick={confirmPlayerPlacement}
+                type="button"
+              >
+                確定
+              </button>
+              <button
+                className="min-h-11 rounded border border-white/15 bg-white/8 px-4 text-sm font-black text-white hover:bg-white/14"
+                onClick={resetPlayerPlacement}
+                type="button"
+              >
+                選び直し
+              </button>
+            </div>
+          ) : null}
+
           <div className="mt-4 grid gap-3 sm:grid-cols-2 sm:gap-4">
-            <HandPanel cards={robotHand} owner="Robot" side="robot" />
+            <HandPanel cards={visibleRobotHand} owner="Robot" side="robot" />
             <HandPanel
-              cards={playerHand}
+              cards={visiblePlayerHand}
               draggableCardIds={draggableCardIds}
               highlightedCardId={
                 isTutorial && tutorialStep.target === "player-card"
                   ? tutorialPlayerCard?.id
                   : null
               }
-              onCardDragStart={setDraggingCardId}
+              onCardDragEnd={endDraggingCard}
+              onCardDragMove={moveDraggingCard}
+              onCardDragStart={startDraggingCard}
               owner="Player"
               side="player"
             />
@@ -1632,6 +4803,9 @@ function HighLowBattle({
                 className="min-h-11 rounded bg-brass px-5 text-sm font-black text-stone-950 hover:bg-yellow-300"
                 onClick={() => {
                   setShowPreparationVehicle(true);
+                  setShowPreparation(false);
+                  setShowPreparationIntro(true);
+                  setHasEnteredPreparation(true);
                 }}
                 type="button"
               >
@@ -1676,10 +4850,10 @@ function HighLowBattle({
           {canPlaceCard
             ? playerZone
               ? `プレイヤーは${playerZone}ゾーンへ配置しました。`
-              : "発砲。ロボットが先に配置しました。プレイヤーもHIGHかLOWを選べます。"
+              : "ロボットが先に配置しました。プレイヤーもHIGHかLOWを選べます。"
             : battleStarted
-              ? "銃のカットイン演出が終わると、配置可能になります。"
-              : "ゲームスタートで銃のカットイン演出を開始します。"}
+              ? "ロボットの配置を待っています。"
+              : "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。"}
         </div>
       </div>
     </div>
@@ -1712,6 +4886,23 @@ function swapSelectedCardIds(cardIds: string[], selectedCardIds: string[]) {
     }
 
     return cardId;
+  });
+}
+
+function applyExchangePairs(
+  cardIds: string[],
+  exchangePairs: Array<{ firstCardId: string; secondCardId: string }>,
+) {
+  return cardIds.map((cardId) => {
+    const pair = exchangePairs.find(
+      (item) => item.firstCardId === cardId || item.secondCardId === cardId,
+    );
+
+    if (!pair) {
+      return cardId;
+    }
+
+    return pair.firstCardId === cardId ? pair.secondCardId : pair.firstCardId;
   });
 }
 
@@ -1768,12 +4959,7 @@ function getBlackjackRobotAction(
     return "call";
   }
 
-  const playerIsTen = playerFirstCard.rank !== "A";
   const robotIsTen = robotFirstCard.rank !== "A";
-
-  if (playerIsTen && robotFirstCard.rank === "A") {
-    return "raise";
-  }
 
   if (playerFirstCard.rank === "A" && robotIsTen) {
     return "fold";
@@ -1782,33 +4968,18 @@ function getBlackjackRobotAction(
   return "call";
 }
 
-function BlackjackMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded border border-white/10 bg-white/6 p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-brass">
-        {label}
-      </p>
-      <p className="mt-1 text-lg font-black text-white">{value}</p>
-    </div>
-  );
-}
-
 function BlackjackField({
   cards,
   isBlackjack,
   label,
+  placementAnimation = null,
   revealSecond,
   score,
 }: {
   cards: PlayingCard[];
   isBlackjack: boolean;
   label: string;
+  placementAnimation?: PlacementStyle | null;
   revealSecond: boolean;
   score: number | null;
 }) {
@@ -1827,7 +4998,7 @@ function BlackjackField({
           </span>
         ) : null}
       </div>
-      <div className="mt-3 flex min-h-32 items-center justify-center gap-3 rounded border border-white/8 bg-emerald-950/25 p-3">
+      <div className="relative mt-3 flex min-h-32 items-center justify-center gap-3 rounded border border-white/8 bg-emerald-950/25 p-3">
         {revealSecond && secondCard && isBlackjack ? (
           <div className="relative h-28 w-24 sm:h-40 sm:w-32">
             <div className="absolute left-0 top-0">
@@ -1845,24 +5016,110 @@ function BlackjackField({
             ) : null}
           </>
         )}
+        {placementAnimation ? (
+          <CardPlacementAnimation styleType={placementAnimation} />
+        ) : null}
       </div>
       {revealSecond && isBlackjack ? (
         <p className="mt-2 text-center text-sm font-black text-brass">
-          BLACKJACK
+          ブラックジャック
         </p>
       ) : null}
     </div>
   );
 }
 
+function RiddlePrintTargetPicker({
+  selectedIds,
+  setSelectedIds,
+}: {
+  selectedIds: string[];
+  setSelectedIds: Dispatch<SetStateAction<string[]>>;
+}) {
+  const targets = [
+    {
+      id: "riddle-1-middle-left",
+      label: "中央行左側",
+      style: "left-[13.5%] top-[44.5%] h-[30%] w-[13%]",
+    },
+    {
+      id: "riddle-1-center",
+      label: "ど真ん中",
+      style: "left-[45.5%] top-[44.5%] h-[30%] w-[13%]",
+    },
+  ];
+
+  function toggleTarget(targetId: string) {
+    setSelectedIds((current) => {
+      if (current.includes(targetId)) {
+        return current.filter((id) => id !== targetId);
+      }
+
+      return [...current, targetId].slice(-2);
+    });
+  }
+
+  return (
+    <div className="mt-3 rounded border border-white/12 bg-white p-3 text-stone-950">
+      <div className="relative overflow-hidden rounded border border-stone-300 bg-white">
+        <Image
+          alt="エクスチェンジ対象を選択する小謎"
+          className="h-auto w-full"
+          height={900}
+          src="/riddles/riddle_1.png"
+          width={1600}
+        />
+        {targets.map((target) => {
+          const selected = selectedIds.includes(target.id);
+
+          return (
+            <button
+              aria-pressed={selected}
+              className={`absolute ${target.style} rounded border-2 transition ${
+                selected
+                  ? "border-emerald-400 bg-emerald-300/25 shadow-[0_0_0_4px_rgba(16,185,129,0.32)]"
+                  : "border-brass/80 bg-brass/10 hover:bg-brass/25"
+              }`}
+              key={target.id}
+              onClick={() => toggleTarget(target.id)}
+              type="button"
+            >
+              <span className="absolute left-1 top-1 rounded bg-black/70 px-2 py-1 text-[10px] font-black text-white">
+                {selected ? "SELECTED" : target.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-sm font-black text-stone-800">
+        選択中:{" "}
+        {selectedIds.length > 0
+          ? targets
+              .filter((target) => selectedIds.includes(target.id))
+              .map((target) => target.label)
+              .join(" / ")
+          : "なし"}
+      </p>
+    </div>
+  );
+}
+
 function ExchangeRuleList({
   disabledTargets = [],
+  rankRestrictions = [],
   showDeckTarget = false,
+  showFieldTarget = false,
   showVisiblePrintTarget = false,
+  targetLabels = {},
+  visiblePrintRemaining,
 }: {
   disabledTargets?: ExchangeTargetId[];
+  rankRestrictions?: string[];
   showDeckTarget?: boolean;
+  showFieldTarget?: boolean;
   showVisiblePrintTarget?: boolean;
+  targetLabels?: Partial<Record<ExchangeTargetId, string>>;
+  visiblePrintRemaining?: number;
 }) {
   const items: Array<{
     id: ExchangeTargetId;
@@ -1871,22 +5128,31 @@ function ExchangeRuleList({
   }> = [
     {
       id: "player-hand",
-      label: "プレイヤーの手札",
+      label: targetLabels["player-hand"] ?? "プレイヤーの手札",
       visible: true,
     },
     {
       id: "robot-hand",
-      label: "ロボットの手札",
+      label: targetLabels["robot-hand"] ?? "ロボットの手札",
       visible: true,
     },
     {
       id: "deck",
-      label: "山札",
+      label: targetLabels.deck ?? "山札",
       visible: showDeckTarget,
     },
     {
+      id: "field",
+      label: targetLabels.field ?? "フィールド",
+      visible: showFieldTarget,
+    },
+    {
       id: "visible-print",
-      label: "マークと数字の表記がある印刷面が全て見えているもの",
+      label:
+        targetLabels["visible-print"] ??
+        (visiblePrintRemaining === undefined
+          ? "マークと数字の表記がある印刷面が全て見えているもの"
+          : `マークと数字の表記がある印刷面が全て見えているもの：残${visiblePrintRemaining}`),
       visible: showVisiblePrintTarget,
     },
   ];
@@ -1915,13 +5181,34 @@ function ExchangeRuleList({
             );
           })}
       </ul>
+      <div className="mt-3 border-t border-white/10 pt-3 text-sm font-bold leading-6 text-stone-100">
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+          エクスチェンジの発動タイミング
+        </p>
+        <p className="mt-2">・印刷面が同じ→即時</p>
+        <p>・それ以外→ゲームスタート時</p>
+      </div>
+      {rankRestrictions.length > 0 ? (
+        <div className="mt-3 border-t border-white/10 pt-3 text-sm font-bold leading-6 text-stone-100">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+            エクスチェンジ不可
+          </p>
+          {rankRestrictions.map((restriction) => (
+            <p className="mt-2" key={restriction}>
+              ・{restriction}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function getHighLowCardValue(card: PlayingCard) {
   const rankValues = {
+    "0": 0,
     "1": 0,
+    "10": 0,
     J: 1,
     Q: 2,
     K: 3,
@@ -1929,6 +5216,26 @@ function getHighLowCardValue(card: PlayingCard) {
   };
 
   return rankValues[card.rank];
+}
+
+function getRobotOpeningZone({
+  isExchangeCorrect,
+  isFinalHighLowBattle,
+  isTutorial,
+}: {
+  isExchangeCorrect: boolean;
+  isFinalHighLowBattle: boolean;
+  isTutorial: boolean;
+}): HighLowZoneName {
+  if (isFinalHighLowBattle) {
+    return "LOW";
+  }
+
+  if (isTutorial || isExchangeCorrect) {
+    return "HIGH";
+  }
+
+  return Math.random() > 0.5 ? "HIGH" : "LOW";
 }
 
 function getHighLowResult(highCard: PlayingCard, lowCard: PlayingCard) {
@@ -1971,12 +5278,12 @@ function getHighLowGuideText({
     if (canPlaceCard) {
       return playerZone
         ? `プレイヤーは${playerZone}ゾーンへ配置しました。`
-        : "発砲。ロボットが先に配置しました。プレイヤーもHIGHかLOWを選べます。";
+        : "ロボットが先に配置しました。プレイヤーもHIGHかLOWを選べます。";
     }
 
     return battleStarted
-      ? "銃のカットイン演出が終わると、配置可能になります。"
-      : "ゲームスタートで銃のカットイン演出を開始します。";
+      ? "ロボットの配置を待っています。"
+      : "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。";
   }
 
   if (playerZone === "LOW") {
@@ -1984,14 +5291,14 @@ function getHighLowGuideText({
   }
 
   if (canPlaceCard) {
-    return "発砲されました。チュートリアルではロボットが即座にKをHIGHゾーンへ置きます。プレイヤーは手札のAをLOWゾーンに置いてみましょう。";
+    return "ロボットが即座にKをHIGHゾーンへ置きました。プレイヤーは手札のAをLOWゾーンに置いてみましょう。";
   }
 
   if (battleStarted) {
-    return "銃のカットイン演出が入ります。演出が消えたら、プレイヤーもゾーンへ配置できるようになります。";
+    return "ロボットの配置を待っています。";
   }
 
-  return "まずは実際に1戦やってみましょう。ハイアンドローは、発砲の合図後にHIGHゾーンかLOWゾーンへカードを置くゲームです。ゲームスタートを押すと銃のカットイン演出が入ります。";
+  return "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。";
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -2024,13 +5331,13 @@ function getHighLowTutorialStep({
   if (battleStarted) {
     return {
       target: "trigger",
-      text: "銃のカットイン演出が入ります。演出が消えたらカードを置けるようになります。",
+      text: "ロボットの配置を待っています。",
     };
   }
 
   return {
     target: "start",
-    text: "まずは実際に1戦やってみましょう。ゲームスタートを押すと、発砲の合図を待つチュートリアルが始まります。",
+    text: "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。",
   };
 }
 
@@ -2073,155 +5380,21 @@ function getHighLowTutorialStepContent({
   if (canPlaceCard) {
     return {
       target: "player-card",
-      text: "カットインが終わり、プレイヤーも配置できるようになりました。手札のAをLOWゾーンへドラッグして置いてみましょう。",
+      text: "ロボットが先にKをHIGHゾーンへ置きました。手札のAをLOWゾーンへドラッグして置いてみましょう。",
     };
   }
 
   if (battleStarted) {
     return {
       target: "trigger",
-      text: "銃のカットイン演出が入ります。演出が消えると、ロボットはすでにカードを置き終えています。",
+      text: "ロボットの配置を待っています。",
     };
   }
 
   return {
     target: "start",
-    text: "まずは実際に1戦やってみましょう。ゲームスタート時点でロボットはカードを置けますが、あなたは銃声のカットイン後まで配置できません。",
+    text: "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。",
   };
-}
-
-function GunStartCue({
-  isSpotlight,
-  onPrepare,
-  onStart,
-}: {
-  isSpotlight: boolean;
-  onPrepare?: () => void;
-  onStart: () => void;
-}) {
-  return (
-    <section
-      className={`mx-auto mb-4 max-w-4xl rounded border bg-black/35 p-3 sm:p-4 ${
-        isSpotlight
-          ? "animate-pulse border-brass ring-4 ring-brass/50"
-          : "border-white/10"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-            Start Signal
-          </p>
-          <p className="mt-1 text-sm text-stone-200">
-            ゲームスタートで銃のカットイン演出を開始します。
-          </p>
-        </div>
-        {onPrepare ? (
-          <button
-            className="grid min-h-11 place-items-center rounded border border-brass bg-black/35 px-4 text-sm font-black text-brass hover:bg-brass/10"
-            data-high-low-prepare
-            onClick={onPrepare}
-            onPointerDown={onPrepare}
-            type="button"
-          >
-            事前準備
-          </button>
-        ) : null}
-        <button
-          className="grid min-h-11 place-items-center rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
-          data-high-low-start
-          onClick={onStart}
-          onPointerDown={onStart}
-          type="button"
-        >
-          ゲームスタート
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function GunCue({
-  gunResult,
-  isSpotlight,
-}: {
-  gunResult: GunResult | null;
-  isSpotlight: boolean;
-}) {
-  const isFire = gunResult === "fire";
-
-  return (
-    <section
-      className={`mx-auto mb-4 max-w-4xl overflow-hidden rounded border bg-black/35 p-3 sm:p-4 ${
-        isSpotlight
-          ? "animate-pulse border-brass ring-4 ring-brass/50"
-          : "border-white/10"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-            Cut-In
-          </p>
-          <p className="mt-1 text-sm text-stone-200">
-            {isFire ? "発砲。風船が割れました。" : "銃声の合図を待っています。"}
-          </p>
-        </div>
-        <div className="rounded border border-brass/70 bg-brass/10 px-3 py-2 text-sm font-black text-brass">
-          AUTO
-        </div>
-      </div>
-
-      <div className="relative mt-3 h-28 overflow-hidden rounded bg-white sm:h-36">
-        <div className="absolute left-[10%] top-1/2 z-10 -translate-y-1/2">
-          {isFire ? (
-            <div className="relative h-24 w-24 sm:h-32 sm:w-32">
-              <div className="absolute inset-1 rounded-full border-4 border-casinoRed/70 opacity-80 shadow-[0_0_28px_rgba(180,31,44,0.8)]" />
-              <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-brass/80" />
-              <div className="absolute left-5 top-3 h-8 w-7 rotate-[-28deg] rounded-full bg-casinoRed shadow-[0_0_12px_rgba(180,31,44,0.75)] [clip-path:polygon(50%_0%,100%_45%,72%_100%,10%_80%,0%_20%)]" />
-              <div className="absolute right-4 top-6 h-7 w-8 rotate-[34deg] rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.7)] [clip-path:polygon(0%_20%,80%_0%,100%_72%,42%_100%)]" />
-              <div className="absolute bottom-4 left-9 h-7 w-6 rotate-[12deg] rounded-full bg-red-700 shadow-[0_0_12px_rgba(127,29,29,0.75)] [clip-path:polygon(30%_0%,100%_22%,74%_100%,0%_70%)]" />
-              <div className="absolute right-10 top-1/2 h-2 w-12 rotate-[-12deg] rounded-full bg-white/90 shadow-[0_0_12px_rgba(255,255,255,0.9)]" />
-              <div className="absolute left-2 top-1/2 h-2 w-10 rotate-[22deg] rounded-full bg-brass shadow-[0_0_12px_rgba(246,195,92,0.9)]" />
-            </div>
-          ) : (
-            <div className="relative h-24 w-20 sm:h-32 sm:w-28">
-              <div className="absolute inset-x-1 top-0 h-20 rounded-[50%_50%_45%_45%] bg-gradient-to-br from-red-400 via-casinoRed to-red-900 shadow-[inset_-10px_-14px_18px_rgba(0,0,0,0.24),0_0_24px_rgba(180,31,44,0.45)] sm:h-28" />
-              <div className="absolute left-6 top-4 h-5 w-3 rotate-[28deg] rounded-full bg-white/75 blur-[1px] sm:left-8 sm:h-7 sm:w-4" />
-              <div className="absolute bottom-4 left-1/2 h-4 w-5 -translate-x-1/2 bg-red-900 [clip-path:polygon(50%_0%,100%_100%,0%_100%)]" />
-              <div className="absolute bottom-0 left-1/2 h-5 w-px -translate-x-1/2 bg-stone-500" />
-            </div>
-          )}
-        </div>
-        <Image
-          alt="発砲合図の拳銃"
-          className={`absolute bottom-0 right-0 h-full w-auto translate-x-[42%] object-contain transition-transform duration-500 ${
-            isFire ? "scale-[1.03]" : ""
-          }`}
-          height={320}
-          priority
-          src="/gun.png"
-          width={680}
-        />
-        {isFire ? (
-          <>
-            <div className="absolute left-[10%] top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 sm:h-32 sm:w-32">
-              <div className="absolute inset-0 rounded-full border-4 border-brass/80 opacity-80 shadow-[0_0_28px_rgba(246,195,92,0.95)]" />
-              <div className="absolute inset-3 rounded-full border-2 border-white/80 opacity-80" />
-              <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-brass shadow-[0_0_34px_rgba(246,195,92,1)] [clip-path:polygon(50%_0%,62%_34%,100%_18%,74%_50%,100%_82%,62%_66%,50%_100%,38%_66%,0%_82%,26%_50%,0%_18%,38%_34%)] sm:h-28 sm:w-28" />
-              <div className="absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rotate-12 bg-white [clip-path:polygon(50%_0%,65%_35%,100%_45%,68%_62%,80%_100%,50%_76%,20%_100%,32%_62%,0%_45%,35%_35%)] sm:h-16 sm:w-16" />
-            </div>
-            <div className="absolute left-[10%] top-1/2 h-3 w-[58%] -translate-y-1/2 bg-gradient-to-l from-white via-brass/80 to-transparent opacity-75 blur-[1px]" />
-            <div className="absolute left-[21%] top-[28%] h-2 w-10 rotate-[18deg] rounded-full bg-brass shadow-[0_0_14px_rgba(246,195,92,0.9)]" />
-            <div className="absolute left-[22%] top-[70%] h-2 w-12 rotate-[-20deg] rounded-full bg-white shadow-[0_0_14px_rgba(255,255,255,0.9)]" />
-            <div className="absolute right-4 top-4 rounded bg-casinoRed px-3 py-2 text-sm font-black text-white shadow-lg">
-              発砲
-            </div>
-          </>
-        ) : null}
-      </div>
-    </section>
-  );
 }
 
 function HighLowZone({
@@ -2230,6 +5403,7 @@ function HighLowZone({
   onDropCard,
   onPlace,
   placeDisabled,
+  placementAnimation,
   playerCard,
   playerPlaced,
   robotCard,
@@ -2242,6 +5416,10 @@ function HighLowZone({
   onDropCard: () => void;
   onPlace: () => void;
   placeDisabled: boolean;
+  placementAnimation?: {
+    mode: "hold" | "release";
+    styleType: PlacementStyle;
+  } | null;
   playerCard?: PlayingCard | null;
   playerPlaced: boolean;
   robotCard?: PlayingCard | null;
@@ -2288,6 +5466,12 @@ function HighLowZone({
       <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center">
         {placedCard ? <PlayingCardView card={placedCard} size="zone" /> : null}
       </div>
+      {placementAnimation ? (
+        <CardPlacementAnimation
+          mode={placementAnimation.mode}
+          styleType={placementAnimation.styleType}
+        />
+      ) : null}
       <div className="absolute inset-x-2 bottom-2 flex items-center justify-between gap-1 sm:inset-x-3 sm:bottom-3 sm:gap-2">
         {robotPlaced ? (
           <span className="rounded bg-brass px-2 py-1 text-xs font-black text-stone-950">
@@ -2312,6 +5496,8 @@ function HandPanel({
   cards,
   draggableCardIds = [],
   highlightedCardId = null,
+  onCardDragEnd,
+  onCardDragMove,
   onCardDragStart,
   owner,
   side,
@@ -2319,7 +5505,9 @@ function HandPanel({
   cards: PlayingCard[];
   draggableCardIds?: string[];
   highlightedCardId?: string | null;
-  onCardDragStart?: (cardId: string) => void;
+  onCardDragEnd?: () => void;
+  onCardDragMove?: (point: { x: number; y: number } | null) => void;
+  onCardDragStart?: (cardId: string, point: { x: number; y: number } | null) => void;
   owner: "Player" | "Robot";
   side: "player" | "robot";
 }) {
@@ -2338,7 +5526,9 @@ function HandPanel({
             draggable={draggableCardIds.includes(card.id)}
             highlighted={highlightedCardId === card.id}
             key={`${owner}-${card.id}`}
-            onDragStart={() => onCardDragStart?.(card.id)}
+            onDragEnd={onCardDragEnd}
+            onDragMove={onCardDragMove}
+            onDragStart={(point) => onCardDragStart?.(card.id, point)}
             size="hand"
           />
         ))}
@@ -2356,23 +5546,25 @@ function GameLogo({
 }) {
   const logo = gameLogo[gameType];
   const sizeClass = compact
-    ? "h-10 w-36"
-    : "h-32 w-[360px] max-w-full sm:h-48 sm:w-[620px]";
-  const imageSizes = compact ? "144px" : "(min-width: 640px) 620px, 360px";
+    ? "h-10 w-36 max-[424px]:h-9 max-[424px]:w-32 max-[374px]:h-8 max-[374px]:w-28"
+    : "h-32 w-[360px] max-w-full max-[424px]:h-20 max-[424px]:w-[210px] max-[374px]:h-16 max-[374px]:w-[180px] sm:h-48 sm:w-[620px]";
+  const imageSizes = compact
+    ? "(max-width: 374px) 112px, (max-width: 424px) 128px, 144px"
+    : "(min-width: 640px) 620px, (max-width: 374px) 180px, (max-width: 424px) 210px, 360px";
 
   return (
     <div
-      className={`overflow-hidden rounded bg-white p-1 drop-shadow-[0_4px_10px_rgba(0,0,0,0.75)] ${
+      className={`relative overflow-hidden rounded bg-white p-1 drop-shadow-[0_4px_10px_rgba(0,0,0,0.75)] ${
         compact ? "border border-stone-200" : ""
       } ${sizeClass}`}
     >
       <Image
         alt={`${logo.alt}のロゴ`}
-        className="h-full w-full object-contain"
-        height={120}
+        className="object-contain p-1"
+        fill
+        priority
         sizes={imageSizes}
         src={logo.src}
-        width={320}
       />
     </div>
   );
@@ -2382,13 +5574,17 @@ function PlayingCardView({
   card,
   draggable = false,
   highlighted = false,
+  onDragEnd,
+  onDragMove,
   onDragStart,
   size,
 }: {
   card: PlayingCard;
   draggable?: boolean;
   highlighted?: boolean;
-  onDragStart?: () => void;
+  onDragEnd?: () => void;
+  onDragMove?: (point: { x: number; y: number } | null) => void;
+  onDragStart?: (point: { x: number; y: number } | null) => void;
   size: "field" | "hand" | "zone";
 }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -2410,15 +5606,19 @@ function PlayingCardView({
       return;
     }
 
-    const bounds = event.currentTarget.getBoundingClientRect();
+    const transparentPreview = document.createElement("img");
+    transparentPreview.src =
+      "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", card.id);
-    event.dataTransfer.setDragImage(
-      event.currentTarget,
-      bounds.width / 2,
-      bounds.height / 2,
-    );
-    onDragStart?.();
+    event.dataTransfer.setDragImage(transparentPreview, 0, 0);
+    onDragStart?.(getDragPoint(event));
+  }
+
+  function moveCardDrag(event: DragEvent<HTMLDivElement>) {
+    if (draggable) {
+      onDragMove?.(getDragPoint(event));
+    }
   }
 
   if (card.imageSrc && !imageFailed) {
@@ -2428,6 +5628,8 @@ function PlayingCardView({
           highlighted ? "animate-pulse ring-4 ring-brass/70" : ""
         } ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
         draggable={draggable}
+        onDrag={moveCardDrag}
+        onDragEnd={onDragEnd}
         onDragStart={startCardDrag}
       >
         <Image
@@ -2450,12 +5652,25 @@ function PlayingCardView({
         draggable ? "cursor-grab active:cursor-grabbing" : ""
       }`}
       draggable={draggable}
+      onDrag={moveCardDrag}
+      onDragEnd={onDragEnd}
       onDragStart={startCardDrag}
     >
       <span className="text-2xl leading-none sm:text-3xl">{card.rank}</span>
       <span className="text-lg leading-none sm:text-xl">{suitSymbols[card.suit]}</span>
     </div>
   );
+}
+
+function getDragPoint(event: DragEvent<HTMLDivElement>) {
+  if (event.clientX === 0 && event.clientY === 0) {
+    return null;
+  }
+
+  return {
+    x: event.clientX,
+    y: event.clientY,
+  };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
