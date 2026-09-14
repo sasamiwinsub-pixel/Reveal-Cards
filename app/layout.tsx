@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Cacacasino Riddle",
+  title: "シェアハンドタクティクス",
   description: "Casino themed web riddle prototype",
 };
 

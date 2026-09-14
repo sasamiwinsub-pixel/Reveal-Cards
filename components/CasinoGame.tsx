@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   Info,
+  Menu,
   RotateCcw,
   Trophy,
   X,
@@ -18,6 +19,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type Dispatch,
   type DragEvent,
   type SetStateAction,
@@ -79,7 +81,34 @@ const gameLogo: Record<GameType, { alt: string; src: string }> = {
 };
 
 const HIGH_LOW_TUTORIAL_ROBOT_ID = "high-low-1-1";
+const GAME_SELECT_TUTORIAL_STORAGE_KEY =
+  "cacacasino.gameSelectTutorialSeen";
+const GAME_SELECT_TUTORIAL_STORAGE_EVENT =
+  "cacacasino-game-select-tutorial-seen";
 const deck = createDeck();
+
+function subscribeGameSelectTutorialSeen(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(GAME_SELECT_TUTORIAL_STORAGE_EVENT, onStoreChange);
+
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(
+      GAME_SELECT_TUTORIAL_STORAGE_EVENT,
+      onStoreChange,
+    );
+  };
+}
+
+function getGameSelectTutorialSeenSnapshot() {
+  return (
+    window.localStorage.getItem(GAME_SELECT_TUTORIAL_STORAGE_KEY) === "true"
+  );
+}
+
+function getGameSelectTutorialSeenServerSnapshot() {
+  return false;
+}
 
 const scanTargetImages = {
   haiking: "/scan-targets/haiking.png",
@@ -276,6 +305,12 @@ type FocusOption = {
 type ActiveBattle = {
   gameType: GameType;
   robotId: string;
+};
+
+type HighLowExchangePreparation = {
+  applied: boolean;
+  cardIds: string[];
+  confirmed: boolean;
 };
 
 type ExchangeCardSection = {
@@ -480,6 +515,8 @@ export default function CasinoGame({
   );
   const [focusedOptionIndex, setFocusedOptionIndex] = useState(0);
   const [postBattleLine, setPostBattleLine] = useState("");
+  const [highLowExchangePreparations, setHighLowExchangePreparations] =
+    useState<Record<string, HighLowExchangePreparation>>({});
   const [finalScanCatalogEntries, setFinalScanCatalogEntries] = useState<
     ScanCatalogEntry[]
   >(initialScanCatalogEntries);
@@ -487,6 +524,11 @@ export default function CasinoGame({
   const [isFinalScanCatalogComplete, setIsFinalScanCatalogComplete] =
     useState(false);
   const [isFinalAbilitySpecSeen, setIsFinalAbilitySpecSeen] = useState(false);
+  const hasShownGameSelectTutorial = useSyncExternalStore(
+    subscribeGameSelectTutorialSeen,
+    getGameSelectTutorialSeenSnapshot,
+    getGameSelectTutorialSeenServerSnapshot,
+  );
 
   const stage = stages.find((item) => item.id === stageId) ?? stages[0];
   const hand = useMemo(() => drawOpeningHand(stage.id), [stage.id]);
@@ -557,6 +599,7 @@ export default function CasinoGame({
     setFocusedOptionIndex(0);
     setModal(null);
     setPostBattleLine("");
+    setHighLowExchangePreparations({});
     setIsFinalDisclosureSeen(false);
     setIsFinalScanCatalogComplete(false);
     setIsFinalAbilitySpecSeen(false);
@@ -636,8 +679,8 @@ export default function CasinoGame({
         <header className="rounded border border-white/12 bg-black/30 p-3 sm:p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brass sm:text-sm sm:tracking-[0.28em]">
-                Cacacasino Riddle
+              <p className="text-[11px] font-semibold tracking-[0.08em] text-brass sm:text-sm sm:tracking-[0.14em]">
+                シェアハンドタクティクス
               </p>
               <h1 className="mt-1 text-xl font-black leading-tight sm:text-3xl">
                 {stage.label} Stage
@@ -680,6 +723,15 @@ export default function CasinoGame({
                 }}
                 robotId={activeBattle.robotId}
                 stageId={stage.id}
+                exchangePreparation={
+                  highLowExchangePreparations[activeBattle.robotId]
+                }
+                onSaveExchangePreparation={(preparation) =>
+                  setHighLowExchangePreparations((current) => ({
+                    ...current,
+                    [activeBattle.robotId]: preparation,
+                  }))
+                }
               />
             ) : isPokerBattle ? (
               <PokerBattle
@@ -739,11 +791,21 @@ export default function CasinoGame({
                 isStageClear={isStageClear}
                 canFocusNext={canFocusNext}
                 canFocusPrevious={canFocusPrevious}
+                shouldShowTutorial={!hasShownGameSelectTutorial}
                 onFocusRobot={focusRobot}
                 onOpenModal={(robot, kind, gameType) =>
                   setModal({ gameType, kind, robot })
                 }
                 onSelectRobot={selectRobot}
+                onTutorialShown={() => {
+                  window.localStorage.setItem(
+                    GAME_SELECT_TUTORIAL_STORAGE_KEY,
+                    "true",
+                  );
+                  window.dispatchEvent(
+                    new Event(GAME_SELECT_TUTORIAL_STORAGE_EVENT),
+                  );
+                }}
                 playedRobotIds={playedRobotIds}
               />
             )}
@@ -1428,10 +1490,11 @@ function TutorialDialog({
   onDismiss: () => void;
   onAction?: () => void;
   text: string;
-  tone: "hands" | "rules" | "spec" | "start";
+  tone: "hands" | "quick" | "rules" | "spec" | "start";
 }) {
   const toneClass = {
     hands: "border-cyan-300 bg-cyan-950/92 text-cyan-50",
+    quick: "border-sky-300 bg-sky-950/94 text-sky-50",
     rules: "border-sky-400 bg-sky-50 text-stone-950",
     spec: "border-emerald-400 bg-emerald-50 text-stone-950",
     start: "border-casinoRed bg-red-50 text-stone-950",
@@ -1493,7 +1556,9 @@ function OpponentSelector({
   onFocusRobot,
   onOpenModal,
   onSelectRobot,
+  onTutorialShown,
   playedRobotIds,
+  shouldShowTutorial,
 }: {
   canFocusNext: boolean;
   canFocusPrevious: boolean;
@@ -1505,13 +1570,16 @@ function OpponentSelector({
   onFocusRobot: (offset: number) => void;
   onOpenModal: (robot: Robot, kind: ModalKind, gameType: GameType) => void;
   onSelectRobot: (robot: Robot, gameType: GameType) => void;
+  onTutorialShown: () => void;
   playedRobotIds: string[];
+  shouldShowTutorial: boolean;
 }) {
   const [isAutoSelecting, setIsAutoSelecting] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<
     "rules" | "rules-close" | "spec" | "spec-close" | "hands" | "start" | "done"
-  >("rules");
-  const [isTutorialDialogVisible, setIsTutorialDialogVisible] = useState(true);
+  >(shouldShowTutorial ? "rules" : "done");
+  const [isTutorialDialogVisible, setIsTutorialDialogVisible] =
+    useState(shouldShowTutorial);
   const currentSeat = focusedGameType ? getGameSeat(focusedGameType) : "top";
   const currentImage = viewImage[currentSeat];
   const isFocusedPlayed = focusedRobot
@@ -1553,6 +1621,12 @@ function OpponentSelector({
 
     return () => window.clearTimeout(timer);
   }, [focusedGameType, focusedRobot, isAutoSelecting, onSelectRobot]);
+
+  useEffect(() => {
+    if (shouldShowTutorial) {
+      onTutorialShown();
+    }
+  }, [onTutorialShown, shouldShowTutorial]);
 
   useEffect(() => {
     function handleModalClosed() {
@@ -4173,14 +4247,18 @@ function ExchangeCardButton({
 
 function HighLowBattle({
   backHref,
+  exchangePreparation,
   hand,
   onBack,
+  onSaveExchangePreparation,
   robotId,
   stageId,
 }: {
   backHref: string;
+  exchangePreparation?: HighLowExchangePreparation;
   hand: PlayingCard[];
   onBack: () => void;
+  onSaveExchangePreparation: (preparation: HighLowExchangePreparation) => void;
   robotId: string;
   stageId: number;
 }) {
@@ -4204,9 +4282,9 @@ function HighLowBattle({
   const [playerPlacedCardId, setPlayerPlacedCardId] = useState<string | null>(
     null,
   );
-  const [battleStarted, setBattleStarted] = useState(true);
-  const [canPlaceCard, setCanPlaceCard] = useState(true);
-  const [robotZone, setRobotZone] = useState<HighLowZoneName | null>(
+  const [battleStarted] = useState(true);
+  const [canPlaceCard] = useState(true);
+  const [robotZone] = useState<HighLowZoneName | null>(
     () => getRobotOpeningZone({ isExchangeCorrect: false, isFinalHighLowBattle, isTutorial }),
   );
   const [playerZone, setPlayerZone] = useState<HighLowZoneName | null>(null);
@@ -4216,9 +4294,17 @@ function HighLowBattle({
   const [showExchangeWarning, setShowExchangeWarning] = useState(false);
   const [winOverlayDismissed, setWinOverlayDismissed] = useState(false);
   const [hasEnteredPreparation, setHasEnteredPreparation] = useState(false);
-  const [exchangeCardIds, setExchangeCardIds] = useState<string[]>([]);
-  const [exchangeConfirmed, setExchangeConfirmed] = useState(false);
-  const [exchangeApplied, setExchangeApplied] = useState(false);
+  const [exchangeCardIds, setExchangeCardIds] = useState<string[]>(
+    exchangePreparation?.cardIds ?? [],
+  );
+  const [exchangeConfirmed, setExchangeConfirmed] = useState(
+    exchangePreparation?.confirmed ?? false,
+  );
+  const [exchangeApplied, setExchangeApplied] = useState(
+    exchangePreparation?.applied ?? false,
+  );
+  const [isAbilityMenuOpen, setIsAbilityMenuOpen] = useState(false);
+  const [showQuickMenuTutorial, setShowQuickMenuTutorial] = useState(false);
   const [placementAnimation, setPlacementAnimation] = useState<{
     mode: "hold" | "release";
     styleType: PlacementStyle;
@@ -4226,12 +4312,12 @@ function HighLowBattle({
   } | null>(null);
   const [placementPendingConfirm, setPlacementPendingConfirm] = useState(false);
   const [placementConfirmed, setPlacementConfirmed] = useState(false);
-  const isExchangeCorrect =
+  const isSelectedExchangeCorrect =
     Boolean(highLowConfig) &&
-    exchangeConfirmed &&
     highLowConfig?.correctExchangePairs.some((pair) =>
       pair.every((cardId) => exchangeCardIds.includes(cardId)),
     ) === true;
+  const isExchangeCorrect = exchangeConfirmed && isSelectedExchangeCorrect;
   const isExchangeApplied = isExchangeCorrect && exchangeApplied;
   const requiresExchangeBeforeStart =
     Boolean(highLowConfig) &&
@@ -4311,6 +4397,10 @@ function HighLowBattle({
     canPlaceCard,
     playerZone,
   });
+  const tutorialStepText =
+    isTutorial && isExchangeApplied && tutorialStep.target === "player-card"
+      ? "エクスチェンジにより、ロボットが先にAをHIGHゾーンへ置きました。手札のKをLOWゾーンへドラッグして置いてみましょう。"
+      : tutorialStep.text;
   const draggableCardIds =
     canPlaceCard && !playerZone
       ? isTutorial
@@ -4442,21 +4532,62 @@ function HighLowBattle({
   }
 
   function toggleExchangeCard(cardId: string) {
-    setExchangeCardIds((current) => {
-      setExchangeConfirmed(false);
-      setExchangeApplied(false);
+    const nextCardIds = exchangeCardIds.includes(cardId)
+      ? exchangeCardIds.filter((id) => id !== cardId)
+      : exchangeCardIds.length >= 2
+        ? [exchangeCardIds[1], cardId]
+        : [...exchangeCardIds, cardId];
 
-      if (current.includes(cardId)) {
-        return current.filter((id) => id !== cardId);
-      }
-
-      if (current.length >= 2) {
-        return [current[1], cardId];
-      }
-
-      return [...current, cardId];
+    setExchangeCardIds(nextCardIds);
+    setExchangeConfirmed(false);
+    setExchangeApplied(false);
+    setIsAbilityMenuOpen(false);
+    setShowQuickMenuTutorial(false);
+    onSaveExchangePreparation({
+      applied: false,
+      cardIds: nextCardIds,
+      confirmed: false,
     });
   }
+
+  const floatingAbilityMenu = exchangeConfirmed ? (
+    <div className="fixed right-3 top-3 z-[70] flex flex-col items-end gap-2">
+      <button
+        aria-expanded={isAbilityMenuOpen}
+        aria-label="フロートメニューを開く"
+        className={`grid h-11 w-11 place-items-center rounded-full border border-sky-200/70 bg-sky-950/90 text-sky-100 shadow-[0_0_22px_rgba(125,211,252,0.45)] backdrop-blur hover:bg-sky-900 ${
+          showQuickMenuTutorial
+            ? "animate-pulse ring-4 ring-sky-300/60"
+            : ""
+        }`}
+        onClick={() => setIsAbilityMenuOpen((current) => !current)}
+        type="button"
+      >
+        <Menu size={20} />
+      </button>
+      {isAbilityMenuOpen ? (
+        <section className="w-56 rounded border border-sky-200/45 bg-stone-950/95 p-3 text-white shadow-2xl backdrop-blur">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-200">
+            Quick Menu
+          </p>
+          <button
+            className="mt-3 min-h-11 w-full rounded bg-sky-500 px-3 text-sm font-black text-white hover:bg-sky-400"
+            onClick={onBack}
+            type="button"
+          >
+            ゲーム選択画面へ
+          </button>
+        </section>
+      ) : null}
+    </div>
+  ) : null;
+  const quickMenuTutorialDialog = showQuickMenuTutorial ? (
+    <TutorialDialog
+      onDismiss={() => setShowQuickMenuTutorial(false)}
+      text="右上にクイックメニューが追加されました。ここからゲーム選択画面へすぐ戻ることができます。"
+      tone="quick"
+    />
+  ) : null;
 
   if (showPreparationVehicle) {
     return (
@@ -4537,6 +4668,8 @@ function HighLowBattle({
   if (showPreparation) {
     return (
       <div className="min-h-[680px] bg-[#111827] text-white">
+        {floatingAbilityMenu}
+        {quickMenuTutorialDialog}
         <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-black/45 p-3 sm:p-4">
           <button
             className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
@@ -4598,6 +4731,15 @@ function HighLowBattle({
                   エクスチェンジ対象を決定しました。
                 </p>
               ) : null}
+              {exchangeConfirmed ? (
+                <button
+                  className="min-h-11 rounded bg-sky-500 px-5 text-sm font-black text-white hover:bg-sky-400"
+                  onClick={onBack}
+                  type="button"
+                >
+                  ゲームスタートへ
+                </button>
+              ) : null}
               <button
                 className={`min-h-11 rounded px-5 text-sm font-black ${
                   exchangeCardIds.length === 2
@@ -4606,25 +4748,16 @@ function HighLowBattle({
                 }`}
                 disabled={exchangeCardIds.length !== 2}
                 onClick={() => {
+                  const nextPreparation = {
+                    applied: isSelectedExchangeCorrect,
+                    cardIds: exchangeCardIds,
+                    confirmed: true,
+                  };
                   setExchangeConfirmed(true);
-                  setExchangeApplied(isExchangeCorrect);
-                  setBattleStarted(true);
-                  setCanPlaceCard(true);
-                  setRobotZone(
-                    getRobotOpeningZone({
-                      isExchangeCorrect,
-                      isFinalHighLowBattle,
-                      isTutorial,
-                    }),
-                  );
-                  setPlayerPlacedCardId(null);
-                  setPlacementAnimation(null);
-                  setPlacementPendingConfirm(false);
-                  setPlacementConfirmed(false);
-                  setPlayerZone(null);
-                  setShowExchangeWarning(false);
-                  setWinOverlayDismissed(false);
-                  setShowPreparation(false);
+                  setExchangeApplied(isSelectedExchangeCorrect);
+                  onSaveExchangePreparation(nextPreparation);
+                  setIsAbilityMenuOpen(false);
+                  setShowQuickMenuTutorial(true);
                 }}
                 type="button"
               >
@@ -4639,6 +4772,8 @@ function HighLowBattle({
 
   return (
     <div className="min-h-[680px] bg-[#14391f] text-white">
+      {floatingAbilityMenu}
+      {quickMenuTutorialDialog}
       <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-black/45 p-3 sm:p-4">
         <a
           className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
@@ -4782,7 +4917,7 @@ function HighLowBattle({
           </div>
 
           {isTutorial && tutorialStep.target === "player-card" ? (
-            <TutorialBubble className="mt-3">{tutorialStep.text}</TutorialBubble>
+            <TutorialBubble className="mt-3">{tutorialStepText}</TutorialBubble>
           ) : null}
 
           {highLowResult ? (
