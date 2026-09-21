@@ -398,7 +398,7 @@ const generatedScanCards: Record<string, PlayingCard> = {
 };
 
 const scanRuleText =
-  "小謎内のイラストを対象にスキャンして、法則に従ってトランプ1枚（1〜13）を生成できる。ただし、生成したカードはエクスチェンジ機能を使って初めてゲームへ利用できる。スキャン対象イラストの入力では、数字として読む部分をスペース区切りで空ける。※インクで見えない部分もスキャン可能だが、例示と答えの単語で被りが出ることはない。※トランプのスキャンはできないが、ポーカーとして現物のトランプをセットした時に役名なら生成できる。例：イチ　ゴ→6、フォー　カード→4、レース　クイーン→12、ひ　ふ　み→和名のためNG、レイチ　ョウルイ→0でも1でもないためNG、イチ　モクサン→3が区切られていないためNG";
+  "①イラスト（その小謎内での呼称でのみ入力可能）をスキャンし、法則に従ってカード1枚を生成\n②エクスチェンジ機能を使ってゲームで利用\n※トランプのスキャンはできないが、ポーカーとして現物のトランプをセットした時に役名なら生成できる。\n\nスキャン対象イラストの入力例\nイチ　ゴ→6\nフォー　カード→4\nレース　クイーン→12\nひ　ふ　み→和名のためNG\nレイチ　ョウルイ→0でも1でもないためNG\nイチ　モクサン→3が区切られていないためNG";
 
 const scanRiddleImages = [
   {
@@ -1386,6 +1386,75 @@ function ScanTargetPreview({ alt, src }: { alt: string; src: string }) {
   );
 }
 
+function ZoomableRiddleImage({
+  alt,
+  className = "",
+  onOpen,
+  src,
+}: {
+  alt: string;
+  className?: string;
+  onOpen: (image: { alt: string; src: string }) => void;
+  src: string;
+}) {
+  return (
+    <button
+      className={`group block w-full overflow-hidden rounded border border-white/12 bg-white text-left ${className}`}
+      onClick={() => onOpen({ alt, src })}
+      type="button"
+    >
+      <Image
+        alt={alt}
+        className="h-auto w-full transition-transform duration-200 group-hover:scale-[1.015]"
+        height={900}
+        src={src}
+        width={1600}
+      />
+    </button>
+  );
+}
+
+function RiddleImageModal({
+  alt,
+  onClose,
+  src,
+}: {
+  alt: string;
+  onClose: () => void;
+  src: string;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/86 p-3 backdrop-blur-sm sm:p-6"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="relative max-h-full w-full max-w-6xl overflow-auto rounded border border-white/20 bg-white p-2 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          aria-label="拡大画像を閉じる"
+          className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded bg-black/75 text-white hover:bg-black"
+          onClick={onClose}
+          type="button"
+        >
+          <X size={16} />
+        </button>
+        <Image
+          alt={alt}
+          className="h-auto w-full rounded"
+          height={900}
+          priority
+          src={src}
+          width={1600}
+        />
+      </div>
+    </div>
+  );
+}
+
 function TutorialDialog({
   actionLabel,
   onDismiss,
@@ -1928,6 +1997,17 @@ function OpponentSelector({
               : "border border-white/10 bg-black/20"
           }`}
         >
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">
+          Player Hand
+        </p>
+        <div className="mt-2 flex justify-center gap-2 sm:gap-3">
+          {previewPlayerHand.map((card) => (
+            <PlayingCardView card={card} key={`hand-${card.id}`} size="hand" />
+          ))}
+        </div>
+
+        <div className="my-3 h-px bg-white/10" />
+
         {shouldShowFieldCards ? (
           <>
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">
@@ -1959,17 +2039,6 @@ function OpponentSelector({
             </div>
           </>
         )}
-
-        <div className="my-3 h-px bg-white/10" />
-
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">
-          Player Hand
-        </p>
-        <div className="mt-2 flex justify-center gap-2 sm:gap-3">
-          {previewPlayerHand.map((card) => (
-            <PlayingCardView card={card} key={`hand-${card.id}`} size="hand" />
-          ))}
-        </div>
         </div>
       </div>
     </div>
@@ -2009,7 +2078,9 @@ function BlackjackBattle({
   const isFinalBattle = robotId === "all-games-last";
   const [isPlayerHandExchanged, setIsPlayerHandExchanged] = useState(false);
   const [preparationAbility, setPreparationAbility] =
-    useState<PreparationAbility>("exchange");
+    useState<PreparationAbility>(
+      robotId === "blackjack-2-2" ? "scan" : "exchange",
+    );
   const [scannedItems, setScannedItems] = useState<string[]>([]);
   const [scanTutorialAnswer, setScanTutorialAnswer] = useState("");
   const [isScanTutorialAnswerSolved, setIsScanTutorialAnswerSolved] =
@@ -2024,7 +2095,14 @@ function BlackjackBattle({
   const [scanGeneratedPreviewSrc, setScanGeneratedPreviewSrc] = useState<
     string | null
   >(null);
+  const [expandedRiddleImage, setExpandedRiddleImage] = useState<{
+    alt: string;
+    src: string;
+  } | null>(null);
+  const [isScanSpecVisible, setIsScanSpecVisible] = useState(false);
   const [isScanCardExchanged, setIsScanCardExchanged] = useState(false);
+  const [scanExchangeCardIds, setScanExchangeCardIds] = useState<string[]>([]);
+  const [isScanExchangeConfirmed, setIsScanExchangeConfirmed] = useState(false);
   const [selectedRiddlePrintIds, setSelectedRiddlePrintIds] = useState<string[]>(
     [],
   );
@@ -2035,6 +2113,43 @@ function BlackjackBattle({
     scanAnswer.trim().length > 0 &&
     scanIllustrationName.trim().length > 0;
   const canSelectRiddlePrints = robotId === "blackjack-high-low-2-3";
+  const scanExchangeSections: ExchangeCardSection[] =
+    config && canUseScan
+      ? [
+          {
+            cards: getCardsById([...config.initialPlayerHandIds]),
+            id: "scan-player-hand",
+            label: "プレイヤーの手札",
+          },
+          {
+            cards: getCardsById([...config.initialRobotHandIds]),
+            id: "scan-robot-hand",
+            label: "ロボットの手札",
+          },
+          ...(isScanCardGenerated
+            ? [
+                {
+                  cards: [scannedOneCard],
+                  id: "scan-generated-card",
+                  label: "スキャン生成カード",
+                },
+              ]
+            : []),
+        ]
+      : [];
+  const isScanExchangeCorrect =
+    config && canUseScan
+      ? scanExchangeCardIds.length === 2 &&
+        scanExchangeCardIds.includes(scannedOneCard.id) &&
+        scanExchangeCardIds.some((cardId) => {
+          const selectedCard = getCardsById([cardId])[0] ?? null;
+
+          return (
+            config.initialPlayerHandIds.includes(cardId) &&
+            selectedCard?.rank === "A"
+          );
+        })
+      : false;
   const [blackjackExchangeCardIds, setBlackjackExchangeCardIds] = useState<
     string[]
   >([]);
@@ -2055,23 +2170,46 @@ function BlackjackBattle({
           },
         ]
       : [];
+  const selectedBlackjackPlayerExchangeCardId =
+    config && canExchangePlayerHand
+      ? blackjackExchangeCardIds.find((cardId) =>
+          config.initialPlayerHandIds.includes(cardId),
+        ) ?? null
+      : null;
+  const selectedBlackjackRobotExchangeCardId =
+    config && canExchangePlayerHand
+      ? blackjackExchangeCardIds.find((cardId) =>
+          config.initialRobotHandIds.includes(cardId),
+        ) ?? null
+      : null;
+  const requiredBlackjackPlayerExchangeCard =
+    config && "exchangePlayerCardId" in config
+      ? getCardsById([config.exchangePlayerCardId])[0] ?? null
+      : null;
+  const selectedBlackjackPlayerExchangeCard = selectedBlackjackPlayerExchangeCardId
+    ? getCardsById([selectedBlackjackPlayerExchangeCardId])[0] ?? null
+    : null;
   const isBlackjackExchangeCorrect =
     config &&
     canExchangePlayerHand &&
-    "exchangePlayerCardId" in config &&
     "exchangeRobotCardId" in config
       ? blackjackExchangeCardIds.length === 2 &&
-        blackjackExchangeCardIds.includes(config.exchangePlayerCardId) &&
-        blackjackExchangeCardIds.includes(config.exchangeRobotCardId)
+        selectedBlackjackRobotExchangeCardId === config.exchangeRobotCardId &&
+        Boolean(
+          selectedBlackjackPlayerExchangeCard &&
+            requiredBlackjackPlayerExchangeCard &&
+            selectedBlackjackPlayerExchangeCard.rank ===
+              requiredBlackjackPlayerExchangeCard.rank,
+        )
       : false;
   const configuredExchange =
     config &&
     isPlayerHandExchanged &&
-    "exchangePlayerCardId" in config &&
-    "exchangeRobotCardId" in config
+    selectedBlackjackPlayerExchangeCardId &&
+    selectedBlackjackRobotExchangeCardId
       ? {
-          playerCardId: config.exchangePlayerCardId,
-          robotCardId: config.exchangeRobotCardId,
+          playerCardId: selectedBlackjackPlayerExchangeCardId,
+          robotCardId: selectedBlackjackRobotExchangeCardId,
         }
       : null;
   const playerHandIds =
@@ -2124,6 +2262,9 @@ function BlackjackBattle({
   const [showPreparation, setShowPreparation] = useState(false);
   const [showSecondStageIntro, setShowSecondStageIntro] = useState(
     robotId === "blackjack-2-1",
+  );
+  const [showScanUnlockDialog, setShowScanUnlockDialog] = useState(
+    robotId === "blackjack-2-2",
   );
   const [activeBlackjackGame, setActiveBlackjackGame] =
     useState<BlackjackActiveGame>("ready");
@@ -2515,7 +2656,20 @@ function BlackjackBattle({
 
   function toggleBlackjackExchangeCard(cardId: string) {
     setIsBlackjackExchangeConfirmed(false);
+    setIsPlayerHandExchanged(false);
     setBlackjackExchangeCardIds((current) => {
+      if (current.includes(cardId)) {
+        return current.filter((id) => id !== cardId);
+      }
+
+      return [...current, cardId].slice(-2);
+    });
+  }
+
+  function toggleScanExchangeCard(cardId: string) {
+    setIsScanExchangeConfirmed(false);
+    setIsScanCardExchanged(false);
+    setScanExchangeCardIds((current) => {
       if (current.includes(cardId)) {
         return current.filter((id) => id !== cardId);
       }
@@ -2531,9 +2685,8 @@ function BlackjackBattle({
     }
 
     setIsScanTutorialAnswerSolved(true);
-    setScanTutorialMessage(
-      "正解です。次に、この小謎内のイラストを対象にスキャンしてみましょう。",
-    );
+    setIsScanTutorialComplete(true);
+    setScanTutorialMessage("");
   }
 
   function runScanTutorial() {
@@ -2583,6 +2736,22 @@ function BlackjackBattle({
         />
       ) : null}
 
+      {showScanUnlockDialog ? (
+        <TutorialDialog
+          onDismiss={() => setShowScanUnlockDialog(false)}
+          text="このままでは勝つことはできないため、新たな機能「スキャン」を解放しましょう。"
+          tone="hands"
+        />
+      ) : null}
+
+      {expandedRiddleImage ? (
+        <RiddleImageModal
+          alt={expandedRiddleImage.alt}
+          onClose={() => setExpandedRiddleImage(null)}
+          src={expandedRiddleImage.src}
+        />
+      ) : null}
+
       <div className="flex items-center gap-3 border-b border-white/10 bg-black/28 p-4">
         <a
           aria-label="戻る"
@@ -2621,7 +2790,7 @@ function BlackjackBattle({
                 </p>
                 <p className="mt-2 rounded border border-white/12 bg-black/35 p-3 text-sm font-bold leading-6 text-stone-100">
                   このままではプレイヤーが勝つことはできません。
-                  事前準備でエクスチェンジの対象を選択してください。
+                  車内で準備してエクスチェンジの対象を選択してください。
                 </p>
                 <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
                   <div className="flex items-center justify-between gap-3">
@@ -2649,12 +2818,15 @@ function BlackjackBattle({
                 <button
                   className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
                     isBlackjackExchangeConfirmed
-                      ? "bg-emerald-500 text-stone-950"
+                      ? "cursor-not-allowed bg-emerald-700 text-emerald-100 opacity-70"
                       : blackjackExchangeCardIds.length === 2
                         ? "bg-brass text-stone-950 hover:bg-yellow-300"
                         : "cursor-not-allowed bg-stone-700 text-stone-400"
                   }`}
-                  disabled={blackjackExchangeCardIds.length !== 2}
+                  disabled={
+                    blackjackExchangeCardIds.length !== 2 ||
+                    isBlackjackExchangeConfirmed
+                  }
                   onClick={() => {
                     setIsPlayerHandExchanged(Boolean(isBlackjackExchangeCorrect));
                     setIsBlackjackExchangeConfirmed(true);
@@ -2663,6 +2835,244 @@ function BlackjackBattle({
                 >
                   決定
                 </button>
+              </div>
+            ) : null}
+
+            {canUseScan ? (
+              <div className="rounded border border-brass/50 bg-brass/10 p-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                  Preparation
+                </p>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(["scan", "exchange"] as const).map((ability) => (
+                    <button
+                      className={`min-h-10 rounded px-3 py-2 text-sm font-black ${
+                        preparationAbility === ability
+                          ? "bg-brass text-stone-950"
+                          : "bg-white/10 text-white hover:bg-white/15"
+                      }`}
+                      key={ability}
+                      onClick={() => setPreparationAbility(ability)}
+                      type="button"
+                    >
+                      {ability === "scan" ? "スキャン" : "エクスチェンジ"}
+                    </button>
+                  ))}
+                </div>
+
+                {preparationAbility === "scan" ? (
+                  <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
+                    {!isScanTutorialAnswerSolved ? (
+                      <>
+                        <p className="text-sm font-bold leading-6 text-stone-100">
+                          <span className="block">
+                            スキャン機能を解放するために、こちらの謎を解きましょう
+                          </span>
+                          <span className="mt-1 block text-red-300">
+                            ※謎の印刷時にインクが零れる場合あり
+                          </span>
+                        </p>
+                        <ZoomableRiddleImage
+                          alt="スキャン機能チュートリアル小謎"
+                          className="mt-3"
+                          onOpen={setExpandedRiddleImage}
+                          src="/riddles/riddle_0.png"
+                        />
+                        <label className="mt-3 grid gap-2 text-sm font-bold text-stone-100">
+                          小謎の答え
+                          <input
+                            className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20"
+                            onChange={(event) =>
+                              setScanTutorialAnswer(event.target.value)
+                            }
+                            placeholder="答えを入力"
+                            value={scanTutorialAnswer}
+                          />
+                        </label>
+                        <button
+                          className="mt-3 min-h-11 w-full rounded bg-brass px-3 py-2 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                          onClick={solveScanTutorialRiddle}
+                          type="button"
+                        >
+                          答えを確認
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <details className="rounded border border-emerald-300/35 bg-emerald-950/25 p-3 text-sm font-bold leading-6 text-emerald-100">
+                          <summary className="cursor-pointer font-black">
+                            スキャン機能 解放済み
+                          </summary>
+                          <ZoomableRiddleImage
+                            alt="スキャン機能解放用小謎"
+                            className="mt-3"
+                            onOpen={setExpandedRiddleImage}
+                            src="/riddles/riddle_0.png"
+                          />
+                        </details>
+                        <button
+                          className="mt-3 min-h-11 w-full rounded border border-sky-300/40 bg-sky-950/35 px-3 py-2 text-sm font-black text-sky-100 hover:bg-sky-900/45"
+                          onClick={() =>
+                            setIsScanSpecVisible((current) => !current)
+                          }
+                          type="button"
+                        >
+                          スキャン仕様について
+                        </button>
+                        {isScanSpecVisible ? (
+                          <p className="mt-3 whitespace-pre-line rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
+                            {scanRuleText}
+                          </p>
+                        ) : null}
+                        <div className="mt-3 rounded border border-white/12 bg-white p-3 text-stone-950">
+                          <div className="grid gap-3">
+                            <div className="grid gap-0">
+                              {scanRiddleImages.slice(0, 2).map((image, index) => (
+                                <ZoomableRiddleImage
+                                  alt={image.alt}
+                                  className={
+                                    index === 0
+                                      ? "rounded-b-none border-b-0"
+                                      : "rounded-t-none"
+                                  }
+                                  key={image.src}
+                                  onOpen={setExpandedRiddleImage}
+                                  src={image.src}
+                                />
+                              ))}
+                            </div>
+                            {scanRiddleImages.slice(2).map((image) => (
+                              <ZoomableRiddleImage
+                                alt={image.alt}
+                                key={image.src}
+                                onOpen={setExpandedRiddleImage}
+                                src={image.src}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-3 grid gap-3 rounded border border-brass/45 bg-black/30 p-3">
+                          <label className="grid gap-2 text-sm font-bold text-stone-100">
+                            小謎の答え
+                            <input
+                              className={`min-h-11 rounded border bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ${
+                                scanAnswer.trim()
+                                  ? "border-emerald-400"
+                                  : "animate-pulse border-brass ring-4 ring-brass/30"
+                              }`}
+                              onChange={(event) => setScanAnswer(event.target.value)}
+                              placeholder="小謎の答えを入力"
+                              value={scanAnswer}
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-bold text-stone-100">
+                            イラストの呼称
+                            <input
+                              className={`min-h-11 rounded border bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ${
+                                scanIllustrationName.trim()
+                                  ? "border-emerald-400"
+                                  : "animate-pulse border-brass ring-4 ring-brass/30"
+                              }`}
+                              onChange={(event) =>
+                                setScanIllustrationName(event.target.value)
+                              }
+                              placeholder="イラストの呼称を入力"
+                              value={scanIllustrationName}
+                            />
+                          </label>
+                        </div>
+                        <button
+                          className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                            isScanCardGenerated
+                              ? "bg-emerald-500 text-stone-950"
+                              : canGenerateScanCard
+                                ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                                : "cursor-not-allowed bg-stone-700 text-stone-400"
+                          }`}
+                          disabled={!canGenerateScanCard && !isScanCardGenerated}
+                          onClick={generateScanCard}
+                          type="button"
+                        >
+                          {isScanCardGenerated
+                            ? "10のトランプを生成済み"
+                            : "入力内容をスキャンして10を生成"}
+                        </button>
+                      </>
+                    )}
+
+                    {scanTutorialMessage ? (
+                      <div className="mt-3 rounded border border-white/12 bg-white/8 p-3">
+                        {scanGeneratedPreviewSrc ? (
+                          <ScanTargetPreview
+                            alt="今回スキャンした対象"
+                            src={scanGeneratedPreviewSrc}
+                          />
+                        ) : null}
+                        <p className="mt-3 text-sm font-bold leading-6 text-stone-100">
+                          {scanTutorialMessage}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
+                    <p className="text-sm leading-6 text-stone-100">
+                      生成したカードはエクスチェンジの候補に追加されます。
+                      プレイヤーの手札、ロボットの手札、生成カードから交換対象を2枚選択します。
+                    </p>
+                    <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                            SELECT CARDS
+                          </p>
+                          <h3 className="mt-1 text-xl font-black">
+                            交換対象を2枚選択
+                          </h3>
+                        </div>
+                        <span className="rounded bg-white px-2 py-1 text-xs font-black text-stone-950">
+                          {scanExchangeCardIds.length}/2
+                        </span>
+                      </div>
+                      <ExchangeCardSectionPicker
+                        onToggleCard={toggleScanExchangeCard}
+                        sections={scanExchangeSections}
+                        selectedCardIds={scanExchangeCardIds}
+                      />
+                      {!isScanCardGenerated ? (
+                        <p className="mt-3 rounded border border-white/12 bg-white/8 p-3 text-center text-sm font-bold leading-6 text-stone-400">
+                          まだ生成カードがありません。スキャンでカードを生成すると、候補に追加されます。
+                        </p>
+                      ) : null}
+                      {isScanExchangeConfirmed ? (
+                        <p className="mt-3 rounded border border-emerald-400/40 bg-emerald-950/40 p-3 text-sm font-black text-emerald-100">
+                          エクスチェンジ対象を決定しました。
+                        </p>
+                      ) : null}
+                    </div>
+                    <button
+                      className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                        isScanExchangeConfirmed
+                          ? "cursor-not-allowed bg-emerald-700 text-emerald-100 opacity-70"
+                          : scanExchangeCardIds.length === 2
+                            ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                            : "cursor-not-allowed bg-stone-700 text-stone-400"
+                      }`}
+                      disabled={
+                        scanExchangeCardIds.length !== 2 ||
+                        isScanExchangeConfirmed
+                      }
+                      onClick={() => {
+                        setIsScanCardExchanged(Boolean(isScanExchangeCorrect));
+                        setIsScanExchangeConfirmed(true);
+                      }}
+                      type="button"
+                    >
+                      決定
+                    </button>
+                  </div>
+                )}
               </div>
             ) : null}
           </section>
@@ -2778,15 +3188,6 @@ function BlackjackBattle({
               </div>
             ) : null}
 
-            {activeBlackjackGame !== "high-low" ? (
-              <BlackjackField
-                cards={visibleBlackjackRobotHand}
-                isBlackjack={false}
-                label="BLACKJACK ROBOT HAND"
-                revealSecond
-                score={null}
-              />
-            ) : null}
             <BlackjackField
               cards={visibleActivePlayerHand}
               draggableCardIds={
@@ -2814,6 +3215,15 @@ function BlackjackBattle({
                 cards={visibleHighLowRobotHand}
                 isBlackjack={false}
                 label="HIGH AND LOW ROBOT HAND"
+                revealSecond
+                score={null}
+              />
+            ) : null}
+            {activeBlackjackGame !== "high-low" ? (
+              <BlackjackField
+                cards={visibleBlackjackRobotHand}
+                isBlackjack={false}
+                label="BLACKJACK ROBOT HAND"
                 revealSecond
                 score={null}
               />
@@ -2867,7 +3277,7 @@ function BlackjackBattle({
               onClick={() => setShowPreparation(true)}
               type="button"
             >
-              事前準備
+              車内で準備
             </button>
           ) : null}
           {phase === "idle" && activeBlackjackGame === "ready" ? (
@@ -2881,7 +3291,7 @@ function BlackjackBattle({
               onClick={startRound}
               type="button"
             >
-              勝負開始
+              ゲームスタート
             </button>
           ) : null}
 
@@ -2893,6 +3303,24 @@ function BlackjackBattle({
             >
               もう一度確認
             </button>
+          ) : null}
+
+          {phase === "result" && result === "win" && robotId === "blackjack-2-1" ? (
+            <Link
+              className="grid min-h-12 place-items-center rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
+              href="/?stage=2&battle=blackjack&robot=blackjack-2-2"
+            >
+              2戦目へ
+            </Link>
+          ) : null}
+
+          {phase === "result" && result === "win" && robotId === "blackjack-2-2" ? (
+            <Link
+              className="grid min-h-12 place-items-center rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
+              href="/?stage=2&battle=blackjack&robot=blackjack-high-low-2-3"
+            >
+              3戦目へ
+            </Link>
           ) : null}
           <div className="hidden">
           <div className="rounded border border-white/10 bg-white/6 p-3">
@@ -2911,7 +3339,7 @@ function BlackjackBattle({
               </p>
               <p className="mt-2 rounded border border-white/12 bg-black/35 p-3 text-sm font-bold leading-6 text-stone-100">
                 このままではプレイヤーが勝つことはできません。
-                事前準備でエクスチェンジの対象を選択してください。
+                車内で準備してエクスチェンジの対象を選択してください。
               </p>
               <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -2939,12 +3367,15 @@ function BlackjackBattle({
               <button
                 className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
                   isBlackjackExchangeConfirmed
-                    ? "bg-emerald-500 text-stone-950"
+                    ? "cursor-not-allowed bg-emerald-700 text-emerald-100 opacity-70"
                     : blackjackExchangeCardIds.length === 2
                       ? "bg-brass text-stone-950 hover:bg-yellow-300"
                       : "cursor-not-allowed bg-stone-700 text-stone-400"
                 }`}
-                disabled={blackjackExchangeCardIds.length !== 2}
+                disabled={
+                  blackjackExchangeCardIds.length !== 2 ||
+                  isBlackjackExchangeConfirmed
+                }
                 onClick={() => {
                   setIsPlayerHandExchanged(Boolean(isBlackjackExchangeCorrect));
                   setIsBlackjackExchangeConfirmed(true);
@@ -3265,7 +3696,7 @@ function BlackjackBattle({
               onClick={startRound}
               type="button"
             >
-              勝負開始
+            ゲームスタート
             </button>
           ) : null}
 
@@ -3295,9 +3726,6 @@ function BlackjackDeclarationOverlay() {
         </p>
         <p className="mt-2 text-4xl font-black text-sky-300 drop-shadow sm:text-6xl">
           ブラックジャック
-        </p>
-        <p className="mt-3 text-sm font-black text-stone-100">
-          2枚目を重ねた瞬間に宣言
         </p>
       </div>
     </div>
@@ -3537,9 +3965,11 @@ function FinalCopyPasteWorkbench({
 }
 
 function CardPlacementAnimation({
+  className = "",
   mode = "release",
   styleType,
 }: {
+  className?: string;
   mode?: "hold" | "release";
   styleType: PlacementStyle;
 }) {
@@ -3547,7 +3977,7 @@ function CardPlacementAnimation({
   const animationClass = mode === "hold" ? "holdingHand" : isGentle ? "gentleHand" : "snapHand";
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center overflow-hidden">
+    <div className={`pointer-events-none absolute inset-0 z-20 grid place-items-center overflow-hidden ${className}`}>
       <div className={animationClass}>
         <Image
           alt=""
@@ -4026,13 +4456,6 @@ function PokerBattle({
       <div className="grid gap-3 p-4 sm:grid-cols-[1fr_220px]">
         <section className="rounded border border-white/12 bg-black/28 p-3">
           <div className="grid gap-3">
-            <PokerCardGroup cards={robotHand} label="POKER ROBOT HAND" />
-            <PokerSelectableGroup
-              cards={fieldCards}
-              label="SHARED FIELD"
-              onToggle={toggleSelectedCard}
-              selectedCardIds={selectedCardIds}
-            />
             <PokerSelectableGroup
               cards={playerHand}
               label="PLAYER HAND"
@@ -4069,6 +4492,13 @@ function PokerBattle({
                 />
               )
             ) : null}
+            <PokerCardGroup cards={robotHand} label="POKER ROBOT HAND" />
+            <PokerSelectableGroup
+              cards={fieldCards}
+              label="SHARED FIELD"
+              onToggle={toggleSelectedCard}
+              selectedCardIds={selectedCardIds}
+            />
           </div>
 
           <div className="mt-4 rounded border border-brass/60 bg-black/50 p-4">
@@ -5238,7 +5668,7 @@ function HighLowBattle({
           >
             <ArrowLeft size={18} />
           </button>
-          <h2 className="text-lg font-black">事前準備</h2>
+          <h2 className="text-lg font-black">車内で準備</h2>
           <div className="h-10 w-10" />
         </div>
 
@@ -5279,7 +5709,7 @@ function HighLowBattle({
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
                 Preparation
               </p>
-              <h3 className="mt-2 text-xl font-black">事前準備</h3>
+              <h3 className="mt-2 text-xl font-black">車内で準備</h3>
               <p className="mt-4 text-sm font-bold leading-7 text-stone-100">
                 <span className="block">
                   このままではプレイヤーが勝つことはできません。
@@ -5316,7 +5746,7 @@ function HighLowBattle({
           >
             <ArrowLeft size={18} />
           </button>
-          <h2 className="text-lg font-black">事前準備</h2>
+          <h2 className="text-lg font-black">車内で準備</h2>
           <div className="h-10 w-10" />
         </div>
 
@@ -5500,7 +5930,7 @@ function HighLowBattle({
               }}
               type="button"
             >
-              事前準備
+              車内で準備
             </button>
           </div>
         ) : null}
@@ -5563,7 +5993,6 @@ function HighLowBattle({
           ) : null}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 sm:gap-4">
-            <HandPanel cards={visibleRobotHand} owner="Robot" side="robot" />
             <HandPanel
               cards={visiblePlayerHand}
               draggableCardIds={draggableCardIds}
@@ -5578,6 +6007,7 @@ function HighLowBattle({
               owner="Player"
               side="player"
             />
+            <HandPanel cards={visibleRobotHand} owner="Robot" side="robot" />
           </div>
 
           {isTutorial && tutorialStep.target === "player-card" ? (
@@ -5884,6 +6314,7 @@ function BlackjackFieldSlot({
       </div>
       {placementAnimation ? (
         <CardPlacementAnimation
+          className="translate-x-4 sm:translate-x-5"
           mode={placementAnimationMode}
           styleType={placementAnimation}
         />
