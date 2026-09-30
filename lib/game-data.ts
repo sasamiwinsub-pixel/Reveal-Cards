@@ -1,6 +1,6 @@
 export type GameType = "blackjack" | "poker" | "high-low";
 export type Seat = "right" | "top" | "left";
-export type CardRank = "0" | "1" | "10" | "A" | "J" | "Q" | "K";
+export type CardRank = "0" | "1" | "3" | "5" | "10" | "A" | "J" | "Q" | "K";
 export type CardSuit = "crub" | "daia" | "heart" | "spade";
 
 export type Robot = {
@@ -43,22 +43,22 @@ const gameSeats: Record<GameType, Seat> = {
   "high-low": "right",
 };
 
-const highLowRuleText =
-  "お互いに手札2枚ずつ用意。プレイヤーの勝利条件はカードの大小関係が成り立つこと。流れ ①ロボットが大小関係成り立たないよう先に置く ②プレイヤーが置く ③ハイアンドローと宣言して判定する。";
+export const highLowRuleText =
+  "お互いに手札2枚ずつ用意。プレイヤーの勝利条件はカードの大小関係が成り立つこと。\n①ロボットが大小関係成り立たないよう先に置く\n②プレイヤーが置く\n③ハイアンドローと宣言して判定する。";
 
-const highLowSpecText =
-  "こちらの手札を透視できる。結果に差がない場合は大きい数字を優先して出す。";
+export const highLowSpecText =
+  "ユニークスキル：プレイヤーの手札を透視\n結果に差がない場合は、大きい数字を優先して出す";
 
 export const blackjackRuleText =
-  "JQKは10、Aは11として扱い、2〜9は数字の通り。手札から順番に出し、1枚目と2枚目の合計が21に近い方の勝ち。引き分けはあなたの負け。手札にある2枚目で21になる場合、1枚目にピッタリと重ねて2枚目を置き、ブラックジャックと宣言する。";
+  "JQKは10、Aは11として扱い、それ以外は数字通り\n①1枚目を置き、2枚目を重ねて置く\n②合計21になる場合、ブラックジャックと宣言して判定を開始\n③1枚目と2枚目の合計がブラックジャック（21の役）に近い方の勝ち";
 
 export const blackjackSpecText =
-  "引き分けとなった場合、プレイヤーを物理的に倒す";
+  "ユニークスキル：引き分けとなった瞬間、プレイヤーを物理的に倒す\n置かれたカードのカウントを目視で行い、公平な判定を行う";
 
-const pokerRuleText =
+export const pokerRuleText =
   "手札は2枚。フィールドに4枚トランプを置く。手札2枚とフィールド4枚の中から好きな2枚の合計4枚を選び役を作る。相手と同じカードを選んでもよい。成立した役名を宣言し、役が強い方の勝ち。流れ ①手札2枚に加えて、フィールド4枚の中から好きな2枚を組み合わせて役を作る ②4枚で出来上がった役名を宣言して判定する。";
 
-const pokerSpecText =
+export const pokerSpecText =
   "自分の手札とフィールドを常に見ているため、イカサマは許さない。カードが判明したら即座に勝率を計算する。";
 
 export const pokerBettingSpecText =
