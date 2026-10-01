@@ -1,6 +1,16 @@
 export type GameType = "blackjack" | "poker" | "high-low";
 export type Seat = "right" | "top" | "left";
-export type CardRank = "0" | "1" | "3" | "5" | "10" | "A" | "J" | "Q" | "K";
+export type CardRank =
+  | "0"
+  | "1"
+  | "3"
+  | "5"
+  | "9"
+  | "10"
+  | "A"
+  | "J"
+  | "Q"
+  | "K";
 export type CardSuit = "crub" | "daia" | "heart" | "spade";
 
 export type Robot = {
@@ -50,10 +60,10 @@ export const highLowSpecText =
   "ユニークスキル：プレイヤーの手札を透視\n結果に差がない場合は、大きい数字を優先して出す";
 
 export const blackjackRuleText =
-  "JQKは10、Aは11として扱い、それ以外は数字通り\n①1枚目を置き、2枚目を重ねて置く\n②合計21になる場合、ブラックジャックと宣言して判定を開始\n③1枚目と2枚目の合計がブラックジャック（21の役）に近い方の勝ち";
+  "JQKは10、Aは11として扱い、それ以外は数字通り\n①1枚目を置き、2枚目を重ねて置く\n②ブラックジャックと宣言して判定を開始\n③1枚目と2枚目の合計がブラックジャック（21の役）に近い方の勝ち（双方21ならプレイヤーの勝ちとする）";
 
 export const blackjackSpecText =
-  "ユニークスキル：引き分けとなった瞬間、プレイヤーを物理的に倒す\n置かれたカードのカウントを目視で行い、公平な判定を行う";
+  "ユニークスキル：役の21以外で引き分けとなった瞬間、プレイヤーを物理的に倒す\n置かれたカードのカウントを目視で行い、公平な判定を行う";
 
 export const pokerRuleText =
   "手札は2枚。フィールドに4枚トランプを置く。手札2枚とフィールド4枚の中から好きな2枚の合計4枚を選び役を作る。相手と同じカードを選んでもよい。成立した役名を宣言し、役が強い方の勝ち。流れ ①手札2枚に加えて、フィールド4枚の中から好きな2枚を組み合わせて役を作る ②4枚で出来上がった役名を宣言して判定する。";
@@ -107,7 +117,7 @@ export const stages: Stage[] = [
     title: "Blackjack",
     startingChips: 0,
     clearText:
-      "ブラックジャックを3戦します。3戦目のみ、ブラックジャックとハイアンドローの両方をクリアします。",
+      "ブラックジャックを4戦します。3戦目以降は、ブラックジャックとハイアンドローの両方をクリアします。",
     robots: [
       {
         id: "blackjack-2-1",
@@ -126,8 +136,17 @@ export const stages: Stage[] = [
         specText: "ダミー",
       },
       {
-        id: "blackjack-high-low-2-3",
+        id: "blackjack-2-3",
         name: "BJ/HL-03",
+        gameType: "blackjack",
+        gameTypes: ["blackjack", "high-low"],
+        seat: "top",
+        ruleText: highLowRuleText,
+        specText: highLowSpecText,
+      },
+      {
+        id: "blackjack-high-low-2-3",
+        name: "BJ/HL-04",
         gameType: "blackjack",
         gameTypes: ["blackjack", "high-low"],
         seat: "top",
