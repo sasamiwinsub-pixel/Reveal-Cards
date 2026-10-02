@@ -21,10 +21,10 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type Dispatch,
   type DragEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
-  type SetStateAction,
 } from "react";
 import {
   blackjackRuleText,
@@ -206,7 +206,7 @@ const blackjackBattleConfigs = {
   },
   "blackjack-high-low-2-3": {
     highLowRobotHandIds: ["K-crub", "Q-crub"],
-    initialPlayerHandIds: ["K-spade", "Q-heart"],
+    initialPlayerHandIds: ["scan-A", "Q-heart"],
     initialRobotHandIds: ["Q-daia", "scan-10"],
   },
   "all-games-last": {
@@ -352,6 +352,7 @@ type ExchangeCardSection = {
   cards: PlayingCard[];
   disabled?: boolean;
   id: string;
+  interactionDisabled?: boolean;
   label: string;
 };
 
@@ -1791,7 +1792,7 @@ function ScanRuleText() {
         <span className="text-sky-300">役名</span>
         なら生成できる。
       </span>
-      <span className="mt-5 block">スキャン対象イラストの入力例</span>
+      <span className="mt-5 block">イラストの呼称の入力例</span>
       <span className="block">イチ　ゴ→6</span>
       <span className="block">フォー　カード→4</span>
       <span className="block">レース　クイーン→12</span>
@@ -1946,16 +1947,54 @@ function ScanSolvedSummary() {
   );
 }
 
+function ExchangeModeToggleButton({
+  className = "",
+  isActive,
+  isCompleted = false,
+  onClick,
+}: {
+  className?: string;
+  isActive: boolean;
+  isCompleted?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`${className} min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+        isCompleted
+          ? "bg-emerald-500 text-stone-950"
+          : isActive
+            ? "bg-red-500 text-white"
+            : "bg-casinoRed text-white hover:bg-red-600"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {isCompleted
+        ? "エクスチェンジ済み"
+        : isActive
+          ? "エクスチェンジ起動中"
+          : "エクスチェンジ起動"}
+    </button>
+  );
+}
+
 function IllustrationSplitSelector({
+  confirmed = false,
+  confirmationResult = null,
   onChange,
+  onConfirm,
   selectedIndexes,
   value,
 }: {
+  confirmed?: boolean;
+  confirmationResult?: boolean | null;
   onChange: (indexes: number[]) => void;
+  onConfirm?: (dividedText: string) => void;
   selectedIndexes: number[];
   value: string;
 }) {
-  const characters = Array.from(value.trim());
+  const characters = Array.from(value.trim().replace(/[／/]/g, ""));
   const hasValue = characters.length > 0;
   const selectedSet = new Set(selectedIndexes);
   const dividedText = hasValue
@@ -2013,6 +2052,24 @@ function IllustrationSplitSelector({
           <p className="mt-3 rounded border border-white/10 bg-black/35 p-3 text-lg font-black leading-7 text-sky-100">
             {dividedText}
           </p>
+          {onConfirm ? (
+            <button
+              className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                confirmed
+                  ? "bg-emerald-500 text-stone-950"
+                  : "bg-brass text-stone-950 hover:bg-yellow-300"
+              }`}
+              onClick={() => onConfirm(dividedText)}
+              type="button"
+            >
+              {confirmed ? "区切り確定済み" : "区切りを確定"}
+            </button>
+          ) : null}
+          {confirmationResult === false ? (
+            <p className="mt-3 rounded border border-red-300/45 bg-red-950/45 p-3 text-sm font-black leading-6 text-red-100">
+              区切り方をもう一度確認してください。
+            </p>
+          ) : null}
         </>
       ) : (
         <p className="mt-3 rounded border border-white/10 bg-black/35 p-3 text-sm font-bold text-stone-400">
@@ -2063,10 +2120,16 @@ function ZoomableRiddleImage({
 function RiddleImageModal({
   alt,
   onClose,
+  riddlePrintSelection,
   src,
 }: {
   alt: string;
   onClose: () => void;
+  riddlePrintSelection?: {
+    disabled?: boolean;
+    onToggleTarget: (targetId: string) => void;
+    selectedIds: string[];
+  };
   src: string;
 }) {
   return (
@@ -2088,14 +2151,23 @@ function RiddleImageModal({
         >
           <X size={16} />
         </button>
-        <Image
-          alt={alt}
-          className="h-auto w-full rounded"
-          height={900}
-          priority
-          src={src}
-          width={1600}
-        />
+        <div className="relative">
+          <Image
+            alt={alt}
+            className="h-auto w-full rounded"
+            height={900}
+            priority
+            src={src}
+            width={1600}
+          />
+          {riddlePrintSelection ? (
+            <RiddlePrintTargetLayer
+              disabled={riddlePrintSelection.disabled}
+              onToggleTarget={riddlePrintSelection.onToggleTarget}
+              selectedIds={riddlePrintSelection.selectedIds}
+            />
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -2695,9 +2767,21 @@ function BlackjackBattle({
   const [scanRiddleAnswerOne, setScanRiddleAnswerOne] = useState("");
   const [scanRiddleIllustrationOne, setScanRiddleIllustrationOne] =
     useState("");
+  const [
+    scanRiddleIllustrationOneSplitIndexes,
+    setScanRiddleIllustrationOneSplitIndexes,
+  ] = useState<number[]>([]);
   const [scanRiddleAnswerTwo, setScanRiddleAnswerTwo] = useState("");
   const [scanRiddleIllustrationTwo, setScanRiddleIllustrationTwo] =
     useState("");
+  const [
+    scanRiddleIllustrationTwoSplitIndexes,
+    setScanRiddleIllustrationTwoSplitIndexes,
+  ] = useState<number[]>([]);
+  const [scanRiddleSplitResults, setScanRiddleSplitResults] = useState<{
+    one: boolean | null;
+    two: boolean | null;
+  }>({ one: null, two: null });
   const [postTutorialScanAnswer, setPostTutorialScanAnswer] = useState("");
   const [
     postTutorialScanIllustrationName,
@@ -2765,6 +2849,7 @@ function BlackjackBattle({
     showPhysicalScanDisposalDialog,
     setShowPhysicalScanDisposalDialog,
   ] = useState(false);
+  const physicalScanPanelRef = useRef<HTMLDivElement | null>(null);
   const [selectedRiddlePrintIds, setSelectedRiddlePrintIds] = useState<string[]>(
     [],
   );
@@ -2774,11 +2859,14 @@ function BlackjackBattle({
   const scannedPhysicalScanCard = physicalScanConfig
     ? generatedScanCards[physicalScanConfig.generatedCardId]
     : generatedScanCards["scan-3"];
+  const priorTutorialGeneratedCards =
+    robotId === "blackjack-2-3" ? [scannedTwelveCard] : [];
   const scannedGeneratedCards = isPrintedScanBattle
     ? [scannedOneCard, scannedTwelveCard]
-    : isPhysicalScanGenerated
-      ? [scannedPhysicalScanCard]
-      : [];
+    : [
+        ...priorTutorialGeneratedCards,
+        ...(isPhysicalScanGenerated ? [scannedPhysicalScanCard] : []),
+      ];
   const scanGeneratedDisplayCards = [
     ...scannedGeneratedCards,
     ...(isPrintedScanBattle && isPhysicalScanGenerated
@@ -2799,7 +2887,7 @@ function BlackjackBattle({
       areScanRiddleAnswersSolved ||
       (scanRiddleIllustrationResults.one === true &&
         scanRiddleIllustrationResults.two === true)
-    : isPhysicalScanGenerated;
+    : scanGeneratedDisplayCards.length > 0;
   const canSelectRiddlePrints = robotId === "blackjack-high-low-2-3";
   const highLowRobotExchangeCards =
     config && "highLowRobotHandIds" in config
@@ -3224,16 +3312,6 @@ function BlackjackBattle({
   const isFourthBattlePreparationRequired =
     robotId === "blackjack-high-low-2-3" && !isFourthRobotExchangeConfirmed;
 
-  useEffect(() => {
-    if (canSelectRiddlePrints && selectedRiddlePrintIds.length === 2) {
-      onRevealRiddleExchangeTiming();
-    }
-  }, [
-    canSelectRiddlePrints,
-    onRevealRiddleExchangeTiming,
-    selectedRiddlePrintIds.length,
-  ]);
-
   function startRound() {
     if (!playerFirstCard || !robotFirstCard) {
       setMessage("手札が足りません。");
@@ -3569,10 +3647,10 @@ function BlackjackBattle({
 
   function solveScanIllustrationNames() {
     const normalizedIllustrationOne = normalizeRiddleAnswer(
-      scanRiddleIllustrationOne,
+      scanRiddleIllustrationOne.replace(/[／/]/g, ""),
     );
     const normalizedIllustrationTwo = normalizeRiddleAnswer(
-      scanRiddleIllustrationTwo,
+      scanRiddleIllustrationTwo.replace(/[／/]/g, ""),
     );
     const isIllustrationOneCorrect =
       normalizedIllustrationOne === "住所" ||
@@ -3589,6 +3667,31 @@ function BlackjackBattle({
       setScanExchangeChoice(null);
       setScanTutorialMessage(
         "正解している呼称は表示しました。未正解の呼称をもう一度確認してください。",
+      );
+      return;
+    }
+
+    const isSplitOneCorrect = scanRiddleSplitResults.one === true;
+    const isSplitTwoCorrect =
+      scanRiddleSplitResults.two === true ||
+      scanRiddleIllustrationTwoSplitIndexes.length === 0;
+
+    if (
+      scanRiddleSplitResults.two !== true &&
+      scanRiddleIllustrationTwoSplitIndexes.length === 0
+    ) {
+      setScanRiddleSplitResults((current) => ({
+        ...current,
+        two: true,
+      }));
+      setScanRiddleIllustrationTwo("くいーん");
+    }
+
+    if (!isSplitOneCorrect || !isSplitTwoCorrect) {
+      setAreScanRiddleAnswersSolved(false);
+      setScanExchangeChoice(null);
+      setScanTutorialMessage(
+        "呼称は正解です。区切り方を確定してください。",
       );
       return;
     }
@@ -3610,6 +3713,37 @@ function BlackjackBattle({
     setScanTutorialMessage(
       "正解です。スペードの10と12を生成しました。エクスチェンジへ進んでください。",
     );
+  }
+
+  function confirmScanIllustrationSplit(
+    target: "one" | "two",
+    dividedText: string,
+  ) {
+    const normalizedDividedText = dividedText
+      .normalize("NFKC")
+      .replace(/\s+/g, "")
+      .toLowerCase();
+    const isCorrect =
+      target === "one"
+        ? normalizedDividedText === "じゅう/しょ"
+        : normalizedDividedText === "くいーん";
+
+    setScanRiddleSplitResults((current) => ({
+      ...current,
+      [target]: isCorrect,
+    }));
+
+    if (isCorrect) {
+      if (target === "one") {
+        setScanRiddleIllustrationOneSplitIndexes([3]);
+        setScanRiddleIllustrationOne("じゅう/しょ");
+      } else {
+        setScanRiddleIllustrationTwoSplitIndexes([]);
+        setScanRiddleIllustrationTwo("くいーん");
+      }
+    }
+
+    setAreScanRiddleAnswersSolved(false);
   }
 
   function chooseScanExchangeCard(rank: "10" | "12") {
@@ -3663,9 +3797,22 @@ function BlackjackBattle({
     setIsScanCardExchanged(isCorrect);
     setIsScanExchangeConfirmed(true);
 
+    if (isCorrect) {
+      setIsCardExchangeModeActive(false);
+    }
+
     if (isCorrect && robotId === "blackjack-2-2") {
       setShowPhysicalScanGuideDialog(true);
     }
+  }
+
+  function scrollToPhysicalScanPanel() {
+    window.setTimeout(() => {
+      physicalScanPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
   }
 
   function activateCardExchangeMode() {
@@ -3733,28 +3880,48 @@ function BlackjackBattle({
   }
 
   function activateRiddleExchangeMode() {
+    if (isRiddleExchangeModeActive) {
+      setIsRiddleExchangeModeActive(false);
+      setSelectedRiddlePrintIds([]);
+      setScanTutorialMessage("エクスチェンジを解除しました。");
+      return;
+    }
+
     setIsRiddleExchangeModeActive(true);
     setSelectedRiddlePrintIds([]);
-    setScanTutorialMessage(
-      "エクスチェンジモードを起動しました。小謎①画像内の9と10を指定してください。",
-    );
+    setScanTutorialMessage("");
   }
 
-  function applyRiddlePrintExchange() {
-    const isCorrect =
+  function toggleRiddlePrintTarget(targetId: string) {
+    const nextSelectedIds = selectedRiddlePrintIds.includes(targetId)
+      ? selectedRiddlePrintIds.filter((id) => id !== targetId)
+      : [...selectedRiddlePrintIds, targetId].slice(-2);
+
+    setSelectedRiddlePrintIds(nextSelectedIds);
+  }
+
+  function confirmRiddlePrintExchangeSelection() {
+    const isCorrectRiddlePrintExchange =
       selectedRiddlePrintIds.includes("riddle-1-middle-left") &&
       selectedRiddlePrintIds.includes("riddle-1-center");
 
-    if (!isCorrect) {
-      setScanTutorialMessage("小謎①画像内の9と10を指定してください。");
+    if (
+      !canSelectRiddlePrints ||
+      !isRiddleExchangeModeActive ||
+      selectedRiddlePrintIds.length !== 2
+    ) {
+      return;
+    }
+
+    if (!isCorrectRiddlePrintExchange) {
+      setScanTutorialMessage("選択した対象をもう一度確認してください。");
       return;
     }
 
     setIsRiddlePrintExchangeApplied(true);
     setIsRiddleExchangeModeActive(false);
-    setScanTutorialMessage(
-      "小謎①画像内の9と10をエクスチェンジしました。続けて小謎①をスキャンしてください。",
-    );
+    setScanTutorialMessage("");
+    onRevealRiddleExchangeTiming();
   }
 
   function runFourthBattleScan() {
@@ -3768,7 +3935,7 @@ function BlackjackBattle({
       )
     ) {
       setScanTutorialMessage(
-        "小謎①の答えと対象イラストをもう一度確認してください。",
+        "謎の答えとイラストの呼称をもう一度確認してください。",
       );
       setIsFourthScanGenerated(false);
       return;
@@ -3781,7 +3948,7 @@ function BlackjackBattle({
         : [...current, scannedNineCard.id],
     );
     setScanTutorialMessage(
-      "スキャン成功。エクスチェンジ後の小謎①から9のトランプを生成しました。",
+      "スキャン成功。9のトランプを生成しました。",
     );
   }
 
@@ -3802,9 +3969,12 @@ function BlackjackBattle({
       fourthRobotExchangeCardIds.includes(scannedNineCard.id);
 
     setIsFourthRobotExchangeConfirmed(isCorrect);
+    if (isCorrect) {
+      setIsRiddleExchangeModeActive(false);
+    }
     setScanTutorialMessage(
       isCorrect
-        ? "ブラックジャックロボットのQと生成した9をエクスチェンジ対象にセットしました。"
+        ? "エクスチェンジ対象を決定しました。"
         : "ブラックジャックロボットのQと生成した9を指定してください。",
     );
   }
@@ -3889,6 +4059,7 @@ function BlackjackBattle({
           onDismiss={() => {
             setShowPhysicalScanGuideDialog(false);
             setPreparationAbility("scan");
+            scrollToPhysicalScanPanel();
           }}
           text={
             <>
@@ -3919,6 +4090,16 @@ function BlackjackBattle({
         <RiddleImageModal
           alt={expandedRiddleImage.alt}
           onClose={() => setExpandedRiddleImage(null)}
+          riddlePrintSelection={
+            canSelectRiddlePrints && expandedRiddleImage.src === "/riddles/riddle_1.png"
+              ? {
+                  disabled:
+                    !isRiddleExchangeModeActive || isRiddlePrintExchangeApplied,
+                  onToggleTarget: toggleRiddlePrintTarget,
+                  selectedIds: selectedRiddlePrintIds,
+                }
+              : undefined
+          }
           src={expandedRiddleImage.src}
         />
       ) : null}
@@ -3960,19 +4141,10 @@ function BlackjackBattle({
                   Preparation
                 </p>
                 <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
-                  <button
-                    className={`min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
-                      isCardExchangeModeActive
-                        ? "bg-red-500 text-white"
-                        : "bg-casinoRed text-white hover:bg-red-600"
-                    }`}
+                  <ExchangeModeToggleButton
+                    isActive={isCardExchangeModeActive}
                     onClick={activateCardExchangeMode}
-                    type="button"
-                  >
-                    {isCardExchangeModeActive
-                      ? "エクスチェンジ起動中"
-                      : "エクスチェンジ起動"}
-                  </button>
+                  />
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
@@ -3988,7 +4160,7 @@ function BlackjackBattle({
                     onToggleCard={toggleBlackjackExchangeCard}
                     sections={blackjackExchangeSections.map((section) => ({
                       ...section,
-                      disabled: section.disabled || !isCardExchangeModeActive,
+                      interactionDisabled: !isCardExchangeModeActive,
                     }))}
                     selectedCardIds={blackjackExchangeCardIds}
                   />
@@ -4015,6 +4187,9 @@ function BlackjackBattle({
                   onClick={() => {
                     setIsPlayerHandExchanged(Boolean(isBlackjackExchangeCorrect));
                     setIsBlackjackExchangeConfirmed(true);
+                    if (isBlackjackExchangeCorrect) {
+                      setIsCardExchangeModeActive(false);
+                    }
                   }}
                   type="button"
                 >
@@ -4121,23 +4296,25 @@ function BlackjackBattle({
                             value={postTutorialScanIllustrationName}
                           />
                         </div>
-                        <PhysicalScanPanel
-                          cards={visiblePhysicalScanInventoryCards}
-                          generatedCard={scannedPhysicalScanCard}
-                          generatedLabel={
-                            physicalScanConfig?.generatedLabel ??
-                            "Aのカードを生成済み"
-                          }
-                          isGenerated={isPhysicalScanGenerated}
-                          message={physicalScanMessage}
-                          onRun={runPhysicalScan}
-                          onToggleCard={togglePhysicalScanCard}
-                          prompt={physicalScanConfig?.prompt ?? ""}
-                          requiredSelectionCount={
-                            physicalScanConfig?.requiredSelectionCount ?? 2
-                          }
-                          selectedCardIds={physicalScanCardIds}
-                        />
+                        <div ref={physicalScanPanelRef}>
+                          <PhysicalScanPanel
+                            cards={visiblePhysicalScanInventoryCards}
+                            generatedCard={scannedPhysicalScanCard}
+                            generatedLabel={
+                              physicalScanConfig?.generatedLabel ??
+                              "Aのカードを生成済み"
+                            }
+                            isGenerated={isPhysicalScanGenerated}
+                            message={physicalScanMessage}
+                            onRun={runPhysicalScan}
+                            onToggleCard={togglePhysicalScanCard}
+                            prompt={physicalScanConfig?.prompt ?? ""}
+                            requiredSelectionCount={
+                              physicalScanConfig?.requiredSelectionCount ?? 2
+                            }
+                            selectedCardIds={physicalScanCardIds}
+                          />
+                        </div>
                         {isPhysicalScanGenerated ? (
                           <button
                             className="mt-3 min-h-11 w-full rounded bg-sky-500 px-3 py-2 text-sm font-black text-white hover:bg-sky-400"
@@ -4336,6 +4513,11 @@ function BlackjackBattle({
                                 )}
                                 onChange={(event) => {
                                   setScanRiddleIllustrationOne(event.target.value);
+                                  setScanRiddleIllustrationOneSplitIndexes([]);
+                                  setScanRiddleSplitResults((current) => ({
+                                    ...current,
+                                    one: null,
+                                  }));
                                   setScanRiddleIllustrationResults((current) => ({
                                     ...current,
                                     one: null,
@@ -4350,6 +4532,29 @@ function BlackjackBattle({
                                 result={scanRiddleIllustrationResults.one}
                               />
                             </label>
+                            {scanRiddleIllustrationResults.one === true ? (
+                              <IllustrationSplitSelector
+                                confirmed={scanRiddleSplitResults.one === true}
+                                confirmationResult={scanRiddleSplitResults.one}
+                                onChange={(indexes) => {
+                                  setScanRiddleIllustrationOneSplitIndexes(indexes);
+                                  setScanRiddleSplitResults((current) => ({
+                                    ...current,
+                                    one: null,
+                                  }));
+                                }}
+                                onConfirm={(dividedText) =>
+                                  confirmScanIllustrationSplit(
+                                    "one",
+                                    dividedText,
+                                  )
+                                }
+                                selectedIndexes={
+                                  scanRiddleIllustrationOneSplitIndexes
+                                }
+                                value={scanRiddleIllustrationOne}
+                              />
+                            ) : null}
                             <label className="grid gap-2 text-sm font-bold text-stone-100">
                               小謎②のイラストの呼称（12が生成できるイラストを探そう）
                               <input
@@ -4359,6 +4564,11 @@ function BlackjackBattle({
                                 )}
                                 onChange={(event) => {
                                   setScanRiddleIllustrationTwo(event.target.value);
+                                  setScanRiddleIllustrationTwoSplitIndexes([]);
+                                  setScanRiddleSplitResults((current) => ({
+                                    ...current,
+                                    two: null,
+                                  }));
                                   setScanRiddleIllustrationResults((current) => ({
                                     ...current,
                                     two: null,
@@ -4373,6 +4583,33 @@ function BlackjackBattle({
                                 result={scanRiddleIllustrationResults.two}
                               />
                             </label>
+                            {scanRiddleIllustrationResults.two === true ? (
+                              <IllustrationSplitSelector
+                                confirmed={
+                                  scanRiddleSplitResults.two === true ||
+                                  scanRiddleIllustrationTwoSplitIndexes.length ===
+                                    0
+                                }
+                                confirmationResult={scanRiddleSplitResults.two}
+                                onChange={(indexes) => {
+                                  setScanRiddleIllustrationTwoSplitIndexes(indexes);
+                                  setScanRiddleSplitResults((current) => ({
+                                    ...current,
+                                    two: null,
+                                  }));
+                                }}
+                                onConfirm={(dividedText) =>
+                                  confirmScanIllustrationSplit(
+                                    "two",
+                                    dividedText,
+                                  )
+                                }
+                                selectedIndexes={
+                                  scanRiddleIllustrationTwoSplitIndexes
+                                }
+                                value={scanRiddleIllustrationTwo}
+                              />
+                            ) : null}
                             <button
                               className={`min-h-11 rounded px-3 py-2 text-sm font-black ${
                                 areScanRiddleAnswersSolved
@@ -4402,23 +4639,25 @@ function BlackjackBattle({
                     isScanExchangeConfirmed &&
                     isScanExchangeCorrect ? (
                       <>
-                        <PhysicalScanPanel
-                          cards={visiblePhysicalScanInventoryCards}
-                          generatedCard={scannedPhysicalScanCard}
-                          generatedLabel={
-                            physicalScanConfig?.generatedLabel ??
-                            "3のカードを生成済み"
-                          }
-                          isGenerated={isPhysicalScanGenerated}
-                          message={physicalScanMessage}
-                          onRun={runPhysicalScan}
-                          onToggleCard={togglePhysicalScanCard}
-                          prompt={physicalScanConfig?.prompt ?? ""}
-                          requiredSelectionCount={
-                            physicalScanConfig?.requiredSelectionCount ?? 3
-                          }
-                          selectedCardIds={physicalScanCardIds}
-                        />
+                        <div ref={physicalScanPanelRef}>
+                          <PhysicalScanPanel
+                            cards={visiblePhysicalScanInventoryCards}
+                            generatedCard={scannedPhysicalScanCard}
+                            generatedLabel={
+                              physicalScanConfig?.generatedLabel ??
+                              "3のカードを生成済み"
+                            }
+                            isGenerated={isPhysicalScanGenerated}
+                            message={physicalScanMessage}
+                            onRun={runPhysicalScan}
+                            onToggleCard={togglePhysicalScanCard}
+                            prompt={physicalScanConfig?.prompt ?? ""}
+                            requiredSelectionCount={
+                              physicalScanConfig?.requiredSelectionCount ?? 3
+                            }
+                            selectedCardIds={physicalScanCardIds}
+                          />
+                        </div>
                         {isPhysicalScanGenerated ? (
                           <button
                             className="mt-3 min-h-11 w-full rounded bg-sky-500 px-3 py-2 text-sm font-black text-white hover:bg-sky-400"
@@ -4454,19 +4693,10 @@ function BlackjackBattle({
                       生成したカードはエクスチェンジの候補に追加されます。
                     </p>
                     <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
-                      <button
-                        className={`min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
-                          isCardExchangeModeActive
-                            ? "bg-red-500 text-white"
-                            : "bg-casinoRed text-white hover:bg-red-600"
-                        }`}
+                      <ExchangeModeToggleButton
+                        isActive={isCardExchangeModeActive}
                         onClick={activateCardExchangeMode}
-                        type="button"
-                      >
-                        {isCardExchangeModeActive
-                          ? "エクスチェンジ起動中"
-                          : "エクスチェンジ起動"}
-                      </button>
+                      />
                       <div className="mt-3 flex items-center justify-between gap-3">
                         <div>
                           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
@@ -4517,17 +4747,25 @@ function BlackjackBattle({
                           ) : null}
                         </div>
                       ) : null}
-                      {shouldShowScanGeneratedCards && !isPrintedScanBattle ? (
+                      {shouldShowScanGeneratedCards &&
+                      !isPrintedScanBattle &&
+                      isPhysicalScanGenerated ? (
                         <p className="mt-3 rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-black leading-6 text-sky-50">
                           生成したAのカードと自分のKを選択してください。
+                        </p>
+                      ) : null}
+                      {shouldShowScanGeneratedCards &&
+                      !isPrintedScanBattle &&
+                      !isPhysicalScanGenerated ? (
+                        <p className="mt-3 rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-black leading-6 text-sky-50">
+                          チュートリアルで生成したクイーンが候補にあります。現物スキャンでAを生成すると、ここに追加されます。
                         </p>
                       ) : null}
                       <ExchangeCardSectionPicker
                         onToggleCard={toggleScanExchangeCard}
                         sections={scanExchangeSections.map((section) => ({
                           ...section,
-                          disabled:
-                            section.disabled || !isCardExchangeModeActive,
+                          interactionDisabled: !isCardExchangeModeActive,
                         }))}
                         selectedCardIds={scanExchangeCardIds}
                       />
@@ -4569,6 +4807,231 @@ function BlackjackBattle({
                     >
                       決定
                     </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {canSelectRiddlePrints ? (
+              <div className="rounded border border-brass/50 bg-brass/10 p-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                  4戦目の準備
+                </p>
+
+                {scanTutorialMessage ? (
+                  <p className="mt-3 rounded border border-white/12 bg-white/8 p-3 text-sm font-black leading-6 text-stone-100">
+                    {scanTutorialMessage}
+                  </p>
+                ) : null}
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(["scan", "exchange"] as const).map((ability) => (
+                    <button
+                      className={`min-h-10 rounded px-3 py-2 text-sm font-black ${
+                        preparationAbility === ability
+                          ? "bg-brass text-stone-950"
+                          : "bg-white/10 text-white hover:bg-white/15"
+                      }`}
+                      key={ability}
+                      onClick={() => setPreparationAbility(ability)}
+                      type="button"
+                    >
+                      {ability === "scan" ? "スキャン" : "エクスチェンジ"}
+                    </button>
+                  ))}
+                </div>
+
+                {preparationAbility === "exchange" ? (
+                  <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
+                    <ExchangeModeToggleButton
+                      isActive={isRiddleExchangeModeActive}
+                      isCompleted={isRiddlePrintExchangeApplied}
+                      onClick={activateRiddleExchangeMode}
+                    />
+                    <div className="mt-3 grid gap-3 rounded border border-white/10 bg-black/25 p-3">
+                      <div className="rounded border border-white/10 bg-black/25 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                            プレイヤーの手札
+                          </p>
+                          <p className="text-xs font-bold text-stone-400">2枚</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap justify-center gap-3">
+                          {getCardsById(
+                            ["scan-A", "Q-heart"],
+                            generatedScanCards,
+                          ).map((card) => (
+                            <PlayingCardView
+                              card={card}
+                              key={card.id}
+                              size="hand"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded border border-white/10 bg-black/25 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                            スキャン生成カード
+                          </p>
+                          <p className="text-xs font-bold text-stone-400">1枚</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap justify-center gap-3">
+                          <PlayingCardView card={scannedTwelveCard} size="hand" />
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                        isRiddlePrintExchangeApplied
+                          ? "cursor-not-allowed bg-emerald-700 text-emerald-100 opacity-70"
+                          : isRiddleExchangeModeActive &&
+                              selectedRiddlePrintIds.length === 2
+                            ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                            : "cursor-not-allowed bg-stone-700 text-stone-400"
+                      }`}
+                      disabled={
+                        !isRiddleExchangeModeActive ||
+                        selectedRiddlePrintIds.length !== 2 ||
+                        isRiddlePrintExchangeApplied
+                      }
+                      onClick={confirmRiddlePrintExchangeSelection}
+                      type="button"
+                    >
+                      決定
+                    </button>
+                    {isRiddlePrintExchangeApplied ? (
+                      <p className="mt-3 rounded border border-emerald-400/40 bg-emerald-950/40 p-3 text-sm font-black text-emerald-100">
+                        エクスチェンジ対象を決定しました。
+                      </p>
+                    ) : null}
+                    {isFourthScanGenerated ? (
+                      <div className="mt-3 rounded border border-white/10 bg-black/25 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+                              SELECT CARDS
+                            </p>
+                            <h3 className="mt-1 text-xl font-black">
+                              Qと生成した9を選択
+                            </h3>
+                          </div>
+                          <span className="rounded bg-white px-2 py-1 text-xs font-black text-stone-950">
+                            {fourthRobotExchangeCardIds.length}/2
+                          </span>
+                        </div>
+                        <ExchangeCardSectionPicker
+                          onToggleCard={toggleFourthRobotExchangeCard}
+                          sections={[
+                            {
+                              cards: getCardsById(
+                                ["Q-daia", "scan-10"],
+                                generatedScanCards,
+                              ),
+                              id: "fourth-blackjack-robot-hand",
+                              label: "ブラックジャックのロボット手札",
+                            },
+                            {
+                              cards: [scannedNineCard],
+                              id: "fourth-scan-generated-card",
+                              label: "スキャン生成カード",
+                            },
+                          ]}
+                          selectedCardIds={fourthRobotExchangeCardIds}
+                        />
+                        <button
+                          className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
+                            fourthRobotExchangeCardIds.length === 2
+                              ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                              : "cursor-not-allowed bg-stone-700 text-stone-400"
+                          }`}
+                          disabled={fourthRobotExchangeCardIds.length !== 2}
+                          onClick={confirmFourthRobotExchange}
+                          type="button"
+                        >
+                          決定
+                        </button>
+                        {isFourthRobotExchangeConfirmed ? (
+                          <p className="mt-3 rounded border border-emerald-400/40 bg-emerald-950/40 p-3 text-sm font-black text-emerald-100">
+                            エクスチェンジ対象を決定しました。
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-3 grid gap-3 rounded border border-white/10 bg-black/20 p-3">
+                    <details className="rounded border border-white/12 bg-black/25 p-3">
+                      <summary className="cursor-pointer text-sm font-black leading-6 text-brass">
+                        小謎画像
+                      </summary>
+                      <div className="mt-3 grid gap-3">
+                        <RiddlePrintTargetPicker
+                          disabled={
+                            !isRiddleExchangeModeActive ||
+                            isRiddlePrintExchangeApplied
+                          }
+                          isExchanged={isRiddlePrintExchangeApplied}
+                          onOpen={setExpandedRiddleImage}
+                          onToggleTarget={toggleRiddlePrintTarget}
+                          selectedIds={selectedRiddlePrintIds}
+                        />
+                        <div className="rounded border border-white/12 bg-white p-3 text-stone-950">
+                          <ZoomableRiddleImage
+                            alt="小謎 2/2"
+                            onOpen={setExpandedRiddleImage}
+                            src="/riddles/riddle_1-2.png"
+                          />
+                        </div>
+                        <div className="rounded border border-white/12 bg-white p-3 text-stone-950">
+                          <ZoomableRiddleImage
+                            alt="追加小謎"
+                            badge="②"
+                            onOpen={setExpandedRiddleImage}
+                            src="/riddles/riddle_2.png"
+                          />
+                        </div>
+                      </div>
+                    </details>
+                    <label className="grid gap-2 text-sm font-bold text-stone-100">
+                      謎の答え
+                      <input
+                        className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none"
+                        onChange={(event) =>
+                          setFourthScanAnswer(event.target.value)
+                        }
+                        placeholder="ナナメ"
+                        value={fourthScanAnswer}
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-bold text-stone-100">
+                      イラストの呼称
+                      <input
+                        className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none"
+                        onChange={(event) =>
+                          setFourthScanIllustration(event.target.value)
+                        }
+                        placeholder="きゅうしょ"
+                        value={fourthScanIllustration}
+                      />
+                    </label>
+                    <button
+                      className={`min-h-11 rounded px-3 py-2 text-sm font-black ${
+                        isRiddlePrintExchangeApplied
+                          ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                          : "cursor-not-allowed bg-stone-700 text-stone-400"
+                      }`}
+                      disabled={!isRiddlePrintExchangeApplied}
+                      onClick={runFourthBattleScan}
+                      type="button"
+                    >
+                      スキャン発動
+                    </button>
+                    {isFourthScanGenerated ? (
+                      <div className="flex justify-center rounded border border-emerald-300/35 bg-emerald-950/35 p-3">
+                        <PlayingCardView card={scannedNineCard} size="hand" />
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -5012,7 +5475,7 @@ function BlackjackBattle({
                     <div className="mt-3 flex min-h-28 items-center justify-center rounded border border-dashed border-white/20 bg-black/25 p-3">
                       {shouldShowScanGeneratedCards ? (
                         <div className="flex flex-wrap justify-center gap-2">
-                          {scannedGeneratedCards.map((card) => (
+                          {scanGeneratedDisplayCards.map((card) => (
                             <PlayingCardView
                               card={card}
                               key={card.id}
@@ -5299,6 +5762,11 @@ function BlackjackBattle({
                               )}
                               onChange={(event) => {
                                 setScanRiddleIllustrationOne(event.target.value);
+                                setScanRiddleIllustrationOneSplitIndexes([]);
+                                setScanRiddleSplitResults((current) => ({
+                                  ...current,
+                                  one: null,
+                                }));
                                 setScanRiddleIllustrationResults((current) => ({
                                   ...current,
                                   one: null,
@@ -5313,6 +5781,26 @@ function BlackjackBattle({
                               result={scanRiddleIllustrationResults.one}
                             />
                           </label>
+                          {scanRiddleIllustrationResults.one === true ? (
+                            <IllustrationSplitSelector
+                              confirmed={scanRiddleSplitResults.one === true}
+                              confirmationResult={scanRiddleSplitResults.one}
+                              onChange={(indexes) => {
+                                setScanRiddleIllustrationOneSplitIndexes(indexes);
+                                setScanRiddleSplitResults((current) => ({
+                                  ...current,
+                                  one: null,
+                                }));
+                              }}
+                              onConfirm={(dividedText) =>
+                                confirmScanIllustrationSplit("one", dividedText)
+                              }
+                              selectedIndexes={
+                                scanRiddleIllustrationOneSplitIndexes
+                              }
+                              value={scanRiddleIllustrationOne}
+                            />
+                          ) : null}
                           <label className="grid gap-2 text-sm font-bold text-stone-100">
                             小謎②のイラストの呼称（12が生成できるイラストを探そう）
                             <input
@@ -5322,6 +5810,11 @@ function BlackjackBattle({
                               )}
                               onChange={(event) => {
                                 setScanRiddleIllustrationTwo(event.target.value);
+                                setScanRiddleIllustrationTwoSplitIndexes([]);
+                                setScanRiddleSplitResults((current) => ({
+                                  ...current,
+                                  two: null,
+                                }));
                                 setScanRiddleIllustrationResults((current) => ({
                                   ...current,
                                   two: null,
@@ -5336,6 +5829,30 @@ function BlackjackBattle({
                               result={scanRiddleIllustrationResults.two}
                             />
                           </label>
+                          {scanRiddleIllustrationResults.two === true ? (
+                            <IllustrationSplitSelector
+                              confirmed={
+                                scanRiddleSplitResults.two === true ||
+                                scanRiddleIllustrationTwoSplitIndexes.length ===
+                                  0
+                              }
+                              confirmationResult={scanRiddleSplitResults.two}
+                              onChange={(indexes) => {
+                                setScanRiddleIllustrationTwoSplitIndexes(indexes);
+                                setScanRiddleSplitResults((current) => ({
+                                  ...current,
+                                  two: null,
+                                }));
+                              }}
+                              onConfirm={(dividedText) =>
+                                confirmScanIllustrationSplit("two", dividedText)
+                              }
+                              selectedIndexes={
+                                scanRiddleIllustrationTwoSplitIndexes
+                              }
+                              value={scanRiddleIllustrationTwo}
+                            />
+                          ) : null}
                           <button
                             className={`min-h-11 rounded px-3 py-2 text-sm font-black ${
                               areScanRiddleAnswersSolved
@@ -5362,23 +5879,25 @@ function BlackjackBattle({
                   )}
                   {isScanExchangeConfirmed && isScanExchangeCorrect ? (
                     <>
-                      <PhysicalScanPanel
-                        cards={visiblePhysicalScanInventoryCards}
-                        generatedCard={scannedPhysicalScanCard}
-                        generatedLabel={
-                          physicalScanConfig?.generatedLabel ??
-                          "3のカードを生成済み"
-                        }
-                        isGenerated={isPhysicalScanGenerated}
-                        message={physicalScanMessage}
-                        onRun={runPhysicalScan}
-                        onToggleCard={togglePhysicalScanCard}
-                        prompt={physicalScanConfig?.prompt ?? ""}
-                        requiredSelectionCount={
-                          physicalScanConfig?.requiredSelectionCount ?? 3
-                        }
-                        selectedCardIds={physicalScanCardIds}
-                      />
+                      <div>
+                        <PhysicalScanPanel
+                          cards={visiblePhysicalScanInventoryCards}
+                          generatedCard={scannedPhysicalScanCard}
+                          generatedLabel={
+                            physicalScanConfig?.generatedLabel ??
+                            "3のカードを生成済み"
+                          }
+                          isGenerated={isPhysicalScanGenerated}
+                          message={physicalScanMessage}
+                          onRun={runPhysicalScan}
+                          onToggleCard={togglePhysicalScanCard}
+                          prompt={physicalScanConfig?.prompt ?? ""}
+                          requiredSelectionCount={
+                            physicalScanConfig?.requiredSelectionCount ?? 3
+                          }
+                          selectedCardIds={physicalScanCardIds}
+                        />
+                      </div>
                       {isPhysicalScanGenerated ? (
                         <button
                           className="mt-3 min-h-11 w-full rounded bg-sky-500 px-3 py-2 text-sm font-black text-white hover:bg-sky-400"
@@ -5417,52 +5936,55 @@ function BlackjackBattle({
                 4戦目の準備
               </p>
               <p className="mt-2 text-sm leading-6 text-stone-100">
-                小謎①の9と10をエクスチェンジし、エクスチェンジ後の小謎①から9のトランプを生成します。
-                最後にブラックジャックロボットのQと生成した9をセットしてください。
+                小謎①を確認し、9のトランプを生成します。
+                最後にブラックジャックロボットのQと生成した9を決定してください。
               </p>
               {scanTutorialMessage ? (
                 <p className="mt-3 rounded border border-white/12 bg-white/8 p-3 text-sm font-black leading-6 text-stone-100">
                   {scanTutorialMessage}
                 </p>
               ) : null}
-              <button
-                className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
-                  isRiddleExchangeModeActive
-                    ? "bg-red-500 text-white"
-                    : isRiddlePrintExchangeApplied
-                      ? "bg-emerald-500 text-stone-950"
-                      : "bg-casinoRed text-white hover:bg-red-600"
-                }`}
+              <ExchangeModeToggleButton
+                className="mt-3"
+                isActive={isRiddleExchangeModeActive}
+                isCompleted={isRiddlePrintExchangeApplied}
                 onClick={activateRiddleExchangeMode}
-                type="button"
-              >
-                {isRiddlePrintExchangeApplied
-                  ? "小謎①の9と10をエクスチェンジ済み"
-                  : isRiddleExchangeModeActive
-                    ? "エクスチェンジモード起動中"
-                    : "エクスチェンジ起動"}
-              </button>
+              />
               <RiddlePrintTargetPicker
+                disabled={
+                  !isRiddleExchangeModeActive || isRiddlePrintExchangeApplied
+                }
+                isExchanged={isRiddlePrintExchangeApplied}
+                onOpen={setExpandedRiddleImage}
+                onToggleTarget={toggleRiddlePrintTarget}
                 selectedIds={selectedRiddlePrintIds}
-                setSelectedIds={setSelectedRiddlePrintIds}
               />
               <button
                 className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
-                  selectedRiddlePrintIds.length === 2
-                    ? "bg-brass text-stone-950 hover:bg-yellow-300"
-                    : "cursor-not-allowed bg-stone-700 text-stone-400"
+                  isRiddlePrintExchangeApplied
+                    ? "cursor-not-allowed bg-emerald-700 text-emerald-100 opacity-70"
+                    : isRiddleExchangeModeActive &&
+                        selectedRiddlePrintIds.length === 2
+                      ? "bg-brass text-stone-950 hover:bg-yellow-300"
+                      : "cursor-not-allowed bg-stone-700 text-stone-400"
                 }`}
-                disabled={selectedRiddlePrintIds.length !== 2}
-                onClick={applyRiddlePrintExchange}
+                disabled={
+                  !isRiddleExchangeModeActive ||
+                  selectedRiddlePrintIds.length !== 2 ||
+                  isRiddlePrintExchangeApplied
+                }
+                onClick={confirmRiddlePrintExchangeSelection}
                 type="button"
               >
-                小謎①の9と10をエクスチェンジ
+                決定
               </button>
+              {isRiddlePrintExchangeApplied ? (
+                <p className="mt-3 rounded border border-emerald-400/40 bg-emerald-950/40 p-3 text-sm font-black text-emerald-100">
+                  エクスチェンジ対象を決定しました。
+                </p>
+              ) : null}
 
               <div className="mt-3 grid gap-3 rounded border border-white/10 bg-black/25 p-3">
-                <p className="text-sm font-black leading-6 text-brass">
-                  エクスチェンジ後の小謎①をスキャン
-                </p>
                 <label className="grid gap-2 text-sm font-bold text-stone-100">
                   謎の答え
                   <input
@@ -5473,7 +5995,7 @@ function BlackjackBattle({
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-bold text-stone-100">
-                  対象イラスト
+                  イラストの呼称
                   <input
                     className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none"
                     onChange={(event) =>
@@ -5543,11 +6065,11 @@ function BlackjackBattle({
                     onClick={confirmFourthRobotExchange}
                     type="button"
                   >
-                    エクスチェンジをセット
+                    決定
                   </button>
                   {isFourthRobotExchangeConfirmed ? (
                     <p className="mt-3 rounded border border-emerald-400/40 bg-emerald-950/40 p-3 text-sm font-black text-emerald-100">
-                      エクスチェンジをセットしました。
+                      エクスチェンジ対象を決定しました。
                     </p>
                   ) : null}
                 </div>
@@ -6288,7 +6810,7 @@ function PokerBattle({
 
     if (!requirement) {
       setPokerScanPreviewSrc(null);
-      setPokerScanMessage("この答えと対象イラストでは、カードを生成できません。");
+      setPokerScanMessage("この答えとイラストの呼称では、カードを生成できません。");
       return;
     }
 
@@ -6628,7 +7150,7 @@ function PokerBattle({
                       </p>
                     </div>
                     <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
-                      小謎の答えと対象イラストの呼称を入力すると、カードを生成できます。生成したカードは下のエクスチェンジ候補に追加されます。
+                      小謎の答えとイラストの呼称を入力すると、カードを生成できます。生成したカードは下のエクスチェンジ候補に追加されます。
                     </p>
                     <div className="mt-3 grid gap-3">
                       {scanRequirements.map((requirement, index) => (
@@ -6658,7 +7180,7 @@ function PokerBattle({
                         />
                       </label>
                       <label className="grid gap-1 text-xs font-black uppercase tracking-[0.14em] text-cyan-100">
-                        対象イラスト
+                        イラストの呼称
                         <input
                           className="min-h-11 rounded border border-white/20 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-cyan-200"
                           onChange={(event) =>
@@ -7121,7 +7643,7 @@ function ExchangeCardSectionPicker({
       {visibleSections.map((section) => (
         <section
           className={`rounded border p-3 ${
-            section.disabled
+            section.disabled || section.interactionDisabled
               ? "border-white/8 bg-black/35 opacity-60"
               : "border-white/10 bg-black/25"
           }`}
@@ -7139,7 +7661,7 @@ function ExchangeCardSectionPicker({
             {section.cards.map((card) => (
               <ExchangeCardButton
                 card={card}
-                disabled={section.disabled}
+                disabled={section.disabled || section.interactionDisabled}
                 key={`${section.id}-${card.id}`}
                 longPressMode={longPressMode}
                 onSelect={() => onToggleCard(card.id)}
@@ -8454,77 +8976,119 @@ function BlackjackField({
   );
 }
 
-function RiddlePrintTargetPicker({
+const riddlePrintTargets = [
+  {
+    id: "riddle-1-middle-left",
+    label: "中央行左側",
+    style: "left-[8%] top-[36%] h-[44%] w-[26%]",
+  },
+  {
+    id: "riddle-1-center",
+    label: "ど真ん中",
+    style: "left-[39%] top-[36%] h-[44%] w-[22%]",
+  },
+] as const;
+
+function RiddlePrintTargetLayer({
+  disabled = false,
+  onToggleTarget,
   selectedIds,
-  setSelectedIds,
 }: {
+  disabled?: boolean;
+  onToggleTarget: (targetId: string) => void;
   selectedIds: string[];
-  setSelectedIds: Dispatch<SetStateAction<string[]>>;
 }) {
-  const targets = [
-    {
-      id: "riddle-1-middle-left",
-      label: "中央行左側",
-      style: "left-[13.5%] top-[44.5%] h-[30%] w-[13%]",
-    },
-    {
-      id: "riddle-1-center",
-      label: "ど真ん中",
-      style: "left-[45.5%] top-[44.5%] h-[30%] w-[13%]",
-    },
-  ];
-
-  function toggleTarget(targetId: string) {
-    setSelectedIds((current) => {
-      if (current.includes(targetId)) {
-        return current.filter((id) => id !== targetId);
-      }
-
-      return [...current, targetId].slice(-2);
-    });
+  function selectTarget(
+    event:
+      | ReactMouseEvent<HTMLButtonElement>
+      | ReactPointerEvent<HTMLButtonElement>,
+    targetId: string,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!disabled) {
+      onToggleTarget(targetId);
+    }
   }
 
   return (
-    <div className="mt-3 rounded border border-white/12 bg-white p-3 text-stone-950">
-      <div className="relative overflow-hidden rounded border border-stone-300 bg-white">
-        <Image
-          alt="エクスチェンジ対象を選択する小謎"
-          className="h-auto w-full"
-          height={900}
-          src="/riddles/riddle_1.png"
-          width={1600}
-        />
-        {targets.map((target) => {
+    <>
+      {riddlePrintTargets.map((target) => {
           const selected = selectedIds.includes(target.id);
 
           return (
             <button
               aria-pressed={selected}
-              className={`absolute ${target.style} rounded border-2 transition ${
-                selected
+              className={`absolute z-20 ${target.style} rounded border-2 transition ${
+                disabled
+                  ? "cursor-not-allowed border-transparent bg-transparent"
+                  : selected
                   ? "border-emerald-400 bg-emerald-300/25 shadow-[0_0_0_4px_rgba(16,185,129,0.32)]"
-                  : "border-brass/80 bg-brass/10 hover:bg-brass/25"
+                  : "border-transparent bg-transparent"
               }`}
               key={target.id}
-              onClick={() => toggleTarget(target.id)}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onPointerDown={(event) => selectTarget(event, target.id)}
               type="button"
-            >
-              <span className="absolute left-1 top-1 rounded bg-black/70 px-2 py-1 text-[10px] font-black text-white">
-                {selected ? "SELECTED" : target.label}
-              </span>
-            </button>
+            />
           );
         })}
+    </>
+  );
+}
+
+function RiddlePrintTargetPicker({
+  disabled = false,
+  isExchanged = false,
+  onOpen,
+  onToggleTarget,
+  selectedIds,
+}: {
+  disabled?: boolean;
+  isExchanged?: boolean;
+  onOpen: (image: { alt: string; src: string }) => void;
+  onToggleTarget: (targetId: string) => void;
+  selectedIds: string[];
+}) {
+  const imageSrc = isExchanged
+    ? "/riddles/riddle_1ex.png"
+    : "/riddles/riddle_1.png";
+
+  return (
+    <div className="mt-3 rounded border border-white/12 bg-white p-3 text-stone-950">
+      <span className="mb-1 inline-grid h-8 min-w-8 place-items-center rounded border border-brass/70 bg-black/80 px-2 text-sm font-black text-brass shadow-lg">
+        ①
+      </span>
+      <div className="relative overflow-hidden rounded border border-stone-300 bg-white">
+        <button
+          className="block w-full text-left"
+          onClick={() =>
+            onOpen({
+              alt: "小謎 1/2",
+              src: imageSrc,
+            })
+          }
+          type="button"
+        >
+          <Image
+            alt="エクスチェンジ対象を選択する小謎"
+            className="h-auto w-full"
+            height={900}
+            src={imageSrc}
+            width={1600}
+          />
+        </button>
+        {isExchanged ? null : (
+          <RiddlePrintTargetLayer
+            disabled={disabled}
+            onToggleTarget={onToggleTarget}
+            selectedIds={selectedIds}
+          />
+        )}
       </div>
-      <p className="mt-2 text-sm font-black text-stone-800">
-        選択中:{" "}
-        {selectedIds.length > 0
-          ? targets
-              .filter((target) => selectedIds.includes(target.id))
-              .map((target) => target.label)
-              .join(" / ")
-          : "なし"}
-      </p>
     </div>
   );
 }
