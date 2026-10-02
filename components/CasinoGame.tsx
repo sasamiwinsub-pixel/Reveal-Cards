@@ -351,6 +351,7 @@ type HighLowExchangePreparation = {
 type ExchangeCardSection = {
   cards: PlayingCard[];
   disabled?: boolean;
+  displayOnly?: boolean;
   id: string;
   interactionDisabled?: boolean;
   label: string;
@@ -1807,6 +1808,38 @@ function ScanRuleText() {
   );
 }
 
+function ScanSpecToggle({
+  isVisible,
+  onToggle,
+}: {
+  isVisible: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      {!isVisible ? (
+        <p className="mt-3 rounded border border-sky-300/45 bg-sky-950/30 p-3 text-sm font-black leading-6 text-sky-50">
+          まず「スキャン機能について」を確認しましょう。
+        </p>
+      ) : null}
+      <button
+        className={`mt-3 min-h-11 w-full rounded border border-sky-300/40 bg-sky-950/35 px-3 py-2 text-sm font-black text-sky-100 hover:bg-sky-900/45 ${
+          isVisible ? "" : "animate-pulse ring-4 ring-sky-300/25"
+        }`}
+        onClick={onToggle}
+        type="button"
+      >
+        スキャン機能について
+      </button>
+      {isVisible ? (
+        <p className="mt-3 whitespace-pre-line rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
+          <ScanRuleText />
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function PhysicalScanPanel({
   cards,
   generatedCard,
@@ -3187,7 +3220,7 @@ function BlackjackBattle({
   const showBlackjackResultOverlay =
     (result === "win" || result === "lose") && !blackjackResultOverlayDismissed;
   const samePrintTimingLabel = isRiddleExchangeTimingRevealed
-    ? "小謎"
+    ? "？？？"
     : "対象が同じ紙面上の場合";
   const blackjackPlacementConfirmationControls = blackjackSecondPlacementPending ? (
     <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-brass/45 bg-black/35 p-3">
@@ -3925,14 +3958,20 @@ function BlackjackBattle({
   }
 
   function runFourthBattleScan() {
+    if (!isRiddlePrintExchangeApplied) {
+      setScanTutorialMessage(
+        "先にエクスチェンジで小謎画像を変化させてください。",
+      );
+      setIsFourthScanGenerated(false);
+      return;
+    }
+
     const normalizedAnswer = normalizeRiddleAnswer(fourthScanAnswer);
     const normalizedIllustration = normalizeRiddleAnswer(fourthScanIllustration);
 
     if (
       normalizedAnswer !== "ななめ" ||
-      !["きゅうしょ", "きゅう/しょ", "きゅうしょ"].includes(
-        normalizedIllustration,
-      )
+      normalizedIllustration !== "きゅう/しょ"
     ) {
       setScanTutorialMessage(
         "謎の答えとイラストの呼称をもう一度確認してください。",
@@ -4373,29 +4412,12 @@ function BlackjackBattle({
                             src="/riddles/riddle_0.png"
                           />
                         </details>
-                        {!isScanSpecVisible ? (
-                          <p className="mt-3 rounded border border-sky-300/45 bg-sky-950/30 p-3 text-sm font-black leading-6 text-sky-50">
-                            まず「スキャン機能について」を確認しましょう。
-                          </p>
-                        ) : null}
-                        <button
-                          className={`mt-3 min-h-11 w-full rounded border border-sky-300/40 bg-sky-950/35 px-3 py-2 text-sm font-black text-sky-100 hover:bg-sky-900/45 ${
-                            isScanSpecVisible
-                              ? ""
-                              : "animate-pulse ring-4 ring-sky-300/25"
-                          }`}
-                          onClick={() =>
+                        <ScanSpecToggle
+                          isVisible={isScanSpecVisible}
+                          onToggle={() =>
                             setIsScanSpecVisible((current) => !current)
                           }
-                          type="button"
-                        >
-                          スキャン機能について
-                        </button>
-                        {isScanSpecVisible ? (
-                          <p className="mt-3 whitespace-pre-line rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
-                            <ScanRuleText />
-                          </p>
-                        ) : null}
+                        />
                         <p className="mt-3 text-[11px] font-black uppercase tracking-[0.18em] text-brass">
                           印刷済み謎
                         </p>
@@ -4848,39 +4870,47 @@ function BlackjackBattle({
                       isCompleted={isRiddlePrintExchangeApplied}
                       onClick={activateRiddleExchangeMode}
                     />
-                    <div className="mt-3 grid gap-3 rounded border border-white/10 bg-black/25 p-3">
-                      <div className="rounded border border-white/10 bg-black/25 p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-                            プレイヤーの手札
-                          </p>
-                          <p className="text-xs font-bold text-stone-400">2枚</p>
-                        </div>
-                        <div className="mt-3 flex flex-wrap justify-center gap-3">
-                          {getCardsById(
+                    <ExchangeRuleList
+                      disabledTargets={disabledExchangeTargets}
+                      samePrintTimingLabel="？？？"
+                      showTargetList={false}
+                    />
+                    <ExchangeCardSectionPicker
+                      onToggleCard={() => undefined}
+                      sections={[
+                        {
+                          cards: getCardsById(
                             ["scan-A", "Q-heart"],
                             generatedScanCards,
-                          ).map((card) => (
-                            <PlayingCardView
-                              card={card}
-                              key={card.id}
-                              size="hand"
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      <div className="rounded border border-white/10 bg-black/25 p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-                            スキャン生成カード
-                          </p>
-                          <p className="text-xs font-bold text-stone-400">1枚</p>
-                        </div>
-                        <div className="mt-3 flex flex-wrap justify-center gap-3">
-                          <PlayingCardView card={scannedTwelveCard} size="hand" />
-                        </div>
-                      </div>
-                    </div>
+                          ),
+                          displayOnly: true,
+                          id: "fourth-preview-player-hand",
+                          label: "プレイヤーの手札",
+                        },
+                        {
+                          cards: getCardsById(
+                            ["Q-daia", "scan-10"],
+                            generatedScanCards,
+                          ),
+                          disabled: true,
+                          id: "fourth-preview-blackjack-robot-hand",
+                          label: "ブラックジャックのロボット手札",
+                        },
+                        {
+                          cards: getCardsById(["K-crub", "Q-crub"]),
+                          disabled: true,
+                          id: "fourth-preview-high-low-robot-hand",
+                          label: "ハイアンドローのロボット手札",
+                        },
+                        {
+                          cards: [scannedTwelveCard],
+                          displayOnly: true,
+                          id: "fourth-preview-scan-generated-card",
+                          label: "スキャン生成カード",
+                        },
+                      ]}
+                      selectedCardIds={[]}
+                    />
                     <button
                       className={`mt-3 min-h-11 w-full rounded px-3 py-2 text-sm font-black ${
                         isRiddlePrintExchangeApplied
@@ -4961,6 +4991,12 @@ function BlackjackBattle({
                   </div>
                 ) : (
                   <div className="mt-3 grid gap-3 rounded border border-white/10 bg-black/20 p-3">
+                    <ScanSpecToggle
+                      isVisible={isScanSpecVisible}
+                      onToggle={() =>
+                        setIsScanSpecVisible((current) => !current)
+                      }
+                    />
                     <details className="rounded border border-white/12 bg-black/25 p-3">
                       <summary className="cursor-pointer text-sm font-black leading-6 text-brass">
                         小謎画像
@@ -5000,7 +5036,7 @@ function BlackjackBattle({
                         onChange={(event) =>
                           setFourthScanAnswer(event.target.value)
                         }
-                        placeholder="ナナメ"
+                        placeholder="謎の答えを入力"
                         value={fourthScanAnswer}
                       />
                     </label>
@@ -5011,7 +5047,7 @@ function BlackjackBattle({
                         onChange={(event) =>
                           setFourthScanIllustration(event.target.value)
                         }
-                        placeholder="きゅうしょ"
+                        placeholder="イラストの呼称を入力"
                         value={fourthScanIllustration}
                       />
                     </label>
@@ -5990,7 +6026,7 @@ function BlackjackBattle({
                   <input
                     className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none"
                     onChange={(event) => setFourthScanAnswer(event.target.value)}
-                    placeholder="ナナメ"
+                    placeholder="謎の答えを入力"
                     value={fourthScanAnswer}
                   />
                 </label>
@@ -6001,7 +6037,7 @@ function BlackjackBattle({
                     onChange={(event) =>
                       setFourthScanIllustration(event.target.value)
                     }
-                    placeholder="きゅうしょ"
+                    placeholder="イラストの呼称を入力"
                     value={fourthScanIllustration}
                   />
                 </label>
@@ -6672,7 +6708,7 @@ function PokerBattle({
   const isPokerThirdBattle = robotId === "poker-3-3";
   const isFinalAllGamesBattle = robotId === "all-games-last";
   const samePrintTimingLabel = isRiddleExchangeTimingRevealed
-    ? "小謎"
+    ? "？？？"
     : "対象が同じ紙面上の場合";
   const maxCopyPastes =
     config && "maxCopyPastes" in config ? config.maxCopyPastes : 0;
@@ -7661,7 +7697,11 @@ function ExchangeCardSectionPicker({
             {section.cards.map((card) => (
               <ExchangeCardButton
                 card={card}
-                disabled={section.disabled || section.interactionDisabled}
+                disabled={
+                  section.disabled ||
+                  section.interactionDisabled ||
+                  section.displayOnly
+                }
                 key={`${section.id}-${card.id}`}
                 longPressMode={longPressMode}
                 onSelect={() => onToggleCard(card.id)}
@@ -7981,7 +8021,7 @@ function HighLowBattle({
     (highLowResult === "win" || highLowResult === "lose") &&
     !winOverlayDismissed;
   const samePrintTimingLabel = isRiddleExchangeTimingRevealed
-    ? "小謎"
+    ? "？？？"
     : "対象が同じ紙面上の場合";
   useEffect(() => {
     if (isTutorial && !isExchangeApplied && canPlaceCard) {
@@ -9099,15 +9139,17 @@ function ExchangeRuleList({
   samePrintTimingLabel = "対象が同じ紙面上の場合",
   showDeckTarget = false,
   showFieldTarget = false,
+  showTargetList = true,
   showVisiblePrintTarget = false,
   targetLabels = {},
   visiblePrintRemaining,
 }: {
   disabledTargets?: ExchangeTargetId[];
   rankRestrictions?: string[];
-  samePrintTimingLabel?: "対象が同じ紙面上の場合" | "小謎";
+  samePrintTimingLabel?: "対象が同じ紙面上の場合" | "？？？";
   showDeckTarget?: boolean;
   showFieldTarget?: boolean;
+  showTargetList?: boolean;
   showVisiblePrintTarget?: boolean;
   targetLabels?: Partial<Record<ExchangeTargetId, string>>;
   visiblePrintRemaining?: number;
@@ -9150,29 +9192,37 @@ function ExchangeRuleList({
 
   return (
     <div className="mt-4 rounded border border-brass/35 bg-black/25 p-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-        現在交換可能な対象
-      </p>
-      <ul className="mt-2 space-y-2 text-sm font-bold leading-6 text-stone-100">
-        {items
-          .filter((item) => item.visible)
-          .map((item) => {
-            const disabled = disabledTargets.includes(item.id);
+      {showTargetList ? (
+        <>
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+            現在交換可能な対象
+          </p>
+          <ul className="mt-2 space-y-2 text-sm font-bold leading-6 text-stone-100">
+            {items
+              .filter((item) => item.visible)
+              .map((item) => {
+                const disabled = disabledTargets.includes(item.id);
 
-            return (
-              <li
-                className={`flex items-start gap-2 ${
-                  disabled ? "text-stone-500 line-through decoration-2" : ""
-                }`}
-                key={item.id}
-              >
-                <span className="mt-0.5 text-brass">・</span>
-                <span>{item.label}</span>
-              </li>
-            );
-          })}
-      </ul>
-      <div className="mt-3 border-t border-white/10 pt-3 text-sm font-bold leading-6 text-stone-100">
+                return (
+                  <li
+                    className={`flex items-start gap-2 ${
+                      disabled ? "text-stone-500 line-through decoration-2" : ""
+                    }`}
+                    key={item.id}
+                  >
+                    <span className="mt-0.5 text-brass">・</span>
+                    <span>{item.label}</span>
+                  </li>
+                );
+              })}
+          </ul>
+        </>
+      ) : null}
+      <div
+        className={`text-sm font-bold leading-6 text-stone-100 ${
+          showTargetList ? "mt-3 border-t border-white/10 pt-3" : ""
+        }`}
+      >
         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
           エクスチェンジの発動タイミング
         </p>
