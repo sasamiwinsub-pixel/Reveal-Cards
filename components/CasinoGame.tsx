@@ -13,9 +13,14 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
+import FinalSituationReview from "./FinalSituationReview";
+import { resolvePaste } from "@/lib/copy-paste";
+import { normalizeScanIllustrationName } from "@/lib/scan-input";
 import Link from "next/link";
 import {
   Fragment,
+  createContext,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -33,6 +38,7 @@ import {
   drawOpeningHand,
   getGameSeat,
   getGameLabel,
+  getStageTableGameType,
   getRobotGameTypes,
   highLowRuleText,
   highLowSpecText,
@@ -85,7 +91,7 @@ const gameLogo: Record<GameType, { alt: string; src: string }> = {
     src: "/game-logos/poker.png",
   },
   "high-low": {
-    alt: "ハイアンドロー",
+    alt: "ハイ＆ロー",
     src: "/game-logos/high-low.png",
   },
 };
@@ -142,7 +148,7 @@ function markGameSelectTutorialSeen() {
 }
 
 const scanTargetImages = {
-  haiking: "/scan-targets/haiking.png",
+  hijack: "/scan-targets/hijack.png",
   hiace: "/scan-targets/hiace.png",
   jyuusho: "/scan-targets/jyuusho.png",
   kyuusho: "/scan-targets/kyuusho.png",
@@ -238,7 +244,7 @@ const pokerBattleConfigs = {
     initialRobotHandIds: ["A-spade", "A-heart"],
     maxExchanges: 1,
     successText:
-      "自分のクイーンとブラックジャックロボットのキングを交換済み。ポーカーはキングのスリーカード、ハイアンドローはAでもKでも後出しで成立、ブラックジャックはA+K=21で勝利できます。",
+      "自分のクイーンとブラックジャックロボットのキングを交換済み。ポーカーはキングのスリーカード、ハイ＆ローはAでもKでも後出しで成立、ブラックジャックはA+K=21で勝利できます。",
   },
   "poker-3-2": {
     blackjackRobotHandIds: ["J-daia", "J-spade"],
@@ -275,7 +281,7 @@ const pokerBattleConfigs = {
       },
     ],
     successText:
-      "スキャンで生成した0をブラックジャックロボットのJ、生成したAを自分のKと交換済み。ハイアンドローはAを出せば成立し、ブラックジャックはロボット側が10+0、ポーカーはAのスリーカードでKのスリーカードを上回る形になります。",
+      "スキャンで生成した0をブラックジャックロボットのJ、生成したAを自分のKと交換済み。ハイ＆ローはAを出せば成立し、ブラックジャックはロボット側が10+0、ポーカーはAのスリーカードでKのスリーカードを上回る形になります。",
   },
   "poker-3-3": {
     blackjackRobotHandIds: ["A-spade", "J-spade"],
@@ -300,17 +306,17 @@ const pokerBattleConfigs = {
     maxExchanges: 0,
     maxScans: 0,
     successText:
-      "ブラックジャックロボットのAを0へ変更済み。ハイアンドローはそのまま勝利、ブラックジャックは自分がK+Q=20でロボットが0+J=10、ポーカーはロボットの勝率が0%のため0chipを賭け、そのままプレイヤーの勝利です。",
+      "ブラックジャックロボットのAを0へ変更済み。ハイ＆ローはそのまま勝利、ブラックジャックは自分がK+Q=20でロボットが0+J=10、ポーカーはロボットの勝率が0%のため0chipを賭け、そのままプレイヤーの勝利です。",
   },
   "all-games-last": {
     blackjackRobotHandIds: ["K-heart", "Q-daia"],
     exchangePairs: [],
     fieldCardIds: ["A-crub", "K-spade", "K-daia", "J-crub"],
     highLowRobotHandIds: ["Q-heart", "K-crub"],
-    initialPlayerHandIds: ["K-crub", "scan-K"],
+    initialPlayerHandIds: ["A-daia", "J-heart"],
     initialRobotHandIds: ["A-spade", "A-heart"],
-    maxCopyPastes: 5,
-    maxExchanges: 0,
+    maxCopyPastes: 3,
+    maxExchanges: 2,
     maxScans: 3,
     scanRequirements: [
       {
@@ -325,24 +331,13 @@ const pokerBattleConfigs = {
         cardId: "scan-J",
         illustration: "ハイ　ジャック",
         riddleSrc: "/riddles/riddle_4.png",
-        targetImageSrc: scanTargetImages.haiking,
-      },
-      {
-        answer: "に/じゅういち",
-        cardId: "scan-K",
-        illustration: "ブラックジャック",
-        riddleSrc: "/riddles/riddle_5.png",
-        targetImageSrc: scanTargetImages.haiking,
+        targetImageSrc: scanTargetImages.hijack,
       },
     ],
     successText:
       "ブラックジャック宣言のタイミングでエクスチェンジが発動済み。ポーカーロボットもオールインし、プレイヤーはK2枚、フィールドにもK2枚があるため、Kフォーカードでポーカーロボットに勝利できます。",
   },
 } as const;
-
-type FocusOption = {
-  robot: Robot;
-};
 
 type ActiveBattle = {
   gameType: GameType;
@@ -390,6 +385,31 @@ function GlobalGameHeader({
   stageId: number;
 }) {
   const hasBattle = activeBattle !== null;
+  const objectiveTaps = useRef({ count: 0, lastTap: 0 });
+  const [showDevelopmentStory, setShowDevelopmentStory] = useState(false);
+  useEffect(() => {
+    function resetTaps(event: PointerEvent) {
+      if (!(event.target instanceof Element) || !event.target.closest("[data-objective-tap]")) {
+        objectiveTaps.current = { count: 0, lastTap: 0 };
+      }
+    }
+    document.addEventListener("pointerdown", resetTaps);
+    return () => document.removeEventListener("pointerdown", resetTaps);
+  }, []);
+
+  function tapObjective() {
+    if (stageId !== 4) {
+      objectiveTaps.current = { count: 0, lastTap: 0 };
+      return;
+    }
+    const now = Date.now();
+    const count = now - objectiveTaps.current.lastTap <= 1500 ? objectiveTaps.current.count + 1 : 1;
+    objectiveTaps.current = { count, lastTap: now };
+    if (count === 5) {
+      objectiveTaps.current = { count: 0, lastTap: 0 };
+      setShowDevelopmentStory(true);
+    }
+  }
   const canUseExchangeShortcut = hasBattle;
   const canUseScanShortcut =
     hasBattle &&
@@ -398,16 +418,24 @@ function GlobalGameHeader({
       stageId >= 3);
 
   return (
+    <>
+      {stageId === 4 && showDevelopmentStory ? (
+        <TutorialDialog
+          onDismiss={() => setShowDevelopmentStory(false)}
+          tone="spec"
+          text={<><span className="mb-3 block text-lg font-black">ゲームの開発秘話</span><DevelopmentStoryText /></>}
+        />
+      ) : null}
     <header className="sticky top-0 z-40 -mx-3 mb-3 border-b border-white/12 bg-stone-950/95 px-3 py-2 shadow-2xl backdrop-blur max-[424px]:-mx-2 max-[374px]:-mx-1.5 sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
       <div className="mx-auto flex max-w-7xl items-center gap-3">
-        <div className="min-w-0 flex-1">
+        <button className="min-w-0 flex-1 text-left" data-objective-tap onClick={tapObjective} type="button" aria-label="やること">
           <p className="text-[10px] font-black tracking-[0.18em] text-brass">
             やること
           </p>
           <p className="mt-1 line-clamp-2 text-sm font-black leading-6 text-red-300 sm:text-base">
             {currentObjective}
           </p>
-        </div>
+        </button>
         <div className="relative shrink-0">
           <button
             aria-expanded={isMenuOpen}
@@ -429,7 +457,7 @@ function GlobalGameHeader({
                   label="対戦画面へ"
                   onClick={onGoToBattle}
                 />
-                <GlobalNavButton label="ゲーム選択へ" onClick={onGoToSelect} />
+                <GlobalNavButton label="ゲーム会場へ" onClick={onGoToSelect} />
                 <GlobalNavButton
                   disabled={!canUseExchangeShortcut}
                   label="エクスチェンジへ"
@@ -461,6 +489,7 @@ function GlobalGameHeader({
         </div>
       </div>
     </header>
+    </>
   );
 }
 
@@ -542,6 +571,30 @@ type HighLowZoneName = "HIGH" | "LOW";
 type PreparationAbility = "exchange" | "scan" | "copy-paste";
 type TargetSelectionAbility = "exchange" | "copy-paste";
 type CopyPasteFormat = "hiragana" | "katakana" | "kanji" | "number";
+
+const BlueTextSelectionContext = createContext<{
+  active: boolean;
+  selectedId: string | null;
+  replacements: Record<string, string>;
+  allowRiddleCopy?: boolean;
+  onSelect: (id: string, text: string) => void;
+} | null>(null);
+
+function SelectableBlueText({ id, children }: { id: string; children: string }) {
+  const selection = useContext(BlueTextSelectionContext);
+  const text = selection?.replacements[id] ?? children;
+  return selection?.active ? (
+    <button
+      className={`rounded px-1 font-black text-sky-300 underline underline-offset-4 hover:bg-sky-400/20 ${selection.selectedId === id ? "ring-2 ring-sky-300" : ""}`}
+      onClick={() => selection.onSelect(id, text)}
+      type="button"
+    >
+      {text}
+    </button>
+  ) : (
+    <span className="font-black text-sky-300">{text}</span>
+  );
+}
 type ExchangeTargetId =
   | "player-hand"
   | "robot-hand"
@@ -688,19 +741,19 @@ const initialScanCatalogEntries: ScanCatalogEntry[] = [
     answer: "0315",
     ability: "なし",
     generated: true,
-    generatedNumber: "9",
+    generatedNumber: "10",
     id: "scan-catalog-vital-0315",
-    illustrationName: "きゅう　しょ",
-    targetImageSrc: scanTargetImages.kyuusho,
+    illustrationName: "じゅう　しょ",
+    targetImageSrc: scanTargetImages.jyuusho,
   },
   {
     answer: "ななめ",
     ability: "エクスチェンジ",
     generated: true,
-    generatedNumber: "10",
+    generatedNumber: "9",
     id: "scan-catalog-address-exchange",
-    illustrationName: "じゅう　しょ",
-    targetImageSrc: scanTargetImages.jyuusho,
+    illustrationName: "きゅう　しょ",
+    targetImageSrc: scanTargetImages.kyuusho,
   },
   {
     answer: "フエ",
@@ -723,7 +776,7 @@ const initialScanCatalogEntries: ScanCatalogEntry[] = [
   {
     answer: "すいり",
     ability: "なし",
-    generated: false,
+    generated: true,
     generatedNumber: "12",
     id: "scan-catalog-queen-reasoning",
     illustrationName: "クイーン",
@@ -745,13 +798,9 @@ const initialScanCatalogEntries: ScanCatalogEntry[] = [
     generatedNumber: "11",
     id: "scan-catalog-highjack-copy",
     illustrationName: "ハイ　ジャック",
-    targetImageSrc: scanTargetImages.haiking,
+    targetImageSrc: scanTargetImages.hijack,
   },
 ];
-
-function normalizeScanIllustrationName(value: string) {
-  return value.trim().replace(/[／/]/g, " ").replace(/[\s\u3000]+/g, " ");
-}
 
 function normalizeRiddleAnswer(value: string) {
   return value
@@ -799,6 +848,10 @@ function CheckResultText({ result }: { result: boolean | null }) {
   return null;
 }
 
+// Set to true to restore scan discovery after the final disclosure.
+// const ENABLE_FINAL_DISCOVERY_PHASE = true;
+const ENABLE_FINAL_DISCOVERY_PHASE = false;
+
 const finalBattleDisclosureSections: ExchangeCardSection[] = [
   {
     cards: getCardsById(["A-daia", "J-heart"]),
@@ -808,7 +861,7 @@ const finalBattleDisclosureSections: ExchangeCardSection[] = [
   {
     cards: getCardsById(["Q-heart", "K-crub"]),
     id: "final-high-low-robot-hand",
-    label: "ハイアンドローのロボット手札",
+    label: "ハイ＆ローのロボット手札",
   },
   {
     cards: getCardsById(["K-heart", "Q-daia"]),
@@ -830,28 +883,42 @@ const finalBattleDisclosureSections: ExchangeCardSection[] = [
 export default function CasinoGame({
   initialBattle = null,
   initialStageId = 1,
+  initialPokerBettingTutorial = false,
+  initialGameSelectTutorial = false,
 }: {
   initialBattle?: ActiveBattle | null;
   initialStageId?: number;
+  initialPokerBettingTutorial?: boolean;
+  initialGameSelectTutorial?: boolean;
 }) {
   const initialStage = stages.find((item) => item.id === initialStageId) ?? stages[0];
   const [stageId, setStageId] = useState(initialStage.id);
+  const [hasCompletedNewGameTutorial, setHasCompletedNewGameTutorial] = useState(false);
   const [, setChips] = useState(initialStage.startingChips);
-  const [playedRobotIds, setPlayedRobotIds] = useState<string[]>([]);
+  const [, setPlayedRobotIds] = useState<string[]>([]);
+  const [pokerScanCount, setPokerScanCount] = useState(0);
+  const [showPokerBettingTutorial, setShowPokerBettingTutorial] = useState(initialPokerBettingTutorial);
+  const [isPokerBettingRevealed, setIsPokerBettingRevealed] = useState(
+    initialPokerBettingTutorial || initialBattle?.robotId === "poker-3-3",
+  );
   const [activeBattle, setActiveBattle] = useState<ActiveBattle | null>(
-    initialBattle,
+    initialBattle ? { ...initialBattle, gameType: getStageTableGameType(initialStage.id) } : null,
   );
   const [
     hasReachedHighLowTutorialLosePart,
     setHasReachedHighLowTutorialLosePart,
   ] = useState(false);
   const [focusedOptionIndex, setFocusedOptionIndex] = useState(0);
+  const [venueGameType, setVenueGameType] = useState<GameType>(
+    initialStage.id === 1 ? "high-low" : initialStage.id === 3 ? "poker" : "blackjack",
+  );
   const [highLowExchangePreparations, setHighLowExchangePreparations] =
     useState<Record<string, HighLowExchangePreparation>>({});
   const [finalScanCatalogEntries, setFinalScanCatalogEntries] = useState<
     ScanCatalogEntry[]
   >(initialScanCatalogEntries);
   const [isFinalDisclosureSeen, setIsFinalDisclosureSeen] = useState(false);
+  const [hasSeenFinalTableHint, setHasSeenFinalTableHint] = useState(false);
   const [isFinalScanCatalogComplete, setIsFinalScanCatalogComplete] =
     useState(false);
   const [isFinalAbilitySpecSeen, setIsFinalAbilitySpecSeen] = useState(false);
@@ -870,46 +937,35 @@ export default function CasinoGame({
 
   const stage = stages.find((item) => item.id === stageId) ?? stages[0];
   const hand = useMemo(() => drawOpeningHand(stage.id), [stage.id]);
-  const focusOptions = useMemo<FocusOption[]>(
-    () => stage.robots.map((robot) => ({ robot })),
-    [stage],
-  );
   const boundedFocusedOptionIndex = Math.min(
     focusedOptionIndex,
-    Math.max(focusOptions.length - 1, 0),
+    Math.max(stage.robots.length - 1, 0),
   );
-  const focusedOption =
-    focusOptions[boundedFocusedOptionIndex] ?? null;
-  const focusedRobot = focusedOption?.robot ?? null;
-  const focusedGameTypes = focusedRobot ? getRobotGameTypes(focusedRobot) : [];
-  const focusGameTypeKeys = focusOptions.map(
-    (option) => getRobotGameTypes(option.robot)[0],
-  );
-  const hasMultipleVisibleGameTypes = new Set(focusGameTypeKeys).size > 1;
-  const canFocusPrevious =
-    hasMultipleVisibleGameTypes && boundedFocusedOptionIndex > 0;
-  const canFocusNext =
-    hasMultipleVisibleGameTypes &&
-    boundedFocusedOptionIndex < focusOptions.length - 1;
+  const focusedRobot = stage.robots[boundedFocusedOptionIndex] ?? null;
+  const isVenueGameUnlocked = venueGameType === "high-low" ||
+    (venueGameType === "blackjack" && stage.id >= 2) ||
+    (venueGameType === "poker" && stage.id >= 3);
+  const canFocusPrevious = true;
+  const canFocusNext = true;
   const activeBattleRobot =
     stage.robots.find((robot) => robot.id === activeBattle?.robotId) ?? null;
   const isHighLowBattle = activeBattle?.gameType === "high-low" && activeBattleRobot;
   const isBlackjackBattle =
     activeBattle?.gameType === "blackjack" && activeBattleRobot;
   const isPokerBattle = activeBattle?.gameType === "poker" && activeBattleRobot;
-  const allRobotsPlayed = playedRobotIds.length === stage.robots.length;
-  const isStageClear = allRobotsPlayed;
   const shouldShowFinalDisclosure =
     stage.id === 4 &&
     !activeBattle &&
     !isFinalDisclosureSeen &&
     !isFinalScanCatalogComplete;
   const shouldShowFinalScanCatalog =
+    ENABLE_FINAL_DISCOVERY_PHASE &&
     stage.id === 4 &&
     !activeBattle &&
     isFinalDisclosureSeen &&
     !isFinalScanCatalogComplete;
   const shouldShowFinalAbilitySpec =
+    ENABLE_FINAL_DISCOVERY_PHASE &&
     stage.id === 4 &&
     !activeBattle &&
     isFinalDisclosureSeen &&
@@ -942,14 +998,18 @@ export default function CasinoGame({
     const stageUrl = `/?stage=${destinationStage.id}`;
 
     setStageId(destinationStage.id);
+    setShowPokerBettingTutorial(false);
+    setIsPokerBettingRevealed(false);
     setChips(destinationStage.startingChips);
     setPlayedRobotIds([]);
     setActiveBattle(null);
     setHasReachedHighLowTutorialLosePart(false);
     setFocusedOptionIndex(0);
+    setVenueGameType(destinationStage.id === 1 ? "high-low" : destinationStage.id === 3 ? "poker" : "blackjack");
     setModal(null);
     setHighLowExchangePreparations({});
     setIsFinalDisclosureSeen(false);
+    setHasSeenFinalTableHint(false);
     setIsFinalScanCatalogComplete(false);
     setIsFinalAbilitySpecSeen(false);
     setIsRiddleExchangeTimingRevealed(false);
@@ -967,50 +1027,60 @@ export default function CasinoGame({
   }
 
   function focusRobot(offset: number) {
-    setFocusedOptionIndex((current) => {
-      const robotCount = focusOptions.length;
-      if (robotCount === 0) {
-        return 0;
-      }
-
-      const next = current + offset;
-
-      return Math.min(Math.max(next, 0), robotCount - 1);
+    const games: GameType[] = ["high-low", "blackjack", "poker"];
+    setVenueGameType((current) => {
+      const next = (games.indexOf(current) - offset + games.length) % games.length;
+      return games[next];
     });
   }
 
-  function selectRobot(robot: Robot, gameType?: GameType) {
-    if (playedRobotIds.includes(robot.id) || isStageClear) {
+  function selectRobot(robot: Robot) {
+    if (!isVenueGameUnlocked) {
       return;
     }
 
-    const firstGameType = gameType ?? getRobotGameTypes(robot)[0];
     setHasReachedHighLowTutorialLosePart(false);
-    setActiveBattle({ gameType: firstGameType, robotId: robot.id });
+    setActiveBattle({ gameType: getStageTableGameType(stage.id), robotId: robot.id });
   }
 
   function getCurrentObjective() {
+    if (stage.id === 4 && !ENABLE_FINAL_DISCOVERY_PHASE) {
+      return "ロボットのチップを0にして完ぺきな全勝する";
+    }
+    if (showPokerBettingTutorial) {
+      return "勝率に応じたロボットの賭けと、オールインを確認しよう";
+    }
     if (activeBattle) {
       if (activeBattle.gameType === "blackjack" && stage.id === 2) {
-        return "同じ手札でハイアンドローとブラックジャックに2連勝しましょう。";
+        return "同じ手札でハイ＆ローとブラックジャックに2連勝しましょう。";
       }
 
       if (activeBattle.gameType === "high-low") {
         if (hasReachedHighLowTutorialLosePart) {
-          return "能力を理解し、必要な準備をしてハイアンドローで勝利しましょう。";
+          return "能力を理解し、必要な準備をしてハイ＆ローで勝利しましょう。";
         }
 
-        return "手札を確認し、必要な準備をしてハイアンドローに勝利しましょう。";
+        return "手札を確認し、必要な準備をしてハイ＆ローに勝利しましょう。";
       }
 
       if (activeBattle.gameType === "poker") {
+        if (activeBattle.robotId === "poker-3-3") {
+          return "コピーペーストでルールを変えて何とか勝ちにしよう";
+        }
+        if (activeBattle.robotId === "poker-3-2" && pokerScanCount < 2) {
+          return 'エクスチェンジ無しで"A"と"もう一枚"スキャンで生成しよう';
+        }
         return "解放済みの能力を使い、ポーカーの勝利条件を整えましょう。";
       }
 
       return "対戦テーブルで状況を確認し、勝利条件を満たしましょう。";
     }
 
-    if (shouldShowFinalDisclosure || shouldShowFinalScanCatalog || shouldShowFinalAbilitySpec) {
+    if (shouldShowFinalDisclosure || shouldShowFinalScanCatalog) {
+      return "未判明のスキャン生成2枚を特定しよう";
+    }
+
+    if (shouldShowFinalAbilitySpec) {
       return "ファイナルゲームに必要な能力と条件を確認しましょう。";
     }
 
@@ -1118,8 +1188,27 @@ export default function CasinoGame({
                   }))
                 }
               />
+            ) : showPokerBettingTutorial && activeBattleRobot ? (
+              <PokerBettingTutorial
+                onComplete={() => {
+                  setShowPokerBettingTutorial(false);
+                  setPlayedRobotIds((current) => [...new Set([...current, "poker-3-2"])]);
+                  setFocusedOptionIndex(2);
+                  setActiveBattle({ gameType: "poker", robotId: "poker-3-3" });
+                  window.history.pushState(null, "", "/?stage=3&battle=poker&robot=poker-3-3");
+                  window.scrollTo(0, 0);
+                }}
+                onOpenModal={(kind, gameType) =>
+                  setModal({ gameType, kind, robot: activeBattleRobot })
+                }
+                robot={activeBattleRobot}
+              />
             ) : isPokerBattle ? (
               <PokerBattle
+                key={activeBattle.robotId}
+                showFinalTableHint={activeBattle.robotId === "all-games-last" && !hasSeenFinalTableHint}
+                onDismissFinalTableHint={() => setHasSeenFinalTableHint(true)}
+                onScanCountChange={setPokerScanCount}
                 backHref={`/?stage=${stage.id}`}
                 hand={hand}
                 isRiddleExchangeTimingRevealed={
@@ -1130,15 +1219,38 @@ export default function CasinoGame({
                   setActiveBattle(null);
                 }}
                 onWin={() => {
+                  if (activeBattle.robotId === "poker-3-3") {
+                    goToStage(4);
+                    window.scrollTo(0, 0);
+                    return;
+                  }
+                  if (activeBattle.robotId === "poker-3-2") {
+                    setIsPokerBettingRevealed(true);
+                    setShowPokerBettingTutorial(true);
+                    window.history.pushState(null, "", "/?stage=3&battle=poker&robot=poker-3-2&tutorial=betting");
+                    window.scrollTo(0, 0);
+                    return;
+                  }
                   setPlayedRobotIds((current) =>
                     current.includes(activeBattle.robotId)
                       ? current
                       : [...current, activeBattle.robotId],
                   );
-                  setFocusedOptionIndex((current) =>
-                    Math.min(current + 1, Math.max(stage.robots.length - 1, 0)),
+                  const currentRobotIndex = stage.robots.findIndex(
+                    (robot) => robot.id === activeBattle.robotId,
                   );
-                  setActiveBattle(null);
+                  const nextRobot = stage.robots[currentRobotIndex + 1];
+                  setFocusedOptionIndex(
+                    Math.min(currentRobotIndex + 1, stage.robots.length - 1),
+                  );
+                  if (nextRobot) {
+                    const gameType = getRobotGameTypes(nextRobot)[0];
+                    setActiveBattle({ gameType, robotId: nextRobot.id });
+                    window.history.pushState(null, "", `/?stage=${stage.id}&battle=${gameType}&robot=${nextRobot.id}`);
+                    window.scrollTo(0, 0);
+                  } else {
+                    setActiveBattle(null);
+                  }
                 }}
                 onOpenModal={(kind, gameType) =>
                   setModal({ gameType, kind, robot: activeBattleRobot })
@@ -1148,7 +1260,13 @@ export default function CasinoGame({
               />
             ) : shouldShowFinalDisclosure ? (
               <FinalDisclosure
-                onContinue={() => setIsFinalDisclosureSeen(true)}
+                onContinue={() => {
+                  setIsFinalDisclosureSeen(true);
+                  if (!ENABLE_FINAL_DISCOVERY_PHASE) {
+                    setActiveBattle({ gameType: "poker", robotId: "all-games-last" });
+                    window.scrollTo(0, 0);
+                  }
+                }}
               />
             ) : shouldShowFinalScanCatalog ? (
               <FinalScanCatalogBuilder
@@ -1166,18 +1284,6 @@ export default function CasinoGame({
                     ),
                   )
                 }
-                onToggleEntry={(entryId) =>
-                  setFinalScanCatalogEntries((current) =>
-                    current.map((entry) =>
-                      entry.id === entryId
-                        ? {
-                            ...entry,
-                            selected: !entry.selected,
-                          }
-                        : entry,
-                    ),
-                  )
-                }
               />
             ) : shouldShowFinalAbilitySpec ? (
               <FinalAbilitySpecDisclosure
@@ -1185,15 +1291,17 @@ export default function CasinoGame({
               />
             ) : (
               <OpponentSelector
-                focusedGameType={focusedGameTypes[0] ?? null}
-                focusedGameTypes={focusedGameTypes}
+                focusedGameType={venueGameType}
+                focusedGameTypes={[venueGameType]}
+                isGameUnlocked={isVenueGameUnlocked}
                 focusedRobot={focusedRobot}
-                isStageClear={isStageClear}
                 modalCloseSignal={modalCloseSignal}
                 canFocusNext={canFocusNext}
                 canFocusPrevious={canFocusPrevious}
                 shouldShowTutorial={
-                  !hasShownGameSelectTutorial || showBlackjackUnlockDialog
+                  (stage.id === 1 && (initialGameSelectTutorial
+                    ? !hasCompletedNewGameTutorial
+                    : !hasShownGameSelectTutorial)) || showBlackjackUnlockDialog
                 }
                 tutorialVariant={
                   showBlackjackUnlockDialog ? "blackjack-unlock" : "default"
@@ -1207,10 +1315,10 @@ export default function CasinoGame({
                   if (showBlackjackUnlockDialog) {
                     setShowBlackjackUnlockDialog(false);
                   } else {
+                    setHasCompletedNewGameTutorial(true);
                     markGameSelectTutorialSeen();
                   }
                 }}
-                playedRobotIds={playedRobotIds}
               />
             )}
           </section>
@@ -1260,12 +1368,12 @@ export default function CasinoGame({
                 <PokerRuleContent
                   onOpenGuideImage={setExpandedGuideImage}
                   ruleText={getModalText(modal)}
-                  showRobotWinRate={modal.robot.id === "poker-3-3"}
+                  showRobotWinRate={false}
                 />
               ) : modal.gameType === "poker" && modal.kind === "spec" ? (
                 <PokerRobotSpecContent
                   specText={getModalText(modal)}
-                  showBettingSpec={modal.robot.id === "poker-3-3"}
+                  showBettingSpec={isPokerBettingRevealed || modal.robot.id === "poker-3-3"}
                 />
               ) : (
                 getModalText(modal)
@@ -1291,36 +1399,27 @@ function FinalScanCatalogBuilder({
   entries,
   onComplete,
   onMarkGenerated,
-  onToggleEntry,
 }: {
   entries: ScanCatalogEntry[];
   onComplete: () => void;
   onMarkGenerated: (entryId: string) => void;
-  onToggleEntry: (entryId: string) => void;
 }) {
+  const [preparationAbility, setPreparationAbility] = useState<PreparationAbility>("scan");
+  const [expandedScanRiddle, setExpandedScanRiddle] = useState<{ alt: string; src: string } | null>(null);
+  const [showFirstScanHint, setShowFirstScanHint] = useState(true);
   const [illustrationName, setIllustrationName] = useState("");
   const [answer, setAnswer] = useState("");
-  const [ability, setAbility] = useState<ScanAbility>("なし");
-  const [generatedNumber, setGeneratedNumber] = useState("");
+  const [splitIndexes, setSplitIndexes] = useState<number[]>([]);
   const [scanMessage, setScanMessage] = useState("");
   const [generatedPreviewSrc, setGeneratedPreviewSrc] = useState<string | null>(
     null,
   );
-  const [finalCopyPasteStep, setFinalCopyPasteStep] = useState<
-    "source" | "target" | null
-  >(null);
-  const [isFinalCopySourceSelected, setIsFinalCopySourceSelected] =
-    useState(false);
-  const [isFinalCopyTargetSelected, setIsFinalCopyTargetSelected] =
-    useState(false);
-  const isFinalCopyPasteApplied =
-    isFinalCopySourceSelected && isFinalCopyTargetSelected;
+  const [isFinalCopyPasteApplied, setIsFinalCopyPasteApplied] = useState(false);
   const pendingCount = entries.filter((entry) => !entry.generated).length;
   const allEntriesGenerated = pendingCount === 0;
   const canAddEntry =
     illustrationName.trim().length > 0 &&
-    answer.trim().length > 0 &&
-    generatedNumber.trim().length > 0;
+    answer.trim().length > 0;
 
   function resolveEntry() {
     if (!canAddEntry) {
@@ -1330,15 +1429,12 @@ function FinalScanCatalogBuilder({
     const normalizedAnswer = answer.trim();
     const normalizedIllustrationName =
       normalizeScanIllustrationName(illustrationName);
-    const normalizedGeneratedNumber = generatedNumber.trim();
     const matchedEntry = entries.find(
       (entry) =>
         !entry.generated &&
         entry.answer === normalizedAnswer &&
         normalizeScanIllustrationName(entry.illustrationName) ===
-          normalizedIllustrationName &&
-        entry.ability === ability &&
-        entry.generatedNumber === normalizedGeneratedNumber,
+          normalizedIllustrationName,
     );
 
     if (matchedEntry) {
@@ -1350,16 +1446,15 @@ function FinalScanCatalogBuilder({
 
       onMarkGenerated(matchedEntry.id);
       setGeneratedPreviewSrc(matchedEntry.targetImageSrc);
-      setScanMessage("未生成の項目を生成済みにしました。");
+      setScanMessage(`${matchedEntry.generatedNumber}のカードを生成しました。`);
       setIllustrationName("");
       setAnswer("");
-      setAbility("なし");
-      setGeneratedNumber("");
+      setSplitIndexes([]);
       return;
     }
 
         setGeneratedPreviewSrc(null);
-        setScanMessage("未生成の項目と一致しません。答え、イラスト読み方、使用能力、生成した数字を確認してください。数字として読む部分はスペース区切りで入力します。");
+        setScanMessage("生成できません。答え、イラスト読み方、区切り位置を確認してください。");
   }
 
   return (
@@ -1368,228 +1463,106 @@ function FinalScanCatalogBuilder({
         <p className="text-[11px] font-black uppercase tracking-[0.2em] text-brass">
           ファイナル事前準備
         </p>
-        <h2 className="mt-2 text-2xl font-black">スキャン生成可能一覧</h2>
-        <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
-          ファイナルゲームの手札が公開されました。まずはスキャン一覧を完成させてから、最後の事前準備へ進みます。
-          生成済みの情報はすでに埋まっています。空欄の項目は、このタイミングで答え、イラスト読み方、使用能力、生成したい数字を考えて入力します。
-          イラスト読み方は、数字として読む部分をスペース区切りで空けます。
-        </p>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-          {[
-            ["エクスチェンジ", "自由"],
-            ["スキャン", "自由"],
-            ["コピーペースト", "自由"],
-          ].map(([label, value]) => (
-            <div
-              className="rounded border border-white/10 bg-white/8 p-3"
-              key={label}
-            >
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-300">
-                {label}
-              </p>
-              <p className="mt-1 text-lg font-black text-brass">{value}</p>
-            </div>
-          ))}
-        </div>
+        <h2 className="mt-2 text-2xl font-black">
+          {preparationAbility === "scan" ? "スキャン生成可能一覧"
+            : preparationAbility === "exchange" ? "エクスチェンジ" : "コピーペースト"}
+        </h2>
+        <AbilityUsageTabs
+          activeAbility={preparationAbility}
+          counts={{ exchange: "自由", scan: "自由", "copy-paste": "自由" }}
+          onSelect={setPreparationAbility}
+        />
       </div>
 
-      <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_320px]">
-        <section className="rounded border border-white/12 bg-black/28 p-3 sm:p-4">
+      {preparationAbility === "exchange" ? (
+        <div className="mt-3">
+          <ExchangeSpecToggle />
+          <ExchangeRuleList />
+        </div>
+      ) : null}
+      {preparationAbility === "copy-paste" ? (
+        <FinalCopyPasteWorkbench
+          isApplied={isFinalCopyPasteApplied}
+          onAppliedChange={setIsFinalCopyPasteApplied}
+        />
+      ) : null}
+      <div className={preparationAbility === "scan" ? "" : "hidden"}>
+      {preparationAbility === "scan" && showFirstScanHint ? (
+        <TutorialDialog
+          onDismiss={() => setShowFirstScanHint(false)}
+          text="⑤はまだ解いていないが、もう1枚は能力を使わない限りイラストなさそうだな"
+          tone="quick"
+        />
+      ) : null}
+      {expandedScanRiddle ? <RiddleImageModal {...expandedScanRiddle} onClose={() => setExpandedScanRiddle(null)} /> : null}
+      <details className="mt-3 rounded border border-white/12 bg-black/30 p-3">
+        <summary className="cursor-pointer text-sm font-black leading-6 text-brass">小謎の紙</summary>
+        <ScanRiddleImages
+          images={[
+            { src: "/riddles/riddle_1.png", label: "①" },
+            { src: "/riddles/riddle_1-2.png", label: "" },
+            { src: "/riddles/riddle_2.png", label: "②" },
+            { src: "/riddles/riddle_3.png", label: "③" },
+            { src: "/riddles/riddle_4.png", label: "④" },
+          ]}
+          onOpen={setExpandedScanRiddle}
+        />
+      </details>
+      <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="min-w-0 rounded border border-white/12 bg-black/28 p-3 sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
                 カタログ
               </p>
-              <h3 className="mt-1 text-xl font-black">生成できるカード</h3>
+              <h3 className="mt-1 text-xl font-black">スキャン生成一覧</h3>
             </div>
             <p className="rounded border border-brass/40 bg-brass/10 px-3 py-2 text-sm font-black text-brass">
               未生成 {pendingCount}件
             </p>
           </div>
 
-          <div className="mt-4 grid gap-3">
-            {entries.map((entry, index) => (
-              <button
-                aria-pressed={Boolean(entry.selected)}
-                className={`grid gap-3 rounded border p-3 text-left transition sm:grid-cols-[56px_126px_1fr] ${
-                  entry.selected
-                    ? "border-brass bg-brass/15 ring-2 ring-brass/45"
-                    : !entry.generated
-                      ? "border-casinoRed/70 bg-red-950/20 hover:bg-red-950/30"
-                    : "border-white/10 bg-white/6 hover:bg-white/10"
-                } ${index === 4 ? "mt-4" : ""}`}
-                key={entry.id}
-                onClick={() => onToggleEntry(entry.id)}
-                type="button"
-              >
-                <div
-                  className={`grid h-14 w-14 place-items-center rounded border text-xl font-black ${
-                    entry.generated
-                      ? "border-brass/55 bg-stone-50 text-stone-950"
-                      : "border-casinoRed/60 bg-black/35 text-casinoRed"
-                  }`}
-                >
-                  {entry.generated ? "〇" : ""}
-                </div>
-                <div className="min-h-20">
-                  {entry.generated ? (
-                    <ScanTargetPreview
-                      alt={`${entry.illustrationName}のスキャン対象`}
-                      src={entry.targetImageSrc}
-                    />
-                  ) : (
-                    <div className="grid min-h-20 place-items-center rounded border border-dashed border-white/15 bg-black/25 px-3 text-center text-xs font-bold leading-5 text-stone-500">
-                      正解後に表示
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded bg-black/35 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-stone-300">
-                      #{index + 1}
-                    </span>
-                    <span
-                      className={`rounded px-2 py-1 text-[10px] font-black ${
-                        !entry.generated
-                          ? "bg-white/10 text-stone-300"
-                          : entry.ability === "コピーペースト"
-                          ? "bg-casinoRed text-white"
-                          : entry.ability === "エクスチェンジ"
-                            ? "bg-cyan-300 text-stone-950"
-                            : "bg-white/10 text-stone-200"
-                      }`}
-                    >
-                      {entry.generated ? entry.ability : "未入力"}
-                    </span>
-                    {!entry.generated ? (
-                      <span className="rounded bg-casinoRed px-2 py-1 text-[10px] font-black text-white">
-                        入力待ち
-                      </span>
-                    ) : null}
-                    {entry.selected ? (
-                      <span className="rounded bg-brass px-2 py-1 text-[10px] font-black text-stone-950">
-                        ファイナル候補
-                      </span>
-                    ) : null}
-                  </div>
-                  <dl className="mt-3 grid gap-2 text-sm font-bold leading-6 text-stone-100 sm:grid-cols-4">
-                    <div>
-                      <dt className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
-                        答え
-                      </dt>
-                      <dd>{entry.generated ? entry.answer : "未入力"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
-                        イラスト読み方
-                      </dt>
-                      <dd>{entry.generated ? entry.illustrationName : "未入力"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
-                        使用能力
-                      </dt>
-                      <dd>{entry.generated ? entry.ability : "未入力"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
-                        生成した（い）数字
-                      </dt>
-                      <dd>{entry.generated ? entry.generatedNumber : "未入力"}</dd>
-                    </div>
-                  </dl>
-                </div>
-              </button>
-            ))}
-          </div>
+          <ScanSummaryList
+            rows={entries.filter((entry) => entry.generated).sort((a, b) => {
+              const order = ["0315", "すいり", "ななめ", "フエ", "ツーペア"];
+              const aIndex = order.indexOf(a.answer);
+              const bIndex = order.indexOf(b.answer);
+              return (aIndex < 0 ? order.length : aIndex) - (bIndex < 0 ? order.length : bIndex);
+            }).map((entry) => ({
+              id: entry.id,
+              question: ({ "0315": "①", "すいり": "②", "ななめ": "①´", "フエ": "③", "ツーペア": "④" } as Record<string, string>)[entry.answer] ?? "⑤",
+              answer: entry.generated ? entry.answer : "未入力",
+              illustrationName: entry.generated ? entry.illustrationName.replace(/[\s\u3000]+/g, "/") : "未入力",
+              generatedNumber: entry.generated ? entry.generatedNumber : "未入力",
+              imageSrc: entry.generated ? entry.targetImageSrc : undefined,
+            }))}
+          />
         </section>
 
-        <section className="rounded border border-white/12 bg-black/28 p-3 sm:p-4">
+        <section className="min-w-0 rounded border border-white/12 bg-black/28 p-3 sm:p-4">
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
             スキャン入力
           </p>
           <h3 className="mt-1 text-xl font-black">スキャン実行</h3>
-          <p className="mt-2 text-sm font-bold leading-6 text-stone-300">
-            空欄の項目と一致する答え、イラスト読み方、使用能力、生成した数字を入力すると、その行が生成済みになります。
-            入力例は「イチ　ゴ→6」「フォー　カード→4」「レース　クイーン→12」です。
-          </p>
-          <FinalCopyPasteWorkbench
-            isApplied={isFinalCopyPasteApplied}
-            isSourceSelected={isFinalCopySourceSelected}
-            isTargetSelected={isFinalCopyTargetSelected}
-            onSelectSource={() => {
-              setIsFinalCopySourceSelected(true);
-              setFinalCopyPasteStep("target");
+          <ScanAnswerPanel
+            answer={answer}
+            illustration={illustrationName}
+            splitIndexes={splitIndexes}
+            onAnswerChange={setAnswer}
+            onIllustrationChange={(value) => {
+              setIllustrationName(value);
+              setSplitIndexes([]);
             }}
-            onSelectTarget={() => {
-              setIsFinalCopyTargetSelected(true);
-              setFinalCopyPasteStep(null);
+            onSplitChange={(indexes, value) => {
+              setSplitIndexes(indexes);
+              setIllustrationName(value);
             }}
-            onStart={() => {
-              setIsFinalCopySourceSelected(false);
-              setIsFinalCopyTargetSelected(false);
-              setFinalCopyPasteStep("source");
-              setScanMessage("");
-            }}
-            step={finalCopyPasteStep}
-          />
-          <div className="mt-4 grid gap-3">
-            <FinalCatalogInput
-              label="答え"
-              onChange={setAnswer}
-              placeholder="例: すいり"
-              value={answer}
-            />
-            <FinalCatalogInput
-              label="イラスト読み方"
-              onChange={setIllustrationName}
-              placeholder="例: クイーン"
-              value={illustrationName}
-            />
-            <FinalCatalogInput
-              label="生成した（い）数字"
-              onChange={setGeneratedNumber}
-              placeholder="例: 12"
-              value={generatedNumber}
-            />
-            <label className="grid gap-1 text-xs font-black uppercase tracking-[0.14em] text-brass">
-              使用能力
-              <select
-                className="min-h-11 rounded border border-white/14 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-brass"
-                onChange={(event) => setAbility(event.target.value as ScanAbility)}
-                value={ability}
-              >
-                <option value="なし">なし</option>
-                <option value="エクスチェンジ">エクスチェンジ</option>
-                <option value="コピーペースト">コピーペースト</option>
-              </select>
-            </label>
-            <button
-              className={`min-h-12 rounded px-4 py-3 text-sm font-black ${
-                canAddEntry
-                  ? "bg-brass text-stone-950 hover:bg-yellow-300"
-                  : "cursor-not-allowed bg-stone-700 text-stone-400"
-              }`}
-              disabled={!canAddEntry}
-              onClick={resolveEntry}
-              type="button"
-            >
-              入力内容を生成済みにする
-            </button>
-            {scanMessage ? (
-              <div className="rounded border border-white/10 bg-white/8 p-3">
-                {generatedPreviewSrc ? (
-                  <ScanTargetPreview
-                    alt="今回スキャンした対象"
-                    src={generatedPreviewSrc}
-                  />
-                ) : null}
-                <p className="mt-3 text-sm font-bold leading-6 text-stone-100">
-                  {scanMessage}
-                </p>
-              </div>
-            ) : null}
-          </div>
+            onSubmit={resolveEntry}
+            disabled={!canAddEntry}
+            message={scanMessage}
+          >
+            {generatedPreviewSrc ? <ScanTargetPreview alt="今回スキャンした対象" src={generatedPreviewSrc} /> : null}
+          </ScanAnswerPanel>
 
           <div className="mt-4 rounded border border-casinoRed/45 bg-red-950/20 p-3">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
@@ -1615,6 +1588,7 @@ function FinalScanCatalogBuilder({
           </div>
         </section>
       </div>
+      </div>
     </div>
   );
 }
@@ -1627,9 +1601,14 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
           <p className="text-[11px] font-black uppercase tracking-[0.2em] text-brass">
             ファイナル情報開示
           </p>
-          <h2 className="mt-2 text-2xl font-black">ファイナルゲームの手札公開</h2>
+          <h2 className="mt-2 text-2xl font-black">ファイナルゲームの勝利条件<span className="text-red-300">公開</span></h2>
           <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
-            最後の1戦で使われる手札とフィールドが開示されました。このまま事前準備へ入る前に、まずはスキャン一覧を完成させる必要があります。
+            {ENABLE_FINAL_DISCOVERY_PHASE
+              ? "最後の1戦で使われる手札とフィールドが判明。このまま事前準備へ入る前に、未判明のスキャン生成2枚を特定しよう"
+              : <>
+                  <span className="my-7 block text-xl font-black leading-8 text-red-300 sm:text-2xl">「ロボットのチップを0にして全勝する」</span>
+                  <span className="mt-3 block">最後の1戦で使われる手札とフィールドが<span className="text-red-300">公開</span>。事前準備を整えて、ファイナルゲームに挑もう</span>
+                </>}
           </p>
           <div className="mt-5 grid gap-3">
             {finalBattleDisclosureSections.map((section) => (
@@ -1640,15 +1619,11 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
               />
             ))}
           </div>
-          <h3 className="mt-5 text-lg font-black">最後の情報開示</h3>
-          <div className="mt-5 grid gap-3 text-sm font-bold leading-7 text-stone-100">
-            <p className="rounded border border-white/10 bg-white/6 p-3">
-              ・ゲームにおける能力の発動は、
-              <span className="font-black text-sky-300">ゲームスタート</span>
-              が宣言されたタイミング
-            </p>
-            <p className="rounded border border-white/10 bg-white/6 p-3">
-              ・このゲームに登場する車の車種は必ずハイエースを用いる
+          <h3 className="mt-5 text-lg font-black">小ネタも<span className="text-red-300">公開</span>！</h3>
+          <div className="relative ml-2 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-stone-950 sm:p-5">
+            <span aria-hidden="true" className="absolute -left-[9px] top-6 h-4 w-4 rotate-45 border-b border-l border-emerald-200 bg-emerald-50" />
+            <p className="relative text-sm font-bold leading-7">
+            画面上部の”やること”を5回連続でタップすると開発秘話が見れるぞ
             </p>
           </div>
           <button
@@ -1656,12 +1631,16 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
             onClick={onContinue}
             type="button"
           >
-            スキャン一覧を作成する
+            {ENABLE_FINAL_DISCOVERY_PHASE ? "スキャン一覧を作成する" : "ファイナルゲームへ"}
           </button>
         </div>
       </section>
     </div>
   );
+}
+
+function DevelopmentStoryText() {
+  return <>ここまで遊んでくれてありがとう！これが最後の戦いだから頑張ってね！気づかなかったかもしれないけど、画面右上のメニューには直接指定の画面に遷移できる機能があったんだ。あとこのゲームのこだわりポイントとして、ゲームに登場する全ての車は僕の愛車の”<span className="font-black text-red-700">ハイエース</span>”なんだ。気にしてみてね</>;
 }
 
 function FinalDisclosureCardSection({
@@ -1676,7 +1655,7 @@ function FinalDisclosureCardSection({
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-brass">
         {label}
       </p>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
         {cards.map((card) => (
           <PlayingCardView card={card} key={card.id} size="hand" />
         ))}
@@ -1697,7 +1676,7 @@ function FinalAbilitySpecDisclosure({
           <p className="text-[11px] font-black uppercase tracking-[0.2em] text-brass">
             ファイナル仕様
           </p>
-          <h2 className="mt-2 text-2xl font-black">最後の仕様公開</h2>
+          <h2 className="mt-2 text-2xl font-black">最後の仕様<span className="text-red-300">公開</span></h2>
           <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
             スキャン一覧が完成しました。最後の1戦では、各能力の発動タイミングと持続時間を確認しながら事前準備を進めます。
           </p>
@@ -1768,31 +1747,6 @@ function FinalAbilitySpecTable({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function FinalCatalogInput({
-  label,
-  onChange,
-  placeholder,
-  value,
-}: {
-  label: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  value: string;
-}) {
-  return (
-    <label className="grid gap-1 text-xs font-black uppercase tracking-[0.14em] text-brass">
-      {label}
-      <input
-        className="min-h-11 rounded border border-white/14 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-brass"
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        type="text"
-        value={value}
-      />
-    </label>
-  );
-}
-
 function ScanTargetPreview({ alt, src }: { alt: string; src: string }) {
   return (
     <div className="overflow-hidden rounded border border-white/12 bg-white">
@@ -1827,12 +1781,14 @@ function ScanRuleText() {
           トランプのスキャンはできない
         </span>
         が、
-        <span className="text-sky-300">ポーカー</span>
+        <SelectableBlueText id="scan-poker">ポーカー</SelectableBlueText>
         として現物のトランプをセットした時に
-        <span className="text-sky-300">役名</span>
+        <SelectableBlueText id="scan-role-name">役名</SelectableBlueText>
         なら生成できる。
       </span>
-      <span className="mt-5 block">イラストの呼称の入力例</span>
+      <span className="mt-5 block">
+        イラストの呼称の入力<SelectableBlueText id="scan-example">例</SelectableBlueText>
+      </span>
       <span className="block">イチ　ゴ→6</span>
       <span className="block">フォー　カード→4</span>
       <span className="block">レース　クイーン→12</span>
@@ -1856,11 +1812,6 @@ function ScanSpecToggle({
 }) {
   return (
     <>
-      {!isVisible ? (
-        <p className="mt-3 rounded border border-sky-300/45 bg-sky-950/30 p-3 text-sm font-black leading-6 text-sky-50">
-          まず「スキャン機能について」を確認しましょう。
-        </p>
-      ) : null}
       <button
         className={`mt-3 min-h-11 w-full rounded border border-sky-300/40 bg-sky-950/35 px-3 py-2 text-sm font-black text-sky-100 hover:bg-sky-900/45 ${
           isVisible ? "" : "animate-pulse ring-4 ring-sky-300/25"
@@ -1942,7 +1893,7 @@ function PhysicalScanPanel({
   return (
     <div className="mt-3 rounded border border-sky-300/35 bg-sky-950/20 p-3">
       <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-        持ち物リスト
+        所持アイテム一覧
       </p>
       {prompt ? (
         <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
@@ -2008,7 +1959,7 @@ function PhysicalScanPanel({
               ? "bg-brass text-stone-950 hover:bg-yellow-300"
               : "cursor-not-allowed bg-stone-700 text-stone-400"
         }`}
-        disabled={!canRun || isGenerated}
+          disabled={selectedCardIds.length === 0 || !canRun || isGenerated}
         onClick={onRun}
         type="button"
       >
@@ -2067,6 +2018,24 @@ function BattleResultOverlay({ result, onDismiss }: { result: "win" | "lose"; on
   );
 }
 
+function GameStartHandNotice() {
+  return <p className="rounded border border-brass/45 bg-brass/10 px-3 py-2 text-sm font-black text-brass">ゲームスタート宣言時の手札状況</p>;
+}
+
+function BattleDefeatNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <>
+      <div className="rounded border border-casinoRed/60 bg-red-950/45 p-3">
+        <p className="text-sm font-black leading-6 text-red-100">{message}</p>
+        <p className="mt-4 text-3xl font-black text-casinoRed">YOU LOSE</p>
+      </div>
+      <button className="min-h-12 rounded border border-white/20 bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white/15" onClick={onRetry} type="button">
+        もう一度確認
+      </button>
+    </>
+  );
+}
+
 function VictoryConditionNotice({ message }: { message: string }) {
   const title = message.startsWith("勝利後条件変更")
     ? "勝利後条件変更"
@@ -2089,9 +2058,107 @@ function VictoryConditionNotice({ message }: { message: string }) {
   );
 }
 
-type ScanSummaryRow = { answer: string; generatedNumber: string; illustrationName: string; question: string };
+type ScanSummaryRow = {
+  answer: string;
+  generatedNumber: string;
+  illustrationName: string;
+  question: string;
+  id?: string;
+  ability?: string;
+  selected?: boolean;
+  imageSrc?: string;
+};
 
-function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, onIllustrationChange, onSplitChange, onSubmit, disabled = false, message, children }: {
+function ScanSummaryList({ rows }: {
+  rows: ScanSummaryRow[];
+}) {
+  const [expandedImage, setExpandedImage] = useState<ScanSummaryRow | null>(null);
+  const columns = "1.8rem minmax(0,0.8fr) minmax(0,1fr) 2rem 3rem";
+  const cellClass = "min-w-0 border-b border-white/8 px-1 py-2 break-words";
+  return (
+    <div className="mt-3 min-w-0 max-w-full">
+      {expandedImage?.imageSrc ? <RiddleImageModal alt={`${expandedImage.illustrationName}のスキャン対象`} src={expandedImage.imageSrc} onClose={() => setExpandedImage(null)} /> : null}
+      <div className="grid min-w-0 text-sm font-bold text-stone-100" style={{ gridTemplateColumns: columns }}>
+        {["問題", "答え", "イラスト読み方", "生成", "詳細"].map((label) => (
+          <div className="border-b border-white/10 px-1 py-2 text-[10px] text-stone-400" key={label}>{label}</div>
+        ))}
+        {rows.map((row) => (
+          <Fragment key={row.id ?? `${row.question}-${row.answer}`}>
+            <div className={cellClass}>{row.question}</div>
+            <div className={cellClass}>{row.answer}</div>
+            <div className={cellClass}>{row.illustrationName}</div>
+            <div className={cellClass}>{row.generatedNumber}</div>
+            {(
+              <div className={cellClass}>
+                <button
+                  aria-label={`${row.question}の詳細`}
+                  className="min-h-9 w-full rounded border border-brass/50 px-1 text-xs font-black text-brass hover:bg-brass/15 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={!row.imageSrc}
+                  onClick={() => setExpandedImage(row)}
+                  type="button"
+                >詳細</button>
+              </div>
+            )}
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ScanRiddleImages({ images, onOpen }: {
+  images: Array<{ src: string; label: string }>;
+  onOpen: (image: { alt: string; src: string }) => void;
+}) {
+  const uniqueImages = Array.from(new Map([
+    { src: "/riddles/riddle_0.png", label: "⓪" },
+    ...images,
+  ].map((image) => [image.src, image])).values());
+  return (
+    <div className="mt-3 grid gap-3">
+      {uniqueImages.map((riddle) => (
+        <div className="rounded border border-white/12 bg-white p-3 text-stone-950" key={riddle.src}>
+          <ZoomableRiddleImage alt={"スキャン用小謎" + riddle.label} badge={riddle.label} src={riddle.src} onOpen={onOpen} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScanInventoryPanel({ cards, disabled, onScan }: {
+  cards: PlayingCard[];
+  disabled: boolean;
+  onScan?: (cardIds: string[]) => void;
+}) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedCards = cards.filter((card) => selectedIds.includes(card.id));
+  return (
+    <section className="mt-3 rounded border border-white/12 bg-black/25 p-3">
+      <h3 className="text-sm font-black text-brass">所持アイテム一覧</h3>
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        {cards.map((card) => (
+          <button
+            aria-label={`${card.rank}のカードを現物スキャン対象に選択`}
+            aria-pressed={selectedIds.includes(card.id)}
+            className={`rounded border p-1 ${selectedIds.includes(card.id) ? "border-emerald-300 bg-emerald-400/20 ring-2 ring-emerald-300" : "border-white/15 bg-black/20"}`}
+            key={card.id}
+            onClick={() => setSelectedIds((current) => current.includes(card.id) ? current.filter((id) => id !== card.id) : [...current, card.id])}
+            type="button"
+          ><PlayingCardView card={card} size="hand" /></button>
+        ))}
+        {cards.length === 0 ? <p className="text-sm font-bold text-stone-400">所持アイテムなし</p> : null}
+      </div>
+      <button
+        className="mt-3 min-h-11 w-full rounded bg-brass px-3 text-sm font-black text-stone-950 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
+        disabled={disabled || selectedCards.length === 0 || !onScan}
+        onClick={() => onScan?.(selectedCards.map((card) => card.id))}
+        type="button"
+      >現物スキャン</button>
+    </section>
+  );
+}
+
+function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, onIllustrationChange, onSplitChange, onSubmit, disabled = false, message, children, inventoryCards = [], onPhysicalScan, physicalScanDisabled = false }: {
   answer: string;
   illustration: string;
   splitIndexes: number[];
@@ -2102,22 +2169,26 @@ function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, o
   disabled?: boolean;
   message: string;
   children?: ReactNode;
+  inventoryCards?: PlayingCard[];
+  onPhysicalScan?: (cardIds: string[]) => void;
+  physicalScanDisabled?: boolean;
 }) {
   return (
     <div className="mt-3 grid gap-3 rounded border border-brass/45 bg-black/30 p-3">
       <p className="text-sm font-black leading-6 text-brass">スキャン回答</p>
       <label className="grid gap-2 text-sm font-bold text-stone-100">
         謎の答え
-        <input className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20" onChange={(event) => onAnswerChange(event.target.value)} placeholder="謎の答えを入力" value={answer} />
+        <input className="min-h-11 min-w-0 w-full rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20" onChange={(event) => onAnswerChange(event.target.value)} placeholder="謎の答えを入力" value={answer} />
       </label>
       <label className="grid gap-2 text-sm font-bold text-stone-100">
         イラスト読み方
-        <input className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20" onChange={(event) => onIllustrationChange(event.target.value)} placeholder="イラスト読み方を入力" value={illustration} />
+        <input className="min-h-11 min-w-0 w-full rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20" onChange={(event) => onIllustrationChange(event.target.value)} placeholder="イラスト読み方を入力" value={illustration} />
       </label>
       <IllustrationSplitSelector onChange={onSplitChange} selectedIndexes={splitIndexes} value={illustration} />
       <button className={`min-h-11 rounded px-3 py-2 text-sm font-black ${disabled ? "cursor-not-allowed bg-stone-700 text-stone-400" : "bg-brass text-stone-950 hover:bg-yellow-300"}`} disabled={disabled} onClick={onSubmit} type="button">スキャン発動</button>
       {message ? <ScanFeedbackMessage message={message} /> : null}
       {children}
+      <ScanInventoryPanel cards={inventoryCards} disabled={physicalScanDisabled} onScan={onPhysicalScan} />
     </div>
   );
 }
@@ -2128,23 +2199,26 @@ function ScanSolvedSummary({ hasFourthScanResult = false, additionalRows = [] }:
       answer: "0315",
       generatedNumber: "10",
       illustrationName: "じゅう/しょ",
+      imageSrc: scanTargetImages.jyuusho,
       question: "①",
     },
     {
       answer: "すいり",
       generatedNumber: "12",
       illustrationName: "クイーン",
+      imageSrc: scanTargetImages.queen,
       question: "②",
     },
-    ...additionalRows,
     ...(hasFourthScanResult
       ? [{
           answer: "ななめ",
           generatedNumber: "9",
           illustrationName: "きゅう/しょ",
+          imageSrc: scanTargetImages.kyuusho,
           question: "①´",
         }]
       : []),
+    ...additionalRows,
   ];
 
   return (
@@ -2152,37 +2226,7 @@ function ScanSolvedSummary({ hasFourthScanResult = false, additionalRows = [] }:
       <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
         スキャン回答済み
       </p>
-      <div className="mt-3 grid min-w-0 grid-cols-[2.6rem_minmax(3.5rem,0.8fr)_minmax(5.5rem,1fr)_3.2rem] text-sm font-bold text-stone-100">
-        <div className="border-b border-white/10 px-1 py-2 text-[10px] uppercase tracking-[0.08em] text-stone-400">
-          問題
-        </div>
-        <div className="border-b border-white/10 px-1 py-2 text-[10px] uppercase tracking-[0.08em] text-stone-400">
-          答え
-        </div>
-        <div className="border-b border-white/10 px-1 py-2 text-[10px] uppercase tracking-[0.08em] text-stone-400">
-          イラスト読み方
-        </div>
-        <div className="border-b border-white/10 px-1 py-2 text-[10px] uppercase tracking-[0.08em] text-stone-400">
-          <span className="hidden sm:inline">生成した数字</span>
-          <span className="sm:hidden">生成</span>
-        </div>
-        {rows.map((row) => (
-          <Fragment key={row.answer}>
-            <div className="min-w-0 border-b border-white/8 px-1 py-2">
-              {row.question}
-            </div>
-            <div className="min-w-0 border-b border-white/8 px-1 py-2">
-              {row.answer}
-            </div>
-            <div className="min-w-0 border-b border-white/8 px-1 py-2">
-              {row.illustrationName}
-            </div>
-            <div className="min-w-0 border-b border-white/8 px-1 py-2">
-              {row.generatedNumber}
-            </div>
-          </Fragment>
-        ))}
-      </div>
+      <ScanSummaryList rows={rows} />
     </div>
   );
 }
@@ -2329,6 +2373,29 @@ function IllustrationSplitSelector({
   );
 }
 
+function RiddleCopyTargetLayer({ src, onSelected }: { src: string; onSelected?: () => void }) {
+  const selection = useContext(BlueTextSelectionContext);
+  if (!["/riddles/riddle_4.png", "/riddles/riddle_4ex.png"].includes(src) || !selection?.allowRiddleCopy) return null;
+  const id = "riddle-four-game";
+  const replacement = selection.replacements[id];
+  if (!selection.active && !replacement) return null;
+  return (
+    <button
+      aria-label="小謎④の青字のポーカー"
+      className={`absolute left-[32%] top-[7%] h-[11%] w-[20%] border-0 bg-transparent text-sm font-black text-sky-500 ${selection.active ? "" : "pointer-events-none"}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!selection.active) return;
+        selection.onSelect(id, replacement ?? "ポーカー");
+        onSelected?.();
+      }}
+      type="button"
+    >
+      {null}
+    </button>
+  );
+}
+
 function ZoomableRiddleImage({
   alt,
   badge,
@@ -2342,13 +2409,18 @@ function ZoomableRiddleImage({
   onOpen: (image: { alt: string; src: string }) => void;
   src: string;
 }) {
+  const selection = useContext(BlueTextSelectionContext);
+  const isReplaced = src === "/riddles/riddle_4.png" && selection?.replacements["riddle-four-game"] === "ハイ＆ロー";
+  const displaySrc = isReplaced ? "/riddles/riddle_4ex.png" : src;
+  const displayBadge = isReplaced ? "④'" : badge;
   return (
     <div className={className}>
-      {badge ? (
+      {displayBadge ? (
         <span className="mb-1 inline-grid h-8 min-w-8 place-items-center rounded border border-brass/70 bg-black/80 px-2 text-sm font-black text-brass shadow-lg">
-          {badge}
+          {displayBadge}
         </span>
       ) : null}
+      <div className="relative">
       <button
         className="group block w-full overflow-hidden rounded border border-white/12 bg-white text-left"
         onClick={() => onOpen({ alt, src })}
@@ -2358,10 +2430,12 @@ function ZoomableRiddleImage({
           alt={alt}
           className="h-auto w-full transition-transform duration-200 group-hover:scale-[1.015]"
           height={900}
-          src={src}
+          src={displaySrc}
           width={1600}
         />
       </button>
+      <RiddleCopyTargetLayer src={displaySrc} />
+      </div>
     </div>
   );
 }
@@ -2381,6 +2455,9 @@ function RiddleImageModal({
   };
   src: string;
 }) {
+  const selection = useContext(BlueTextSelectionContext);
+  const displaySrc = src === "/riddles/riddle_4.png" && selection?.replacements["riddle-four-game"] === "ハイ＆ロー"
+    ? "/riddles/riddle_4ex.png" : src;
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/86 p-3 backdrop-blur-sm sm:p-6"
@@ -2398,9 +2475,10 @@ function RiddleImageModal({
             className="h-auto w-full rounded"
             height={900}
             priority
-            src={src}
+            src={displaySrc}
             width={1600}
           />
+          <RiddleCopyTargetLayer src={displaySrc} onSelected={onClose} />
           {riddlePrintSelection ? (
             <RiddlePrintTargetLayer
               disabled={riddlePrintSelection.disabled}
@@ -2586,13 +2664,12 @@ function OpponentSelector({
   focusedGameType,
   focusedGameTypes,
   focusedRobot,
-  isStageClear,
+  isGameUnlocked,
   modalCloseSignal,
   onFocusRobot,
   onOpenModal,
   onSelectRobot,
   onTutorialShown,
-  playedRobotIds,
   shouldShowTutorial,
   tutorialVariant = "default",
 }: {
@@ -2601,13 +2678,12 @@ function OpponentSelector({
   focusedGameType: GameType | null;
   focusedGameTypes: GameType[];
   focusedRobot: Robot | null;
-  isStageClear: boolean;
+  isGameUnlocked: boolean;
   modalCloseSignal: number;
   onFocusRobot: (offset: number) => void;
   onOpenModal: (robot: Robot, kind: ModalKind, gameType: GameType) => void;
   onSelectRobot: (robot: Robot, gameType: GameType) => void;
   onTutorialShown: () => void;
-  playedRobotIds: string[];
   shouldShowTutorial: boolean;
   tutorialVariant?: "default" | "blackjack-unlock";
 }) {
@@ -2642,9 +2718,6 @@ function OpponentSelector({
         };
   const currentSeat = focusedGameType ? getGameSeat(focusedGameType) : "top";
   const currentImage = viewImage[currentSeat];
-  const isFocusedPlayed = focusedRobot
-    ? playedRobotIds.includes(focusedRobot.id)
-    : false;
 
   useEffect(() => {
     if (modalCloseSignal === 0) {
@@ -2797,12 +2870,14 @@ function OpponentSelector({
               <div className="mt-3 grid grid-cols-[44px_44px_minmax(0,1fr)] gap-2 max-[424px]:mt-2 max-[424px]:grid-cols-[38px_38px_minmax(0,1fr)] max-[424px]:gap-1.5 max-[374px]:grid-cols-[34px_34px_minmax(0,1fr)]">
                 <button
                   aria-label={`${focusedRobot.name}のルール`}
+                  disabled={!isGameUnlocked}
                   className={`grid h-11 place-items-center rounded border text-stone-950 max-[424px]:h-[38px] max-[374px]:h-[34px] ${
                     tutorialStep === "rules"
                       ? "animate-pulse border-2 border-sky-500 bg-sky-50 shadow-[0_0_0_4px_rgba(14,165,233,0.24)]"
                       : "border-stone-300 bg-stone-100 hover:bg-stone-200"
-                  }`}
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
                   onClick={() => {
+                    if (!isGameUnlocked) return;
                     if (tutorialStep === "rules") {
                       setTutorialStep("rules-close");
                       setIsTutorialDialogVisible(false);
@@ -2814,6 +2889,7 @@ function OpponentSelector({
                     );
                   }}
                   onPointerDown={() => {
+                    if (!isGameUnlocked) return;
                     if (tutorialStep === "rules") {
                       setTutorialStep("rules-close");
                       setIsTutorialDialogVisible(false);
@@ -2831,12 +2907,14 @@ function OpponentSelector({
                 </button>
                 <button
                   aria-label={`${focusedRobot.name}の仕様`}
+                  disabled={!isGameUnlocked}
                   className={`grid h-11 place-items-center rounded border text-stone-950 max-[424px]:h-[38px] max-[374px]:h-[34px] ${
                     tutorialStep === "spec"
                       ? "animate-pulse border-2 border-emerald-500 bg-emerald-50 shadow-[0_0_0_4px_rgba(16,185,129,0.24)]"
                       : "border-stone-300 bg-stone-100 hover:bg-stone-200"
-                  }`}
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
                   onClick={() => {
+                    if (!isGameUnlocked) return;
                     if (tutorialStep === "spec") {
                       setTutorialStep("spec-close");
                       setIsTutorialDialogVisible(false);
@@ -2848,6 +2926,7 @@ function OpponentSelector({
                     );
                   }}
                   onPointerDown={() => {
+                    if (!isGameUnlocked) return;
                     if (tutorialStep === "spec") {
                       setTutorialStep("spec-close");
                       setIsTutorialDialogVisible(false);
@@ -2863,13 +2942,13 @@ function OpponentSelector({
                 >
                   <Info size={18} />
                 </button>
-                {isFocusedPlayed || isStageClear || !focusedGameType ? (
+                {!isGameUnlocked || !focusedGameType ? (
                   <button
                     className="h-11 cursor-not-allowed rounded bg-stone-700 px-3 text-sm font-bold text-stone-400 max-[424px]:h-[38px] max-[424px]:px-2 max-[424px]:text-xs max-[374px]:h-[34px]"
                     disabled
                     type="button"
                   >
-                    {isFocusedPlayed ? "対戦済み" : "対戦"}
+                    ゲームテーブルへ
                   </button>
                 ) : (
                   <button
@@ -3031,6 +3110,7 @@ function BlackjackBattle({
   const [showPhysicalScanGuideDialog, setShowPhysicalScanGuideDialog] =
     useState(false);
   const [physicalScanCardIds, setPhysicalScanCardIds] = useState<string[]>([]);
+  const [consumedPhysicalScanCardIds, setConsumedPhysicalScanCardIds] = useState<string[]>([]);
   const [physicalScanReading, setPhysicalScanReading] = useState("");
   const [physicalScanSplitIndexes, setPhysicalScanSplitIndexes] = useState<
     number[]
@@ -3088,11 +3168,9 @@ function BlackjackBattle({
     (physicalScanConfig?.requiredSelectionCount ?? 0);
   const canRunPhysicalScan =
     isPhysicalScanCardCountReady && physicalScanReading.trim().length > 0;
-  const visiblePhysicalScanInventoryCards = isPhysicalScanGenerated
-    ? physicalScanInventoryCards.filter(
-        (card) => !physicalScanCardIds.includes(card.id),
-      )
-    : physicalScanInventoryCards;
+  const visiblePhysicalScanInventoryCards = physicalScanInventoryCards.filter(
+    (card) => !consumedPhysicalScanCardIds.includes(card.id),
+  );
   const areScanCardsGenerated = scannedGeneratedCards.every((card) =>
     scannedItems.includes(card.id),
   );
@@ -3121,7 +3199,7 @@ function BlackjackBattle({
                   cards: highLowRobotExchangeCards,
                   disabled: areRobotHandsExchangeDisabled,
                   id: "scan-high-low-robot-hand",
-                  label: "ハイアンドローのロボット手札",
+                  label: "ハイ＆ローのロボット手札",
                 },
               ]
             : []),
@@ -3188,7 +3266,7 @@ function BlackjackBattle({
                   cards: highLowRobotExchangeCards,
                   disabled: areRobotHandsExchangeDisabled,
                   id: "blackjack-high-low-robot-hand",
-                  label: "ハイアンドローのロボット手札",
+                  label: "ハイ＆ローのロボット手札",
                 },
               ]
             : []),
@@ -3488,7 +3566,7 @@ function BlackjackBattle({
       setBlackjackHighLowPlacementPending(false);
       setBlackjackHighLowPlacementConfirmed(false);
       setBlackjackHighLowPlacementAnimation(null);
-      setMessage("まずハイアンドローで勝利しましょう。");
+      setMessage("まずハイ＆ローで勝利しましょう。");
       return;
     }
 
@@ -3557,14 +3635,14 @@ function BlackjackBattle({
         setBlackjackHighLowPlacementAnimation(null);
         setActiveBlackjackGame("blackjack");
         setPhase("opening-card");
-        setMessage("ハイアンドローに勝利しました。1枚目をプレイヤーフィールドへ置いてください。");
+        setMessage("ハイ＆ローに勝利しました。1枚目をプレイヤーフィールドへ置いてください。");
       }, 900);
       return;
     }
 
     setSettledResult("lose");
     setPhase("result");
-    setMessage("YOU LOSE。ハイアンドローの条件を満たせませんでした。");
+    setMessage("YOU LOSE。ハイ＆ローの条件を満たせませんでした。");
   }
 
   function resetBlackjackHighLowPlacement() {
@@ -3586,12 +3664,12 @@ function BlackjackBattle({
     setMessage(
       outcome === "win"
         ? highLowChainResult
-          ? "YOU WIN。ブラックジャックとハイアンドローの両方に勝利しました。"
+          ? "YOU WIN。ブラックジャックとハイ＆ローの両方に勝利しました。"
           : "YOU WIN。勝利条件を満たしました。"
         : blackjackOutcome === "draw"
           ? "引き分けのため、あなたの負けです。"
           : highLowChainResult === "lose"
-            ? "YOU LOSE。ハイアンドローの条件を満たせませんでした。"
+            ? "YOU LOSE。ハイ＆ローの条件を満たせませんでした。"
             : "YOU LOSE。ロボットの勝利です。",
     );
     setPhase("result");
@@ -3954,6 +4032,7 @@ function BlackjackBattle({
   }
 
   function togglePhysicalScanCard(cardId: string) {
+    if (consumedPhysicalScanCardIds.includes(cardId)) return;
     setIsPhysicalScanGenerated(false);
     setPhysicalScanMessage("");
     setPhysicalScanReading("");
@@ -4011,6 +4090,7 @@ function BlackjackBattle({
     if (!physicalScanConfig) {
       return;
     }
+    if (physicalScanCardIds.some((id) => consumedPhysicalScanCardIds.includes(id))) return;
 
     const isCardSelectionCorrect =
       physicalScanCardIds.length === physicalScanConfig.requiredSelectionCount &&
@@ -4034,6 +4114,7 @@ function BlackjackBattle({
     }
 
     setIsPhysicalScanGenerated(true);
+    setConsumedPhysicalScanCardIds((current) => [...new Set([...current, ...physicalScanCardIds])]);
     setScannedItems((current) =>
       current.includes(scannedPhysicalScanCard.id)
         ? current
@@ -4092,7 +4173,7 @@ function BlackjackBattle({
   function runFourthBattleScan() {
     if (!isRiddlePrintExchangeApplied) {
       setScanTutorialMessage(
-        "先にエクスチェンジで小謎画像を変化させてください。",
+        "先にエクスチェンジで小謎の紙を変化させてください。",
       );
       setIsFourthScanGenerated(false);
       return;
@@ -4193,7 +4274,7 @@ function BlackjackBattle({
           onDismiss={() => setShowSecondStageIntro(false)}
           text={
             <>
-              第2ステージから、ハイアンドロー・ブラックジャックの二つのゲームを”
+              第2ステージから、ハイ＆ロー・ブラックジャックの二つのゲームを”
               <span className="text-red-300">同じ手札</span>
               ”で2連勝していただきます
             </>
@@ -4287,7 +4368,8 @@ function BlackjackBattle({
 
       <div className="flex items-center gap-3 border-b border-white/10 bg-black/28 p-4">
         <a
-          aria-label="戻る"
+          aria-label="ゲーム会場へ"
+          title="ゲーム会場へ"
           className="grid h-12 w-12 shrink-0 place-items-center rounded border border-white/30 bg-black/30 hover:bg-white/10"
           href={backHref}
           onClick={(event) => {
@@ -4409,6 +4491,7 @@ function BlackjackBattle({
                         </p>
                         <div className="mt-3 rounded border border-white/12 bg-white p-3 text-stone-950">
                           <div className="grid gap-3">
+                            <ZoomableRiddleImage alt="スキャン解放謎" badge="⓪" src="/riddles/riddle_0.png" onOpen={setExpandedRiddleImage} />
                             <div className="grid gap-0">
                               {scanRiddleImages.slice(0, 2).map((image, index) => (
                                 <ZoomableRiddleImage
@@ -4573,6 +4656,7 @@ function BlackjackBattle({
                         </p>
                         <div className="mt-3 rounded border border-white/12 bg-white p-3 text-stone-950">
                           <div className="grid gap-3">
+                            <ZoomableRiddleImage alt="スキャン解放謎" badge="⓪" src="/riddles/riddle_0.png" onOpen={setExpandedRiddleImage} />
                             <div className="grid gap-0">
                               {scanRiddleImages.slice(0, 2).map((image, index) => (
                                 <ZoomableRiddleImage
@@ -5009,7 +5093,7 @@ function BlackjackBattle({
                           cards: getCardsById(["K-crub", "Q-crub"]),
                           interactionDisabled: !canSelectFourthRobotExchangeCards,
                           id: "fourth-preview-high-low-robot-hand",
-                          label: "ハイアンドローのロボット手札",
+                          label: "ハイ＆ローのロボット手札",
                         },
                         {
                           cards: getCardsById(
@@ -5075,7 +5159,7 @@ function BlackjackBattle({
                     />
                     <details className="rounded border border-white/12 bg-black/25 p-3">
                       <summary className="cursor-pointer text-sm font-black leading-6 text-brass">
-                        小謎画像
+                        小謎の紙
                       </summary>
                       <div className="mt-3 grid gap-3">
                         <RiddlePrintTargetPicker
@@ -5247,7 +5331,7 @@ function BlackjackBattle({
                   </div>
                 ) : blackjackHighLowPlayerZone ? null : (
                   <TutorialBubble className="mt-3">
-                    ハイアンドローから開始します。
+                    ハイ＆ローから開始します。
                   </TutorialBubble>
                 )}
               </div>
@@ -5270,9 +5354,7 @@ function BlackjackBattle({
             ) : null}
 
             {shouldShowGameStartHandState ? (
-              <p className="rounded border border-brass/45 bg-brass/10 px-3 py-2 text-sm font-black text-brass">
-                ゲームスタート時の手札状況
-              </p>
+              <GameStartHandNotice />
             ) : null}
 
             <BlackjackField
@@ -5319,7 +5401,7 @@ function BlackjackBattle({
                   />
                 }
                 isBlackjack={false}
-                label="ハイアンドローのロボット手札"
+                label="ハイ＆ローのロボット手札"
                 notice={
                   areRobotHandsExchangeDisabled
                     ? "エクスチェンジ不可"
@@ -5526,7 +5608,7 @@ function BlackjackBattle({
                 事前準備
               </p>
               <p className="mt-2 rounded border border-white/12 bg-black/35 p-3 text-sm font-bold leading-6 text-stone-100">
-                自分とハイアンドロー・ブラックジャックのロボットの手札が開示されました。
+                自分とハイ＆ロー・ブラックジャックのロボットの手札が開示されました。
                 このステージでは、プレイヤーの手札交換を禁止します。その代わりに新たな能力を解放します。
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -5807,6 +5889,7 @@ function BlackjackBattle({
                           </p>
                         </div>
                         <div className="mt-3 grid gap-3">
+                          <ZoomableRiddleImage alt="スキャン解放謎" badge="⓪" src="/riddles/riddle_0.png" onOpen={setExpandedRiddleImage} />
                           {scanRiddleImages.map((image, index) => (
                             <div
                               className="rounded border border-stone-300 bg-white"
@@ -6127,15 +6210,15 @@ function BlackjackBattle({
   );
 }
 
-function BlackjackDeclarationOverlay() {
+function BlackjackDeclarationOverlay({ text = "ブラックジャック" }: { text?: string }) {
   return (
     <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-black/20 p-4">
       <div className="rounded border border-brass bg-stone-950/92 px-8 py-6 text-center shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
         <p className="text-[11px] font-black uppercase tracking-[0.24em] text-brass">
-          Declare
+          宣言
         </p>
-        <p className="mt-2 text-4xl font-black text-sky-300 drop-shadow sm:text-6xl">
-          ブラックジャック
+        <p className="mt-2 break-words text-2xl font-black text-sky-300 drop-shadow sm:text-4xl">
+          {text}
         </p>
       </div>
     </div>
@@ -6155,7 +6238,7 @@ function FinalBattlePreparationPanel({
     "コピーペーストで、スキャン仕様の「役名」を青字11の平仮名「じゅういち」に上書きする",
     "1と11の組をブラックジャックとして21にし、「に/じゅういち」から13のトランプを生成する",
     "コピーペーストで、発動タイミングの青字「ゲームスタート」を「ブラックジャック」に上書きする",
-    "ブラックジャック宣言のタイミングで、ハイアンドローのKと自分のJ、自分のAと生成済みKをエクスチェンジできるようにする",
+    "ブラックジャック宣言のタイミングで、ハイ＆ローのKと自分のJ、自分のAと生成済みKをエクスチェンジできるようにする",
   ];
 
   return (
@@ -6248,133 +6331,84 @@ function FinalBattlePreparationPanel({
   );
 }
 
-function FinalCopyPasteWorkbench({
-  isApplied,
-  isSourceSelected,
-  isTargetSelected,
-  onSelectSource,
-  onSelectTarget,
-  onStart,
-  step,
-}: {
+function FinalCopyPasteWorkbench({ isApplied, onAppliedChange }: {
   isApplied: boolean;
-  isSourceSelected: boolean;
-  isTargetSelected: boolean;
-  onSelectSource: () => void;
-  onSelectTarget: () => void;
-  onStart: () => void;
-  step: "source" | "target" | null;
+  onAppliedChange: (applied: boolean) => void;
 }) {
+  const [format, setFormat] = useState<CopyPasteFormat>("hiragana");
+  const [step, setStep] = useState<"source" | "target" | null>(null);
+  const [source, setSource] = useState<{ id: string; label: string; text: string }>();
+  const [target, setTarget] = useState<{ id: string; label: string; text: string }>();
+  const [error, setError] = useState("");
+  const [expandedImage, setExpandedImage] = useState<{ alt: string; src: string } | null>(null);
+  const formatLabels = { hiragana: "平仮名", katakana: "カタカナ", kanji: "漢字", number: "数字" };
+  function select(id: string, text: string) {
+    if (step === "source") {
+      setSource({ id, label: text, text });
+      setStep("target");
+    } else if (step === "target" && id !== source?.id) {
+      setTarget({ id, label: text, text });
+      setStep(null);
+    }
+  }
   return (
-    <div className="mt-4 rounded border border-casinoRed/45 bg-red-950/20 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
-            コピーペースト
-          </p>
-          <h4 className="mt-1 text-base font-black text-white">
-            青字のコピー元と上書き先を選択
-          </h4>
+    <BlueTextSelectionContext.Provider value={{
+      active: step !== null,
+      selectedId: step === "source" ? source?.id ?? null : target?.id ?? null,
+      replacements: {},
+      onSelect: select,
+    }}>
+      {expandedImage ? <RiddleImageModal {...expandedImage} onClose={() => setExpandedImage(null)} /> : null}
+      <CopyPastePreparationPanel
+        copiedTarget={source}
+        pasteTarget={target}
+        format={format}
+        formatLabel={formatLabels[format]}
+        isApplied={isApplied}
+        isSelecting={step !== null}
+        maxCopyPastes={isApplied ? 0 : 1}
+        error={error}
+        appliedText="ハイ＆ロー"
+        onChooseFormat={setFormat}
+        onStart={() => {
+          setStep(step ? null : "source");
+          setSource(undefined);
+          setTarget(undefined);
+          setError("");
+        }}
+        onPaste={() => {
+          if (source?.id !== "high-low-declaration" || target?.id !== "final-riddle-game" || format === "number") {
+            setError("文章の意味が通らないため、ペーストできません。");
+            return;
+          }
+          onAppliedChange(true);
+          setStep(null);
+          setError("");
+        }}
+        onReset={() => {
+          onAppliedChange(false);
+          setSource(undefined);
+          setTarget(undefined);
+          setStep(null);
+          setError("");
+        }}
+      />
+      <CopyPasteGameSpecifications onOpenGuideImage={setExpandedImage} />
+      <details className="mt-3 rounded border border-white/15 bg-black/30 p-3">
+        <summary className="cursor-pointer text-sm font-black text-brass">小謎の紙</summary>
+        <div className="relative mt-3 overflow-hidden rounded bg-white">
+          <Image alt="小謎の紙" className="h-auto w-full" height={900} src="/riddles/riddle_4.png" width={1600} />
+          <button
+            aria-label="小謎の紙の青字"
+            className="absolute left-[40%] top-[5%] h-[10%] w-[23%] text-sm font-black text-sky-500"
+            onClick={() => select("final-riddle-game", isApplied ? "ハイ＆ロー" : "ポーカー")}
+            type="button"
+          >
+            {isApplied ? <span className="bg-white">ハイ＆ロー</span> : null}
+          </button>
         </div>
-        <button
-          className="min-h-10 rounded bg-casinoRed px-3 py-2 text-xs font-black text-white hover:bg-red-500"
-          onClick={onStart}
-          type="button"
-        >
-          対象選択開始
-        </button>
-      </div>
-      <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
-        コピー元はハイアンドローのルールにある青字の「ハイアンドロー」。上書き先は
-        riddle_4.png の中央から上にある青字です。
-      </p>
-      {step ? (
-        <p className="mt-2 rounded border border-casinoRed/50 bg-black/35 p-2 text-xs font-black leading-5 text-red-100">
-          {step === "source"
-            ? "コピー元の青字を押してください。"
-            : "上書き先の青字を押してください。"}
-        </p>
-      ) : null}
-
-      <div className="mt-3 grid gap-3">
-        <div className="rounded border border-white/12 bg-black/35 p-3 text-sm font-bold leading-6 text-stone-100">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-100">
-            コピー元
-          </p>
-          <div className="mt-2">
-            <p>①ロボットが大小関係成り立たないよう先に置く</p>
-            <p>②プレイヤーが置く</p>
-            <p>
-            ③
-            <CopyPasteTarget
-              active={step === "source"}
-              isSelected={isSourceSelected}
-              label="ハイアンドローのルールの青字"
-              onSelect={onSelectSource}
-            >
-              ハイアンドロー
-            </CopyPasteTarget>
-            と宣言して判定する。
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded border border-white/12 bg-white p-2 text-stone-950">
-          <p className="px-1 pb-2 text-[10px] font-black uppercase tracking-[0.16em] text-sky-500">
-            上書き先
-          </p>
-          <div className="relative overflow-hidden rounded border border-stone-300 bg-white">
-            <Image
-              alt="コピーペースト上書き対象の小謎"
-              className={`h-auto w-full ${isApplied ? "opacity-45" : ""}`}
-              height={900}
-              src="/riddles/riddle_4.png"
-              width={1600}
-            />
-            <button
-              aria-label="riddle_4.png 中央上部の青字"
-              className={`absolute left-[40%] top-[5%] h-[10%] w-[23%] rounded border-2 transition ${
-                isTargetSelected
-                  ? "border-sky-500 bg-sky-400/25 shadow-[0_0_0_4px_rgba(14,165,233,0.28)]"
-                  : step === "target"
-                    ? "border-sky-500 bg-sky-400/15 hover:bg-sky-400/25"
-                    : "border-transparent bg-transparent"
-              }`}
-              onClick={(event) => {
-                event.preventDefault();
-                if (step === "target") {
-                  onSelectTarget();
-                }
-              }}
-              type="button"
-            >
-              <span className="absolute left-1 top-1 rounded bg-sky-500 px-2 py-1 text-[10px] font-black text-white">
-                {isTargetSelected ? "選択済み" : step === "target" ? "選択" : ""}
-              </span>
-            </button>
-            {isApplied ? (
-              <div className="absolute inset-0 grid place-items-center bg-black/45 p-4">
-                <div className="rounded border border-red-200 bg-stone-950/90 p-4 text-center text-white shadow-2xl">
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
-                    仮プレビュー
-                  </p>
-                  <p className="mt-2 text-sm font-black leading-6">
-                    コピーペースト変更後画像
-                    <br />
-                    ここは後で差し替え予定
-                  </p>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-2 text-xs font-black leading-5 text-stone-100">
-        <p>コピー元: {isSourceSelected ? "選択済み" : "未選択"}</p>
-        <p>上書き先: {isTargetSelected ? "選択済み" : "未選択"}</p>
-      </div>
-    </div>
+      </details>
+    </BlueTextSelectionContext.Provider>
   );
 }
 
@@ -6506,13 +6540,13 @@ function HighlightedBlackjackRuleText() {
         JQKは
         <span className="font-black text-red-300">10</span>
         、Aは
-        <span className="font-black text-sky-300">11</span>
+        <SelectableBlueText id="blackjack-ace-value">11</SelectableBlueText>
         として扱い、それ以外は数字通り
       </span>
       <span className="mt-3 block">①1枚目を置き、2枚目を重ねて置く</span>
       <span className="block">
         ②
-        <span className="font-black text-sky-300">ブラックジャック</span>
+        <SelectableBlueText id="blackjack-declaration">ブラックジャック</SelectableBlueText>
         と宣言して判定を開始
       </span>
       <span className="block">
@@ -6555,7 +6589,7 @@ function HighlightedHighLowRuleText() {
       <span className="block">②プレイヤーが置く</span>
       <span className="block">
         ③
-        <span className="font-black text-sky-300">ハイアンドロー</span>
+        <SelectableBlueText id="high-low-declaration">ハイ＆ロー</SelectableBlueText>
         と宣言して判定する。
       </span>
     </>
@@ -6595,7 +6629,7 @@ function PokerRuleContent({
           <Fragment key={`${part}-${index}`}>
             {part}
             {index < ruleTextParts.length - 1 ? (
-              <span className="font-black text-sky-300">
+              <span className="font-black text-red-300">
                 {highlightedKeyword}
               </span>
             ) : null}
@@ -6638,6 +6672,7 @@ function PokerRobotSpecContent({
 }) {
   const highlightedSpecPrefix = "自分の手札とフィールドを常に見ており";
   const shouldHighlightSpecPrefix = specText.startsWith(highlightedSpecPrefix);
+  const bettingFormula = "ポーカーロボット勝率（引き分けを含む）×所持チップ";
 
   return (
     <>
@@ -6652,16 +6687,162 @@ function PokerRobotSpecContent({
         specText
       )}
       {showBettingSpec ? (
-        <span className="mt-3 block rounded border border-sky-300/40 bg-sky-950/35 p-3 font-bold text-sky-50">
-          コピーペースト機能解放と同時に開示:
-          <span className="mt-1 block">{pokerBettingSpecText}</span>
+        <span className="mt-3 block">
+          <span className="font-black text-red-300">{bettingFormula}</span>
+          {pokerBettingSpecText.slice(bettingFormula.length)}
         </span>
       ) : null}
     </>
   );
 }
 
+function PokerSelectedHandPanel({
+  cards,
+  evaluation,
+}: {
+  cards: PlayingCard[];
+  evaluation: PokerHandEvaluation | null;
+}) {
+  return (
+    <div className="rounded border border-brass/60 bg-black/50 p-4">
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
+        選択中の役
+      </p>
+      <div className="mt-3 flex min-h-28 flex-wrap items-center justify-center gap-3 rounded border border-dashed border-white/20 bg-black/25 p-3">
+        {cards.map((card) => (
+          <PlayingCardView card={card} key={card.id} size="hand" />
+        ))}
+      </div>
+      <p className="mt-3 text-sm font-bold leading-6 text-stone-100">
+        {evaluation
+          ? `あなたの役: ${evaluation.label}`
+          : "手札2枚と組み合わせるカード2枚を、フィールド4枚から選択します。"}
+      </p>
+    </div>
+  );
+}
+
+function PokerBettingTutorial({
+  onComplete,
+  onOpenModal,
+  robot,
+}: {
+  onComplete: () => void;
+  onOpenModal: (kind: ModalKind, gameType: GameType) => void;
+  robot: Robot;
+}) {
+  const [phase, setPhase] = useState<"betting" | "playing" | "result">("betting");
+  const [showIntroduction, setShowIntroduction] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [overlayDismissed, setOverlayDismissed] = useState(false);
+  const playerCards = getCardsById(["A-spade", "A-daia"]);
+  const robotCards = getCardsById(["K-crub", "K-heart"]);
+  const fieldCards = getCardsById(["K-daia", "A-heart", "Q-heart", "J-crub"]);
+  const robotSelection = getBestPokerSelection(robotCards, fieldCards);
+  const selectedCards = fieldCards.filter((card) => selectedIds.includes(card.id));
+  const playerSelection = [...playerCards, ...selectedCards];
+  const playerEvaluation = selectedIds.length === 2 ? evaluatePokerHand(playerSelection) : null;
+  const outcome = playerEvaluation && robotSelection
+    ? comparePokerHands(playerEvaluation, robotSelection.evaluation)
+    : 0;
+  const winRate = getPokerRobotWinRate(robotCards, fieldCards);
+  const chips = 100;
+  const robotBet = Math.floor(chips * winRate);
+  const result = outcome > 0 ? "win" : "lose";
+
+  return (
+    <div className="bg-[#071b12] text-white">
+      {showIntroduction ? (
+        <TutorialDialog
+          onDismiss={() => setShowIntroduction(false)}
+          text="ポーカー最後の要素、「チップの賭け」について説明しよう。ロボットは勝率×所持チップを賭け、プレイヤーはオールインする。まずはポーカーだけで練習してみよう。"
+          tone="hands"
+        />
+      ) : null}
+      {phase === "result" && !overlayDismissed ? (
+        <BattleResultOverlay result={result} onDismiss={() => setOverlayDismissed(true)} />
+      ) : null}
+      <header className="border-b border-white/10 bg-black/28 p-4">
+        <Image alt="ポーカー" className="h-12 w-36 rounded bg-white object-contain p-1" height={80} src="/game-logos/poker.png" width={240} />
+        <h2 className="mt-3 text-lg font-black text-brass">賭けチュートリアル</h2>
+      </header>
+      <div className="grid gap-3 p-4">
+        <details className="rounded border border-white/15 p-3" open>
+          <summary className="cursor-pointer text-sm font-black text-brass">ポーカーロボットの仕様</summary>
+          <div className="mt-3 text-sm font-bold leading-7">
+            <PokerRobotSpecContent specText={pokerSpecText} showBettingSpec />
+          </div>
+        </details>
+        <section className="border-y border-brass/40 py-4">
+          <p className="text-xs font-bold text-stone-300">練習用チップ</p>
+          <div className="mt-2 grid grid-cols-2 gap-3 text-sm font-bold leading-7">
+            <div>
+              <h3 className="text-brass">プレイヤー</h3>
+              <p>所持：{chips}chip</p>
+              <p>ベット：{phase === "betting" ? "未確定" : `${chips}chip（オールイン）`}</p>
+            </div>
+            <div>
+              <h3 className="text-brass">ロボット</h3>
+              <p>所持：{chips}chip</p>
+              <p>勝率：{(winRate * 100).toFixed(1)}%</p>
+              <p>ベット：{phase === "betting" ? "未確定" : `${robotBet}chip`}</p>
+            </div>
+          </div>
+          <p className="mt-3 text-sm font-bold leading-6 text-stone-200">
+            ロボットは自分の手札とフィールドから勝率を計算し、{chips}×勝率（{(winRate * 100).toFixed(1)}%）＝{robotBet}chipを賭けます（端数切り捨て）。
+          </p>
+        </section>
+        <PokerCardGroup cards={playerCards} label="プレイヤーの手札" />
+        {phase !== "betting" ? (
+          <PokerSelectedHandPanel cards={playerSelection} evaluation={playerEvaluation} />
+        ) : null}
+        <PokerCardGroup
+          actions={<GameInfoButtons gameType="poker" onOpenModal={onOpenModal} robot={robot} />}
+          cards={robotCards}
+          label="ポーカーロボットの手札"
+        />
+        <PokerSelectableGroup
+          cards={fieldCards}
+          disabled={phase !== "playing"}
+          label="フィールド"
+          onToggle={(id) => setSelectedIds((current) => current.includes(id)
+            ? current.filter((item) => item !== id)
+            : [...current, id].slice(-2))}
+          selectedCardIds={selectedIds}
+        />
+        {phase === "betting" ? (
+          <button className="min-h-12 rounded bg-brass px-4 font-black text-stone-950 hover:bg-yellow-300" onClick={() => setPhase("playing")} type="button">
+            オールインしてゲームスタート
+          </button>
+        ) : phase === "playing" ? (
+          <button
+            className="min-h-12 rounded bg-brass px-4 font-black text-stone-950 hover:bg-yellow-300 disabled:bg-stone-700 disabled:text-stone-400"
+            disabled={!playerEvaluation}
+            onClick={() => { setOverlayDismissed(false); setPhase("result"); }}
+            type="button"
+          >役を決定</button>
+        ) : (
+          <>
+            <PokerSelectableGroup cards={robotSelection?.cards ?? []} disabled label={`ロボットの役：${robotSelection?.evaluation.label ?? ""}`} onToggle={() => {}} selectedCardIds={[]} />
+            <section className="border-y border-white/20 py-4 text-sm font-bold leading-7">
+              <p className="text-3xl font-black text-brass">{result === "win" ? "YOU WIN" : "YOU LOSE"}</p>
+              <p className="mt-3">{result === "win" ? `ロボットが賭けた${robotBet}chipを獲得しました。` : `賭けた${chips}chipを失いました。`}</p>
+              <p>プレイヤー：{result === "win" ? chips + robotBet : 0}chip / ロボット：{result === "win" ? chips - robotBet : chips * 2}chip</p>
+              <p className="mt-3">ロボットのベットは勝率に応じて変化し、プレイヤーは所持チップを全て賭けます。</p>
+            </section>
+            <button className="min-h-12 rounded border border-white/20 px-4 font-black hover:bg-white/10" onClick={() => { setSelectedIds([]); setPhase("betting"); setOverlayDismissed(false); }} type="button">もう一度確認</button>
+            <button className="min-h-12 rounded bg-brass px-4 font-black text-stone-950 hover:bg-yellow-300" onClick={onComplete} type="button">チュートリアルを終えて3戦目へ</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PokerBattle({
+  showFinalTableHint,
+  onDismissFinalTableHint,
+  onScanCountChange,
   backHref,
   hand,
   isRiddleExchangeTimingRevealed,
@@ -6671,6 +6852,9 @@ function PokerBattle({
   robot,
   robotId,
 }: {
+  showFinalTableHint: boolean;
+  onDismissFinalTableHint: () => void;
+  onScanCountChange: (count: number) => void;
   backHref: string;
   hand: PlayingCard[];
   isRiddleExchangeTimingRevealed: boolean;
@@ -6686,13 +6870,21 @@ function PokerBattle({
       : null;
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [exchangeCardIds, setExchangeCardIds] = useState<string[]>([]);
+  const [confirmedPokerExchangePairs, setConfirmedPokerExchangePairs] = useState<Array<{ firstCardId: string; secondCardId: string }>>([]);
   const [isExchangeApplied, setIsExchangeApplied] = useState(false);
   const [scannedPokerCardIds, setScannedPokerCardIds] = useState<string[]>([]);
+  useEffect(() => {
+    onScanCountChange(scannedPokerCardIds.length);
+  }, [onScanCountChange, scannedPokerCardIds.length]);
   const [pokerScanAnswer, setPokerScanAnswer] = useState("");
   const [pokerScanIllustration, setPokerScanIllustration] = useState("");
   const [pokerScanSplitIndexes, setPokerScanSplitIndexes] = useState<number[]>([]);
   const [pokerScanSpecVisible, setPokerScanSpecVisible] = useState(false);
   const [expandedPokerRiddle, setExpandedPokerRiddle] = useState<{ alt: string; src: string } | null>(null);
+  const hasShownPokerRiddleHint = useRef(false);
+  const [showPokerRiddleHint, setShowPokerRiddleHint] = useState(false);
+  const hasShownCopyPasteHint = useRef(false);
+  const [showCopyPasteHint, setShowCopyPasteHint] = useState(false);
   const [pokerScanMessage, setPokerScanMessage] = useState("");
   const [pokerScanPreviewSrc, setPokerScanPreviewSrc] = useState<string | null>(
     null,
@@ -6700,6 +6892,10 @@ function PokerBattle({
   const [pokerPreparationAbility, setPokerPreparationAbility] =
     useState<PreparationAbility>("exchange");
   const [showPreparation, setShowPreparation] = useState(false);
+  const [showSituationReview, setShowSituationReview] = useState(false);
+  const [hasOpenedSituationReview, setHasOpenedSituationReview] = useState(false);
+  const [showSituationReviewHint, setShowSituationReviewHint] = useState(false);
+  const hasShownSituationReviewHint = useRef(false);
   const [activePokerGame, setActivePokerGame] = useState<
     "ready" | "high-low" | "blackjack" | "poker" | "result" | "lose"
   >("ready");
@@ -6749,12 +6945,23 @@ function PokerBattle({
   );
   const [copiedTargetId, setCopiedTargetId] = useState<string | null>(null);
   const [pasteTargetId, setPasteTargetId] = useState<string | null>(null);
+  const [selectedBlueTexts, setSelectedBlueTexts] = useState<Record<string, { id: string; label: string; text: string }>>({});
   const [copyPasteFormat, setCopyPasteFormat] =
-    useState<CopyPasteFormat>("number");
+    useState<CopyPasteFormat>("hiragana");
   const [isCopyPasteApplied, setIsCopyPasteApplied] = useState(false);
-  const exchangePairs = config ? [...config.exchangePairs] : [];
+  const [copyPasteUseCount, setCopyPasteUseCount] = useState(0);
+  const [isCopyPasteRiddleSolved, setIsCopyPasteRiddleSolved] = useState(robotId === "all-games-last");
+  const [pastedBlueTexts, setPastedBlueTexts] = useState<Record<string, string>>({});
+  const [copyPasteError, setCopyPasteError] = useState("");
+  const [copyPasteSuccessMessage, setCopyPasteSuccessMessage] = useState("");
+  const [showPokerHighLowDeclaration, setShowPokerHighLowDeclaration] = useState(false);
   const maxExchanges = config ? config.maxExchanges : 1;
-  const maxExchangeCardSelections = maxExchanges * 2;
+  const maxExchangeCardSelections = 2;
+  const confirmedPokerExchangeCardIds = confirmedPokerExchangePairs.flatMap((pair) => [pair.firstCardId, pair.secondCardId]);
+  const confirmedPokerExchangeColors = Object.fromEntries(confirmedPokerExchangePairs.flatMap((pair, index) => [
+    [pair.firstCardId, index % 2 === 0 ? "green" : "blue"],
+    [pair.secondCardId, index % 2 === 0 ? "green" : "blue"],
+  ]));
   const scanRequirements =
     config && "scanRequirements" in config ? [...config.scanRequirements] : [];
   const maxScans =
@@ -6762,32 +6969,34 @@ function PokerBattle({
   const remainingScans = Math.max(0, maxScans - scannedPokerCardIds.length);
   const remainingExchanges = Math.max(
     0,
-    maxExchanges - (isExchangeApplied ? Math.floor(exchangeCardIds.length / 2) : 0),
+    maxExchanges - confirmedPokerExchangePairs.length,
   );
   const isPokerSecondBattle = robotId === "poker-3-2";
   const [showPokerScanRiddlesDialog, setShowPokerScanRiddlesDialog] = useState(
     robotId === "poker-3-2",
   );
-  const pokerScanRiddles = isPokerSecondBattle
-    ? [
+  const pokerScanRiddles = [
         { src: "/riddles/riddle_1.png", label: "①" },
         { src: "/riddles/riddle_1-2.png", label: "" },
         { src: "/riddles/riddle_2.png", label: "②" },
         { src: "/riddles/riddle_3.png", label: "③" },
         { src: "/riddles/riddle_4.png", label: "④" },
-        { src: "/riddles/riddle_5.png", label: "⑤" },
-      ]
-    : scanRequirements.map((requirement, index) => ({
-        src: requirement.riddleSrc,
-        label: String(index + 1),
-      }));
+      ].filter((riddle) => robotId !== "poker-3-1" || scanRiddleImages.some((image) => image.src === riddle.src));
+  if (isCopyPasteRiddleSolved) {
+    pokerScanRiddles.push({ src: "/riddles/riddle_5.png", label: "⑤" });
+  }
   const isPokerThirdBattle = robotId === "poker-3-3";
+  const [showCopyPasteUnlockDialog, setShowCopyPasteUnlockDialog] = useState(
+    robotId === "poker-3-3",
+  );
   const isFinalAllGamesBattle = robotId === "all-games-last";
   const pokerLearningRestriction = !isPokerSecondBattle && !isPokerThirdBattle
-    ? "勝利後条件追加：ロボットの手札とエクスチェンジ不可"
-    : null;
+    ? "勝利後条件追加：ハイ＆ローのロボットとエクスチェンジ不可"
+    : isPokerSecondBattle
+      ? "勝利後条件追加：プレイヤー・ブラックジャックの手札も交換不可"
+      : null;
   const nextPokerBattleLabel = isPokerThirdBattle
-    ? "ステージ完了へ"
+    ? "ファイナルゲームへ"
     : isPokerSecondBattle
       ? "3戦目へ"
       : "2戦目へ";
@@ -6796,8 +7005,11 @@ function PokerBattle({
     : "対象が同じ紙面上の場合";
   const maxCopyPastes =
     config && "maxCopyPastes" in config ? config.maxCopyPastes : 0;
-  const copyPasteTargets =
-    config && "copyPasteTargets" in config ? [...config.copyPasteTargets] : [];
+  const remainingCopyPastes = isCopyPasteRiddleSolved ? Math.max(0, maxCopyPastes - copyPasteUseCount) : 0;
+  const copyPasteTargets = [
+    ...(config && "copyPasteTargets" in config ? [...config.copyPasteTargets] : []),
+    ...Object.values(selectedBlueTexts),
+  ];
   const copiedTarget = copyPasteTargets.find(
     (target) => target.id === copiedTargetId,
   );
@@ -6810,38 +7022,27 @@ function PokerBattle({
     kanji: "漢字",
     number: "数字",
   };
-  const isCorrectExchange =
-    config !== null &&
-    maxExchanges > 0 &&
-    exchangePairs.every(
-      (pair) =>
-        exchangeCardIds.includes(pair.firstCardId) &&
-        exchangeCardIds.includes(pair.secondCardId),
-    ) &&
-    scanRequirements.every((requirement) =>
-      scannedPokerCardIds.includes(requirement.cardId),
-    );
-  const isCorrectExchangeApplied = isExchangeApplied && isCorrectExchange;
   const playerHandIds =
-    config && isCorrectExchangeApplied
-      ? applyExchangePairs([...config.initialPlayerHandIds], exchangePairs)
+    config && isExchangeApplied
+      ? applyExchangePairs([...config.initialPlayerHandIds], confirmedPokerExchangePairs)
       : config
         ? [...config.initialPlayerHandIds]
         : hand.map((card) => card.id);
   const blackjackRobotHandIds =
-    config && isPokerThirdBattle && isCopyPasteApplied
+    config && isPokerThirdBattle && isCopyPasteApplied &&
+      pastedBlueTexts["paste-blackjack-ace"] === "0"
       ? [...config.blackjackRobotHandIds].map((cardId) =>
           cardId === "A-spade" ? "scan-0" : cardId,
         )
-      : config && isCorrectExchangeApplied
-      ? applyExchangePairs([...config.blackjackRobotHandIds], exchangePairs)
+      : config && isExchangeApplied
+      ? applyExchangePairs([...config.blackjackRobotHandIds], confirmedPokerExchangePairs)
       : config
         ? [...config.blackjackRobotHandIds]
         : [];
   const playerHand = getCardsById(playerHandIds, generatedScanCards);
   const robotHand = getCardsById(
     config
-      ? [...config.initialRobotHandIds]
+      ? applyExchangePairs([...config.initialRobotHandIds], confirmedPokerExchangePairs)
       : robotId === "poker-3-2"
         ? ["K-crub", "Q-heart"]
         : ["Q-crub", "J-heart"],
@@ -6849,12 +7050,12 @@ function PokerBattle({
   );
   const fieldCards = getCardsById(
     config
-      ? [...config.fieldCardIds]
+      ? applyExchangePairs([...config.fieldCardIds], confirmedPokerExchangePairs)
       : ["A-spade", "K-heart", "Q-daia", "J-crub", "A-daia"],
     generatedScanCards,
   );
   const highLowRobotHand = config
-    ? getCardsById([...config.highLowRobotHandIds], generatedScanCards)
+    ? getCardsById(applyExchangePairs([...config.highLowRobotHandIds], confirmedPokerExchangePairs), generatedScanCards)
     : [];
   const blackjackRobotHand = getCardsById(blackjackRobotHandIds, generatedScanCards);
   const scannedPokerCards = getCardsById(scannedPokerCardIds, generatedScanCards);
@@ -6940,11 +7141,11 @@ function PokerBattle({
       : [];
   const pokerBlackjackPlayerFieldValue =
     pokerBlackjackPlayerValueCards.length > 0
-      ? getBlackjackScore(pokerBlackjackPlayerValueCards)
+      ? getBlackjackScore(pokerBlackjackPlayerValueCards, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11)
       : null;
   const pokerBlackjackRobotFieldValue =
     pokerBlackjackRobotFieldCards.length > 0
-      ? getBlackjackScore(pokerBlackjackRobotFieldCards)
+      ? getBlackjackScore(pokerBlackjackRobotFieldCards, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11)
       : null;
   const pokerBlackjackVisiblePlayerHand = pokerBlackjackStarted
     ? playerHand.filter(
@@ -6973,9 +7174,9 @@ function PokerBattle({
     playerHand.find((card) => card.id === pokerBlackjackDraggingCardId) ?? null;
   const pokerBlackjackResult =
     pokerBlackjackPhase === "result"
-      ? getBlackjackResult(playerHand, blackjackRobotHand)
+      ? getBlackjackResult(playerHand, blackjackRobotHand, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11)
       : null;
-  const pokerPlayerHasBlackjack = getBlackjackScore(playerHand) === 21;
+  const pokerPlayerHasBlackjack = getBlackjackScore(playerHand, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11) === 21;
   const playerHandCardIds = playerHand.map((card) => card.id);
   const selectedFieldCards = selectedCardIds
     .map((cardId) => fieldCards.find((card) => card.id === cardId))
@@ -6987,6 +7188,7 @@ function PokerBattle({
     : null;
   const robotPokerSelection = getBestPokerSelection(robotHand, fieldCards);
   const [pokerResultOverlayDismissed, setPokerResultOverlayDismissed] = useState(false);
+  const [showPokerZeroBetDialog, setShowPokerZeroBetDialog] = useState(false);
   const pokerOutcome =
     playerPokerEvaluation && robotPokerSelection
       ? comparePokerHands(playerPokerEvaluation, robotPokerSelection.evaluation)
@@ -7000,6 +7202,11 @@ function PokerBattle({
           : "lose"
       : null;
   const isPokerGameStarted = activePokerGame !== "ready";
+  const pokerBattleLost =
+    (activePokerGame === "high-low" && pokerHighLowResult !== null && pokerHighLowResult !== "win") ||
+    (activePokerGame === "blackjack" && pokerBlackjackResult !== null && pokerBlackjackResult !== "win") ||
+    (activePokerGame === "result" && pokerResult !== "win") ||
+    activePokerGame === "lose";
   const isPokerSelectionActive = activePokerGame === "poker";
   const showPokerSelectedHand =
     activePokerGame === "poker" || activePokerGame === "result";
@@ -7014,7 +7221,7 @@ function PokerBattle({
   const isInstantPokerLoseExchangeSelected =
     isExchangeApplied &&
     [...robotHand, ...fieldCards].some((card) =>
-      exchangeCardIds.includes(card.id),
+      confirmedPokerExchangeCardIds.includes(card.id),
     );
   const exchangeSections: ExchangeCardSection[] = isPokerSecondBattle
     ? [
@@ -7029,19 +7236,17 @@ function PokerBattle({
                 cards: highLowRobotHand,
                 disabled: true,
                 id: "high-low-robot-hand",
-                label: "ハイアンドローのロボット手札",
+                label: "ハイ＆ローのロボット手札",
               },
             ]
           : []),
         {
           cards: blackjackRobotHand,
-          disabled: true,
           id: "blackjack-robot-hand",
           label: "ブラックジャックのロボット手札",
         },
         {
           cards: robotHand,
-          disabled: true,
           id: "poker-robot-hand",
           label: "ポーカーロボットの手札",
         },
@@ -7054,6 +7259,7 @@ function PokerBattle({
     : [
         {
           cards: playerHand,
+          disabled: isPokerThirdBattle,
           id: "player-hand",
           label: "プレイヤーの手札",
         },
@@ -7061,8 +7267,9 @@ function PokerBattle({
           ? [
               {
                 cards: highLowRobotHand,
+                disabled: isPokerThirdBattle,
                 id: "high-low-robot-hand",
-                label: "ハイアンドローのロボット手札",
+                label: "ハイ＆ローのロボット手札",
               },
             ]
           : []),
@@ -7070,6 +7277,7 @@ function PokerBattle({
           ? [
               {
                 cards: blackjackRobotHand,
+                disabled: isPokerThirdBattle,
                 id: "blackjack-robot-hand",
                 label: "ブラックジャックのロボット手札",
               },
@@ -7097,6 +7305,13 @@ function PokerBattle({
     );
 
     if (!requirement) {
+      setPokerScanPreviewSrc(null);
+      setPokerScanMessage("上手くいかないようだ...");
+      return;
+    }
+
+    if (isFinalAllGamesBattle && requirement.riddleSrc === "/riddles/riddle_4.png" &&
+        pastedBlueTexts["riddle-four-game"] !== "ハイ＆ロー") {
       setPokerScanPreviewSrc(null);
       setPokerScanMessage("上手くいかないようだ...");
       return;
@@ -7138,12 +7353,12 @@ function PokerBattle({
     });
   }
 
+
   function toggleExchangeCard(cardId: string) {
-    if (maxExchangeCardSelections === 0) {
+    if (remainingExchanges === 0 || targetSelectionAbility !== "exchange" || confirmedPokerExchangeCardIds.includes(cardId)) {
       return;
     }
 
-    setIsExchangeApplied(false);
     setExchangeCardIds((current) => {
       if (current.includes(cardId)) {
         return current.filter((id) => id !== cardId);
@@ -7154,6 +7369,8 @@ function PokerBattle({
   }
 
   function handleCopyPasteTargetSelect(targetId: string) {
+    if (targetSelectionAbility !== "copy-paste") return;
+    setCopyPasteError("");
     if (copyPasteStep === "source") {
       setCopiedTargetId(targetId);
       setPasteTargetId(null);
@@ -7166,11 +7383,28 @@ function PokerBattle({
     }
 
     setPasteTargetId(targetId);
+  }
+
+  function executeCopyPaste() {
+    if (!isCopyPasteRiddleSolved) return;
+    if (!copiedTarget || !pasteTarget || copiedTarget.id === pasteTarget.id ||
+        (isCopyPasteApplied && !isFinalAllGamesBattle) || copyPasteUseCount >= maxCopyPastes) return;
+    const text = resolvePaste(copiedTarget, pasteTarget.id, copyPasteFormat);
+    if (text === null) {
+      setCopyPasteSuccessMessage("");
+      setCopyPasteError("文章の意味が通らないため、ペーストできません。");
+      return;
+    }
+    setCopyPasteError("");
+    setCopyPasteSuccessMessage(`ペースト実行しました。${pasteTarget.label} を「${text}」に上書きしました。`);
+    setPastedBlueTexts((current) => ({ ...current, [pasteTarget.id]: text }));
     setTargetSelectionAbility(null);
     setIsCopyPasteApplied(true);
+    setCopyPasteUseCount((count) => count + 1);
   }
 
   function startPokerSequence() {
+    setPokerResultOverlayDismissed(false);
     setShowPreparation(false);
     resetPokerHighLowPlacement();
     resetPokerBlackjackPlacement();
@@ -7210,11 +7444,6 @@ function PokerBattle({
       setPokerResultOverlayDismissed(false);
       setActivePokerGame("result");
     }
-  }
-
-  function retryPokerHandSelection() {
-    setActivePokerGame("poker");
-    setSelectedCardIds([]);
   }
 
   function placePokerHighLowCard(
@@ -7259,11 +7488,16 @@ function PokerBattle({
       setPokerHighLowPlacementAnimation((current) =>
         current?.zone === zone ? null : current,
       );
-      setPokerHighLowPlacementConfirmed(true);
+      setShowPokerHighLowDeclaration(true);
+      window.setTimeout(() => {
+        setShowPokerHighLowDeclaration(false);
+        setPokerHighLowPlacementConfirmed(true);
+      }, 1000);
     }, 760);
   }
 
   function resetPokerHighLowPlacement() {
+    setShowPokerHighLowDeclaration(false);
     setPokerHighLowPlayerZone(null);
     setPokerHighLowPlayerCardId(null);
     setPokerHighLowPlacementAnimation(null);
@@ -7332,7 +7566,7 @@ function PokerBattle({
   function confirmPokerBlackjackSecondPlacement() {
     setPokerBlackjackPlacementAnimation("gentle");
 
-    if (pokerPlayerHasBlackjack) {
+    if (pokerPlayerHasBlackjack || pastedBlueTexts["blackjack-declaration"]) {
       setPokerBlackjackPlacementAnimationMode("hold");
       setShowPokerBlackjackDeclaration(true);
       window.setTimeout(() => {
@@ -7375,10 +7609,6 @@ function PokerBattle({
     setPokerBlackjackDraggingCardId(null);
     setPokerBlackjackDragPreviewPoint(null);
     setShowPokerBlackjackDeclaration(false);
-  }
-
-  function retryPokerBlackjack() {
-    startPokerBlackjack();
   }
 
   function dropPokerBlackjackPlayerCard(
@@ -7440,7 +7670,7 @@ function PokerBattle({
   }
 
   function togglePokerExchangeMode() {
-    if (isExchangeApplied) {
+    if (remainingExchanges === 0) {
       return;
     }
 
@@ -7450,10 +7680,12 @@ function PokerBattle({
   }
 
   function confirmPokerExchangeSelection() {
-    if (exchangeCardIds.length !== maxExchangeCardSelections) {
+    if (exchangeCardIds.length !== 2 || remainingExchanges === 0 || exchangeCardIds.some((id) => confirmedPokerExchangeCardIds.includes(id))) {
       return;
     }
 
+    setConfirmedPokerExchangePairs((current) => [...current, { firstCardId: exchangeCardIds[0], secondCardId: exchangeCardIds[1] }]);
+    setExchangeCardIds([]);
     setIsExchangeApplied(true);
     setTargetSelectionAbility(null);
   }
@@ -7464,11 +7696,14 @@ function PokerBattle({
     reactivateExchangeMode?: boolean;
   } = {}) {
     setIsExchangeApplied(false);
+    setConfirmedPokerExchangePairs([]);
     setExchangeCardIds([]);
     setTargetSelectionAbility(reactivateExchangeMode ? "exchange" : null);
   }
 
   function resetPokerInstantLose() {
+    setPokerResultOverlayDismissed(false);
+    setSelectedCardIds([]);
     resetPokerExchangeSelection();
     setActivePokerGame("ready");
     setShowPreparation(false);
@@ -7478,6 +7713,16 @@ function PokerBattle({
   }
 
   return (
+    <BlueTextSelectionContext.Provider value={{
+      active: (isPokerThirdBattle || isFinalAllGamesBattle) && targetSelectionAbility === "copy-paste",
+      selectedId: copiedTargetId,
+      replacements: pastedBlueTexts,
+      allowRiddleCopy: isFinalAllGamesBattle,
+      onSelect: (id, text) => {
+        setSelectedBlueTexts((current) => ({ ...current, [id]: { id, label: text, text } }));
+        handleCopyPasteTargetSelect(id);
+      },
+    }}>
     <div
       className={`relative min-h-[620px] bg-[#071b12] text-white ${
         targetSelectionAbility === "copy-paste"
@@ -7485,10 +7730,15 @@ function PokerBattle({
             : ""
       }`}
     >
-      {pokerResult === "win" && !pokerResultOverlayDismissed ? (
+      {(pokerResult === "win" || pokerBattleLost) && !showPokerRobotPunchDialog && !pokerResultOverlayDismissed ? (
         <BattleResultOverlay
-          result="win"
-          onDismiss={() => setPokerResultOverlayDismissed(true)}
+          result={pokerBattleLost ? "lose" : "win"}
+          onDismiss={() => {
+            setPokerResultOverlayDismissed(true);
+            if (isPokerThirdBattle && pokerResult === "win") {
+              setShowPokerZeroBetDialog(true);
+            }
+          }}
         />
       ) : null}
       {expandedPokerRiddle ? (
@@ -7497,7 +7747,52 @@ function PokerBattle({
       {showPokerScanRiddlesDialog ? (
         <TutorialDialog
           onDismiss={() => setShowPokerScanRiddlesDialog(false)}
-          text="スキャンで使える小謎を追加で渡すので、存分に活用してくれ"
+          text={'スキャンで使える小謎を追加で渡そう。エクスチェンジ無しで"A"と"もう一枚"スキャンで生成すると良い'}
+          tone="hands"
+        />
+      ) : null}
+      {showFinalTableHint ? (
+        <TutorialDialog
+          onDismiss={onDismissFinalTableHint}
+          text="ポーカーでAのスリーカードを出しても引き分けでこちらの負け。勝つにはフォーカードしか無さそうだ..."
+          tone="quick"
+        />
+      ) : null}
+      {showSituationReviewHint ? (
+        <TutorialDialog
+          onDismiss={() => setShowSituationReviewHint(false)}
+          text="まずは状況整理した方が良さそうだな"
+          tone="quick"
+        />
+      ) : null}
+      {showCopyPasteUnlockDialog ? (
+        <TutorialDialog
+          onDismiss={() => setShowCopyPasteUnlockDialog(false)}
+          text={'最後の機能「コピーペースト機能」の解放謎を渡そう'}
+          tone="hands"
+        />
+      ) : null}
+      {showCopyPasteHint ? (
+        <TutorialDialog
+          onDismiss={() => setShowCopyPasteHint(false)}
+          text="1枚もエクスチェンジできない状況で、ルールを変えることで勝ちにできないだろうか..."
+          tone="hands"
+        />
+      ) : null}
+      {showPokerZeroBetDialog ? (
+        <TutorialDialog
+          onDismiss={() => setShowPokerZeroBetDialog(false)}
+          text="なぜ賭けたチップが0なんだ...。ロボットの手札とフィールドから算出される勝率は8.9%だったはず...。"
+          tone="hands"
+        />
+      ) : null}
+      {showPokerHighLowDeclaration ? (
+        <BlackjackDeclarationOverlay text={pastedBlueTexts["high-low-declaration"] ?? "ハイ＆ロー"} />
+      ) : null}
+      {showPokerRiddleHint ? (
+        <TutorialDialog
+          onDismiss={() => setShowPokerRiddleHint(false)}
+          text="ポーカーの役一覧を見ると、④で1(ワン)は生成できそうだな"
           tone="hands"
         />
       ) : null}
@@ -7526,15 +7821,27 @@ function PokerBattle({
       {targetSelectionAbility === "copy-paste" ? (
         <div
           className="fixed inset-x-3 top-3 z-50 rounded border border-red-200 bg-red-950 px-4 py-3 text-sm font-black text-red-50 shadow-2xl"
+          aria-live="polite"
         >
-          {copyPasteStep === "source"
+          <p>{copyPasteStep === "source"
             ? "コピー元の青字を押してください。"
-            : "上書き先の青字を押してください。"}
+            : "上書き先の青字を押してください。"}</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <p className={`min-w-0 rounded border px-2 py-1 break-words ${copyPasteStep === "source" ? "border-yellow-200 bg-yellow-200/15 motion-safe:animate-pulse" : "border-white/20"}`}>
+              コピー元：{copiedTarget?.text ?? "未選択"}
+              {copyPasteStep === "source" ? <span className="ml-2 text-yellow-200">選択中</span> : null}
+            </p>
+            <p className={`min-w-0 rounded border px-2 py-1 break-words ${copyPasteStep === "target" ? "border-yellow-200 bg-yellow-200/15 motion-safe:animate-pulse" : "border-white/20"}`}>
+              コピー先：{pasteTarget?.text ?? "未選択"}
+              {copyPasteStep === "target" ? <span className="ml-2 text-yellow-200">選択中</span> : null}
+            </p>
+          </div>
         </div>
       ) : null}
       <div className="flex items-center gap-3 border-b border-white/10 bg-black/28 p-4">
         <a
-          aria-label="戻る"
+          aria-label="ゲーム会場へ"
+          title="ゲーム会場へ"
           className="grid h-12 w-12 shrink-0 place-items-center rounded border border-white/30 bg-black/30 hover:bg-white/10"
           href={backHref}
           onClick={(event) => {
@@ -7547,8 +7854,16 @@ function PokerBattle({
         <GameLogo gameType="poker" compact />
       </div>
 
+      {isFinalAllGamesBattle ? (
+        <div hidden={!showSituationReview}>
+          <FinalSituationReview onBack={() => {
+            setShowSituationReview(false);
+            window.scrollTo({ top: 0, behavior: "instant" });
+          }} />
+        </div>
+      ) : null}
       <div
-        className={`grid gap-3 p-4 ${
+        className={`${showSituationReview ? "hidden" : "grid"} gap-3 p-4 ${
           showPreparation ? "" : "sm:grid-cols-[1fr_220px]"
         }`}
       >
@@ -7691,7 +8006,7 @@ function PokerBattle({
                 robotValue={pokerBlackjackRobotFieldValue}
               />
               {showPokerBlackjackDeclaration ? (
-                <BlackjackDeclarationOverlay />
+                <BlackjackDeclarationOverlay text={pastedBlueTexts["blackjack-declaration"]} />
               ) : null}
               {pokerBlackjackSecondPlacementPending ? (
                 <div className="grid grid-cols-2 gap-2 rounded border border-brass/45 bg-black/35 p-3">
@@ -7760,6 +8075,8 @@ function PokerBattle({
             </div>
           ) : (
             <div className="grid gap-3">
+              {activePokerGame === "ready" && isExchangeApplied ? <GameStartHandNotice /> : null}
+              {showPokerSelectedHand ? (
               <PokerSelectableGroup
                 disabled
                 cards={playerHand}
@@ -7767,6 +8084,9 @@ function PokerBattle({
                 onToggle={toggleSelectedCard}
                 selectedCardIds={showPokerSelectedHand ? playerHandCardIds : []}
               />
+              ) : (
+                <PokerCardGroup cards={playerHand} label="プレイヤーの手札" notice={isPokerThirdBattle ? "エクスチェンジ不可" : undefined} />
+              )}
               {highLowRobotHand.length > 0 && showHighLowSection ? (
                 <PokerCardGroup
                   actions={
@@ -7777,7 +8097,8 @@ function PokerBattle({
                     />
                   }
                   cards={highLowRobotHand}
-                  label="ハイアンドローのロボット手札"
+                  label="ハイ＆ローのロボット手札"
+                  notice={isPokerSecondBattle || isPokerThirdBattle ? "エクスチェンジ不可" : undefined}
                 />
               ) : null}
               {blackjackRobotHand.length > 0 && showBlackjackSection ? (
@@ -7803,6 +8124,7 @@ function PokerBattle({
                         handleCopyPasteTargetSelect("paste-blackjack-ace"),
                     }}
                     label="ブラックジャックのロボット手札"
+                    notice="エクスチェンジ不可"
                   />
                 ) : (
                   <PokerCardGroup
@@ -7820,34 +8142,28 @@ function PokerBattle({
               ) : null}
               {showPokerSection ? (
                 <>
-                  {showPokerSelectedHand ? (
-                    <div className="rounded border border-brass/60 bg-black/50 p-4">
-                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-                        選択中の役
-                      </p>
-                      <div className="mt-3 flex min-h-28 items-center justify-center gap-3 rounded border border-dashed border-white/20 bg-black/25 p-3">
-                        {selectedPokerHand.length > 0 ? (
-                          selectedPokerHand.map((card) => (
-                            <PlayingCardView
-                              card={card}
-                              key={card.id}
-                              size="hand"
-                            />
-                          ))
-                        ) : (
-                          <p className="text-center text-sm font-bold leading-6 text-stone-400">
-                            手札2枚と組み合わせるカード2枚を、フィールド4枚から選択します。
-                          </p>
-                        )}
+                  {isPokerThirdBattle && showPokerSelectedHand ? (
+                    <section className="border-y border-brass/40 py-3">
+                      <p className="text-[11px] font-black text-brass">チップの賭け</p>
+                      <div className="mt-2 grid grid-cols-2 gap-3 text-sm font-bold leading-7">
+                        <div>
+                          <h3 className="text-brass">プレイヤー</h3>
+                          <p>所持：100chip</p>
+                          <p>ベット：100chip（オールイン）</p>
+                        </div>
+                        <div>
+                          <h3 className="text-brass">ポーカーロボット</h3>
+                          <p>所持：100chip</p>
+                          <p>ベット：0chip</p>
+                        </div>
                       </div>
-                      <p className="mt-3 text-sm font-bold leading-6 text-stone-100">
-                        {isPokerHandReady
-                          ? `あなたの役: ${
-                              playerPokerEvaluation?.label ?? "判定中"
-                            }`
-                          : "手札2枚と組み合わせるカード2枚を、フィールド4枚から選択します。"}
-                      </p>
-                    </div>
+                    </section>
+                  ) : null}
+                  {showPokerSelectedHand ? (
+                    <PokerSelectedHandPanel
+                      cards={selectedPokerHand}
+                      evaluation={playerPokerEvaluation}
+                    />
                   ) : null}
                   {activePokerGame === "result" &&
                   playerPokerEvaluation &&
@@ -7938,7 +8254,13 @@ function PokerBattle({
           {!showPreparation && activePokerGame === "ready" ? (
             <button
               className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-              onClick={() => setShowPreparation(true)}
+              onClick={() => {
+                setShowPreparation(true);
+                if (isFinalAllGamesBattle && !hasShownSituationReviewHint.current) {
+                  hasShownSituationReviewHint.current = true;
+                  setShowSituationReviewHint(true);
+                }
+              }}
               type="button"
             >
               事前準備
@@ -7950,68 +8272,147 @@ function PokerBattle({
             }`}
           >
             {showPreparation ? (
-              <GameTableReturnButton
-                className="mb-3"
-                onClick={() => setShowPreparation(false)}
-              />
+              <div className="mb-4 flex flex-wrap items-stretch gap-3">
+                <GameTableReturnButton onClick={() => setShowPreparation(false)} />
+                {isFinalAllGamesBattle ? (
+                  <button
+                    className={`min-h-14 flex-1 rounded border-2 border-red-200 bg-casinoRed px-5 py-3 text-lg font-black text-white transition-colors hover:bg-red-600 ${hasOpenedSituationReview ? "" : "ring-4 ring-yellow-300 ring-offset-2 ring-offset-[#071b12] shadow-[0_0_24px_rgba(250,204,21,0.55)]"}`}
+                    onClick={() => {
+                      setHasOpenedSituationReview(true);
+                      setShowSituationReview(true);
+                      setShowSituationReviewHint(false);
+                      window.scrollTo({ top: 0, behavior: "instant" });
+                    }}
+                    type="button"
+                  >状況整理</button>
+                ) : null}
+              </div>
             ) : null}
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
               事前準備
             </p>
-            {isFinalAllGamesBattle ? (
-              <div className="mt-3 rounded border border-emerald-300/45 bg-emerald-950/30 p-3 text-sm font-bold leading-6 text-emerald-100">
-                <p className="font-black">ファイナル事前準備は反映済みです。</p>
-                <p className="mt-2">
-                  ブラックジャック宣言のタイミングで発動したエクスチェンジにより、ポーカーではKフォーカードを作れる状態になっています。ポーカーロボット側もオールインします。
-                </p>
-              </div>
-            ) : isPokerThirdBattle ? (
+            {isPokerThirdBattle || isFinalAllGamesBattle ? (
               <>
                 <AbilityUsageTabs
                   activeAbility={pokerPreparationAbility}
                   counts={{
-                    "copy-paste": maxCopyPastes,
+                    "copy-paste": remainingCopyPastes,
                     exchange: remainingExchanges,
                     scan: remainingScans,
                   }}
-                  onSelect={setPokerPreparationAbility}
+                  onSelect={(ability) => {
+                    setPokerPreparationAbility(ability);
+                    if (ability === "copy-paste" && isPokerThirdBattle && !hasShownCopyPasteHint.current) {
+                      hasShownCopyPasteHint.current = true;
+                      setShowCopyPasteHint(true);
+                    }
+                  }}
                 />
-                <div className="mt-3 rounded border border-sky-300/40 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
-                  コピーペースト機能解放と同時に、ポーカーの賭け仕様が開示されました。ポーカーでは賭ける要素が新たに発生し、プレイヤーは問答無用でオールインになります。
-                </div>
                 {pokerPreparationAbility === "exchange" ? (
-                  <DisabledAbilityNotice
-                    abilityName="エクスチェンジ"
-                    tone="exchange"
+                  <>
+                  <ExchangeSpecToggle />
+                  <ExchangeRuleList samePrintTimingLabel={samePrintTimingLabel} />
+                  {isFinalAllGamesBattle ? <ExchangeModeToggleButton className="mt-3" isActive={targetSelectionAbility === "exchange"} isCompleted={remainingExchanges === 0} onClick={togglePokerExchangeMode} /> : null}
+                  <ExchangeCardSectionPicker
+                    onToggleCard={toggleExchangeCard}
+                    sections={[
+                      ...exchangeSections,
+                      {
+                        cards: scannedPokerCards,
+                        id: "scan-generated",
+                        label: "スキャン生成カード",
+                      },
+                    ].map((section) => ({ ...section, disabled: isFinalAllGamesBattle ? false : section.disabled, interactionDisabled: !isFinalAllGamesBattle || targetSelectionAbility !== "exchange" || remainingExchanges === 0 }))}
+                    selectedCardIds={isFinalAllGamesBattle ? exchangeCardIds : []}
+                    showEmptySections
                   />
+                  {isFinalAllGamesBattle ? (
+                    <>
+                      <button className="mt-3 min-h-11 w-full rounded bg-brass px-3 text-sm font-black text-stone-950 disabled:bg-stone-700 disabled:text-stone-400" disabled={remainingExchanges === 0 || targetSelectionAbility !== "exchange" || exchangeCardIds.length !== maxExchangeCardSelections} onClick={confirmPokerExchangeSelection} type="button">エクスチェンジ決定 ({exchangeCardIds.length}/{maxExchangeCardSelections})</button>
+                      {isExchangeApplied ? <ExchangeRedoButton onClick={() => resetPokerExchangeSelection({ reactivateExchangeMode: true })} /> : null}
+                    </>
+                  ) : null}
+                  </>
                 ) : null}
                 {pokerPreparationAbility === "scan" ? (
-                  <DisabledAbilityNotice abilityName="スキャン" tone="scan" />
+                  <>
+                  <ScanSpecToggle
+                    isVisible={pokerScanSpecVisible}
+                    onToggle={() => setPokerScanSpecVisible((current) => !current)}
+                  />
+                  {(isFinalAllGamesBattle || isPokerThirdBattle) ? (
+                    <>
+                      <details className="mt-3 rounded border border-white/12 bg-black/25 p-3">
+                        <summary className="cursor-pointer text-sm font-black text-brass">小謎の紙</summary>
+                        <ScanRiddleImages images={pokerScanRiddles} onOpen={setExpandedPokerRiddle} />
+                      </details>
+                      <ScanSolvedSummary hasFourthScanResult additionalRows={[
+                        { question: "③", answer: "フエ", illustrationName: "れい/ん", generatedNumber: "0", imageSrc: scanTargetImages.rain },
+                        { question: "④", answer: "ツーペア", illustrationName: "わん/ぺあ", generatedNumber: "1", imageSrc: scanTargetImages.onepair },
+                      ]} />
+                      <ScanAnswerPanel
+                        answer={pokerScanAnswer} illustration={pokerScanIllustration} splitIndexes={pokerScanSplitIndexes}
+                        onAnswerChange={setPokerScanAnswer}
+                        onIllustrationChange={(value) => { setPokerScanIllustration(value); setPokerScanSplitIndexes([]); }}
+                        onSplitChange={(indexes, value) => { setPokerScanSplitIndexes(indexes); setPokerScanIllustration(value); }}
+                        onSubmit={resolvePokerScan} message={pokerScanMessage} disabled={remainingScans === 0}
+                        physicalScanDisabled={remainingScans === 0}
+                      >
+                        {pokerScanPreviewSrc ? <ScanTargetPreview alt="今回スキャンした対象" src={pokerScanPreviewSrc} /> : null}
+                      </ScanAnswerPanel>
+                    </>
+                  ) : null}
+                  </>
                 ) : null}
                 {pokerPreparationAbility === "copy-paste" ? (
+                  <>
+                  {!isCopyPasteRiddleSolved ? (
+                    <CopyPasteUnlockRiddle
+                      isSolved={false}
+                      onUnlock={() => setIsCopyPasteRiddleSolved(true)}
+                      onOpen={setExpandedPokerRiddle}
+                    />
+                  ) : null}
                   <CopyPastePreparationPanel
                     copiedTarget={copiedTarget}
                     format={copyPasteFormat}
                     formatLabel={copyPasteFormatLabel[copyPasteFormat]}
-                    isApplied={isCopyPasteApplied}
-                    maxCopyPastes={maxCopyPastes}
+                    isApplied={isCopyPasteApplied && (!isFinalAllGamesBattle || copyPasteUseCount >= maxCopyPastes)}
+                    maxCopyPastes={remainingCopyPastes}
+                    onPaste={executeCopyPaste}
+                    error={copyPasteError}
+                    successMessage={copyPasteSuccessMessage}
+                    appliedText={pasteTarget ? pastedBlueTexts[pasteTarget.id] : undefined}
+                    onReset={() => {
+                      setPastedBlueTexts({});
+                      setCopyPasteError("");
+                      setCopyPasteSuccessMessage("");
+                      setSelectedBlueTexts({});
+                      setCopiedTargetId(null);
+                      setPasteTargetId(null);
+                      setIsCopyPasteApplied(false);
+                      setCopyPasteUseCount(0);
+                      setCopyPasteStep("source");
+                      setTargetSelectionAbility(null);
+                    }}
                     onChooseFormat={setCopyPasteFormat}
-                    onSelectSource={() =>
-                      handleCopyPasteTargetSelect("copy-red-unlock-zero")
-                    }
+                    isSelecting={targetSelectionAbility === "copy-paste"}
                     onStart={() => {
+                      const wasSelecting = targetSelectionAbility === "copy-paste";
+                      setCopyPasteError("");
+                      setCopyPasteSuccessMessage("");
                       setCopyPasteStep("source");
                       setCopiedTargetId(null);
                       setPasteTargetId(null);
                       setIsCopyPasteApplied(false);
-                      setTargetSelectionAbility("copy-paste");
+                      setTargetSelectionAbility(wasSelecting ? null : "copy-paste");
                     }}
                     pasteTarget={pasteTarget}
-                    sourceActive={
-                      targetSelectionAbility === "copy-paste" &&
-                      copyPasteStep === "source"
-                    }
                   />
+                  <CopyPasteGameSpecifications
+                    onOpenGuideImage={setExpandedPokerRiddle}
+                  />
+                  </>
                 ) : null}
               </>
             ) : (
@@ -8034,13 +8435,13 @@ function PokerBattle({
                   <ExchangeModeToggleButton
                     className="mt-3"
                     isActive={targetSelectionAbility === "exchange"}
-                    isCompleted={isExchangeApplied}
+                    isCompleted={remainingExchanges === 0}
                     onClick={togglePokerExchangeMode}
                   />
                 ) : null}
               </>
             )}
-            {!isPokerThirdBattle ? (
+            {!isPokerThirdBattle && !isFinalAllGamesBattle ? (
               <>
                 {pokerPreparationAbility === "exchange" ? (
                   <ExchangeSpecToggle />
@@ -8049,7 +8450,7 @@ function PokerBattle({
                 <ExchangeRuleList
                   disabledTargets={
                     isPokerSecondBattle
-                      ? ["robot-hand", "deck", "field"]
+                      ? ["deck", "field"]
                       : ["robot-hand", "field"]
                   }
                   samePrintTimingLabel={samePrintTimingLabel}
@@ -8067,20 +8468,23 @@ function PokerBattle({
                 {pokerPreparationAbility === "scan" && scanRequirements.length > 0 ? (
                   <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
                     <ScanSpecToggle isVisible={pokerScanSpecVisible} onToggle={() => setPokerScanSpecVisible((current) => !current)} />
-                    <details className="mt-3 rounded border border-white/12 bg-black/25 p-3">
-                      <summary className="cursor-pointer text-sm font-black leading-6 text-brass">小謎画像</summary>
-                      <div className="mt-3 grid gap-3">
-                        {pokerScanRiddles.map((riddle) => (
-                          <div className="rounded border border-white/12 bg-white p-3 text-stone-950" key={riddle.src}>
-                            <ZoomableRiddleImage alt={"スキャン用小謎" + riddle.label} badge={riddle.label} src={riddle.src} onOpen={setExpandedPokerRiddle} />
-                          </div>
-                        ))}
-                      </div>
+                    <details
+                      className="mt-3 rounded border border-white/12 bg-black/25 p-3"
+                      onToggle={(event) => {
+                        if (event.currentTarget.open && isPokerSecondBattle && !hasShownPokerRiddleHint.current) {
+                          hasShownPokerRiddleHint.current = true;
+                          setShowPokerRiddleHint(true);
+                        }
+                      }}
+                    >
+                      <summary className="cursor-pointer text-sm font-black leading-6 text-brass">小謎の紙</summary>
+                      <ScanRiddleImages images={pokerScanRiddles} onOpen={setExpandedPokerRiddle} />
                     </details>
                     <ScanSolvedSummary hasFourthScanResult additionalRows={scanRequirements
                       .filter((requirement) => scannedPokerCardIds.includes(requirement.cardId))
                       .map((requirement) => ({
                         answer: requirement.answer,
+                        imageSrc: requirement.targetImageSrc,
                         generatedNumber: String(generatedScanCards[requirement.cardId].rank),
                         illustrationName: requirement.illustration.replace(/[\s\u3000]+/g, "/"),
                         question: pokerScanRiddles.find((riddle) => riddle.src === requirement.riddleSrc)?.label ?? "",
@@ -8088,6 +8492,7 @@ function PokerBattle({
                     />
                     <ScanAnswerPanel
                       answer={pokerScanAnswer}
+                      physicalScanDisabled={remainingScans === 0}
                       illustration={pokerScanIllustration}
                       splitIndexes={pokerScanSplitIndexes}
                       onAnswerChange={setPokerScanAnswer}
@@ -8127,9 +8532,10 @@ function PokerBattle({
                         ...section,
                         interactionDisabled:
                           targetSelectionAbility !== "exchange" ||
-                          isExchangeApplied,
+                          remainingExchanges === 0,
                       }))}
                       selectedCardIds={exchangeCardIds}
+                      confirmedCardColors={confirmedPokerExchangeColors}
                     />
                   </>
                 ) : null}
@@ -8137,21 +8543,21 @@ function PokerBattle({
                   <>
                     <button
                       className={`mt-3 min-h-12 w-full rounded px-4 py-3 text-sm font-black ${
-                        isExchangeApplied
+                        remainingExchanges === 0
                           ? "cursor-not-allowed bg-emerald-500 text-stone-950 opacity-80"
                           : exchangeCardIds.length === maxExchangeCardSelections
                             ? "bg-brass text-stone-950 hover:bg-yellow-300"
                             : "cursor-not-allowed bg-stone-700 text-stone-400"
                       }`}
                       disabled={
-                        isExchangeApplied ||
+                        remainingExchanges === 0 || targetSelectionAbility !== "exchange" ||
                         exchangeCardIds.length !== maxExchangeCardSelections
                       }
                       onClick={confirmPokerExchangeSelection}
                       type="button"
                     >
-                      {isExchangeApplied
-                        ? `交換済み: ${maxExchanges}回`
+                      {remainingExchanges === 0
+                        ? `交換済み: ${confirmedPokerExchangePairs.length}回`
                         : `エクスチェンジ決定 (${exchangeCardIds.length}/${maxExchangeCardSelections})`}
                     </button>
                     {isExchangeApplied ? (
@@ -8196,14 +8602,8 @@ function PokerBattle({
                     ? "ブラックジャックへ"
                     : "ポーカーへ"}
                 </button>
-              ) : pokerHighLowResult === "lose" ? (
-                <button
-                  className="min-h-12 rounded bg-casinoRed px-4 py-3 text-sm font-black text-white hover:bg-red-700"
-                  onClick={resetPokerHighLowPlacement}
-                  type="button"
-                >
-                  やり直し
-                </button>
+              ) : pokerHighLowResult ? (
+                <BattleDefeatNotice message="ハイ＆ローに勝利できませんでした。" onRetry={resetPokerInstantLose} />
               ) : (
                 <p className="rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-black leading-6 text-sky-100">
                   プレイヤーの手札を出してください。
@@ -8219,13 +8619,7 @@ function PokerBattle({
                   ポーカーへ
                 </button>
               ) : pokerBlackjackResult ? (
-                <button
-                  className="min-h-12 rounded bg-casinoRed px-4 py-3 text-sm font-black text-white hover:bg-red-700"
-                  onClick={retryPokerBlackjack}
-                  type="button"
-                >
-                  やり直し
-                </button>
+                <BattleDefeatNotice message="ブラックジャックに勝利できませんでした。" onRetry={resetPokerInstantLose} />
               ) : (
                 <p className="rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-black leading-6 text-sky-100">
                   プレイヤーの手札をフィールドへ出してください。
@@ -8261,59 +8655,33 @@ function PokerBattle({
                       <VictoryConditionNotice message={pokerLearningRestriction} />
                     ) : null}
                   </div>
-                  {isPokerThirdBattle ? (
                     <button
                       className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
                       onClick={onWin}
                       type="button"
                     >
-                      {nextPokerBattleLabel}
+                      {isPokerSecondBattle ? "賭けチュートリアルへ" : nextPokerBattleLabel}
                     </button>
-                  ) : (
-                    <Link
-                      className="grid min-h-12 place-items-center rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-                      href={`/?stage=3&battle=poker&robot=${isPokerSecondBattle ? "poker-3-3" : "poker-3-2"}`}
-                    >
-                      {nextPokerBattleLabel}
-                    </Link>
-                  )}
                 </>
               ) : (
-                <>
-                  <div className="rounded border border-casinoRed/60 bg-red-950/45 p-3 text-sm font-black leading-6 text-red-100">
-                    {pokerResult === "draw"
+                <BattleDefeatNotice
+                  message={pokerResult === "draw"
                       ? "同じ強さの役のため、勝利できませんでした。"
                       : "この組み合わせではポーカーロボットに勝てません。"}
-                  </div>
-                  <button
-                    className="min-h-12 rounded bg-casinoRed px-4 py-3 text-sm font-black text-white hover:bg-red-700"
-                    onClick={retryPokerHandSelection}
-                    type="button"
-                  >
-                    選び直し
-                  </button>
-                </>
+                  onRetry={resetPokerInstantLose}
+                />
               )
             ) : (
-              <>
-                <div className="rounded border border-casinoRed/60 bg-red-950/45 p-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-                    テーブルメッセージ
-                  </p>
-                  <p className="mt-3 text-base font-black leading-7 text-red-100">
-                    ポーカーロボットに殴られ、意識を失った
-                  </p>
-                  <p className="mt-4 text-3xl font-black uppercase tracking-[0.08em] text-casinoRed">
-                    YOU LOSE
-                  </p>
-                </div>
-                <ExchangeRedoButton onClick={resetPokerInstantLose} />
-              </>
+              <BattleDefeatNotice
+                message="ポーカーロボットに殴られ、意識を失った"
+                onRetry={resetPokerInstantLose}
+              />
             )
           ) : null}
         </section>
       </div>
     </div>
+    </BlueTextSelectionContext.Provider>
   );
 }
 
@@ -8325,7 +8693,7 @@ function AbilityUsageTabs({
 }: {
   activeAbility: PreparationAbility;
   abilities?: PreparationAbility[];
-  counts: Record<PreparationAbility, number>;
+  counts: Record<PreparationAbility, number | string>;
   onSelect: (ability: PreparationAbility) => void;
 }) {
   const labels: Record<PreparationAbility, string> = {
@@ -8355,7 +8723,9 @@ function AbilityUsageTabs({
             type="button"
           >
             {labels[ability]}
-            <span className="block text-[11px]">残{counts[ability]}</span>
+            <span className="block text-[11px]">
+              {typeof counts[ability] === "number" ? `残${counts[ability]}` : counts[ability]}
+            </span>
           </button>
         );
       })}
@@ -8363,48 +8733,122 @@ function AbilityUsageTabs({
   );
 }
 
-function DisabledAbilityNotice({
-  abilityName,
-  tone,
+function CopyPasteGameSpecifications({
+  onOpenGuideImage,
 }: {
-  abilityName: string;
-  tone: "exchange" | "scan";
+  onOpenGuideImage: (image: { alt: string; src: string }) => void;
 }) {
+  const games: Array<{ label: string; rules: ReactNode; spec: ReactNode }> = [
+    {
+      label: "ハイ＆ロー",
+      rules: <HighlightedHighLowRuleText />,
+      spec: <HighlightedHighLowSpecText />,
+    },
+    {
+      label: "ブラックジャック",
+      rules: <HighlightedBlackjackRuleText />,
+      spec: <HighlightedBlackjackSpecText />,
+    },
+    {
+      label: "ポーカー",
+      rules: (
+        <PokerRuleContent
+          onOpenGuideImage={onOpenGuideImage}
+          ruleText={pokerRuleText}
+          showRobotWinRate
+        />
+      ),
+      spec: <PokerRobotSpecContent specText={pokerSpecText} showBettingSpec />,
+    },
+  ];
+
   return (
-    <div
-      className={`mt-3 rounded border p-3 text-sm font-bold leading-6 ${
-        tone === "exchange"
-          ? "border-cyan-300/35 bg-cyan-950/25 text-cyan-50"
-          : "border-white/15 bg-black/25 text-stone-200"
-      }`}
-    >
-      {abilityName}の使用可能回数は0です。この戦いでは使用できません。
+    <div className="mt-3 flex flex-col gap-3">
+      {games.map((game) => (
+        <details
+          className="rounded border border-white/15 bg-black/30 p-3"
+          key={game.label}
+        >
+          <summary className="cursor-pointer text-sm font-black text-brass">
+            {game.label}の仕様
+          </summary>
+          <div className="mt-3 text-sm font-bold leading-7 text-stone-100">
+            <h3 className="mb-2 text-amber-200">ゲーム仕様</h3>
+            {game.rules}
+            <h3 className="mb-2 mt-4 border-t border-white/15 pt-3 text-emerald-200">
+              ロボット仕様
+            </h3>
+            {game.spec}
+          </div>
+        </details>
+      ))}
     </div>
   );
 }
 
+function CopyPasteUnlockRiddle({ isSolved, onUnlock, onOpen }: {
+  isSolved: boolean;
+  onUnlock: () => void;
+  onOpen: (image: { alt: string; src: string }) => void;
+}) {
+  const [answer, setAnswer] = useState("");
+  const [error, setError] = useState("");
+  return (
+    <details className="mt-3 rounded border border-white/15 bg-black/30 p-3" open={isSolved ? undefined : true}>
+      <summary className="cursor-pointer text-sm font-black text-brass">⑤ コピーペースト解放謎</summary>
+      <div className="mt-3 rounded bg-white p-3">
+        <ZoomableRiddleImage alt="コピーペースト解放謎" badge="⑤" src="/riddles/riddle_5.png" onOpen={onOpen} />
+      </div>
+      {isSolved ? <p className="mt-3 text-sm font-black text-emerald-200">回答済み：はる</p> : (
+        <>
+          <label className="mt-3 grid gap-2 text-sm font-bold">小謎の答え
+            <input className="min-h-11 min-w-0 w-full rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="答えを入力" />
+          </label>
+          <button className="mt-3 min-h-11 w-full rounded bg-brass px-3 text-sm font-black text-stone-950" type="button" onClick={() => {
+            if (normalizeRiddleAnswer(answer) === "はる") {
+              setError("");
+              onUnlock();
+            } else {
+              setError("答えが違います。");
+            }
+          }}>回答</button>
+          {error ? <p className="mt-2 text-sm font-bold text-red-300" role="alert">{error}</p> : null}
+        </>
+      )}
+    </details>
+  );
+}
+
 function CopyPastePreparationPanel({
+  appliedText,
+  error,
+  successMessage,
   copiedTarget,
   format,
   formatLabel,
   isApplied,
+  isSelecting,
   maxCopyPastes,
   onChooseFormat,
-  onSelectSource,
+  onPaste,
+  onReset,
   onStart,
   pasteTarget,
-  sourceActive,
 }: {
+  appliedText?: string;
+  error: string;
+  successMessage?: string;
   copiedTarget?: { label: string; text: string };
   format: CopyPasteFormat;
   formatLabel: string;
   isApplied: boolean;
+  isSelecting: boolean;
   maxCopyPastes: number;
   onChooseFormat: (format: CopyPasteFormat) => void;
-  onSelectSource: () => void;
+  onPaste: () => void;
+  onReset: () => void;
   onStart: () => void;
   pasteTarget?: { label: string; text: string };
-  sourceActive: boolean;
 }) {
   const formatOptions: Array<{ id: CopyPasteFormat; label: string }> = [
     { id: "hiragana", label: "平仮名" },
@@ -8422,19 +8866,11 @@ function CopyPastePreparationPanel({
         <p className="text-xs font-black text-red-100">残{maxCopyPastes}</p>
       </div>
       <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
-        青字をコピーし、別の青字へ上書きペーストします。ペースト時の書式は自由に選択できます。
+        青字をコピーし、別の青字へ上書きペーストできる。ペースト時の書式は自由に選択できるが、
+        <span className="font-black text-red-300">文章の意味が通る場合のみ</span>
+        実行できる。
+        ルールが変更された場合、ロボットはそのルールに従い勝利判定まで行う。
       </p>
-      <div className="mt-3 rounded border border-white/15 bg-black/30 p-3 text-sm font-bold leading-6 text-stone-100">
-        コピペ解放小謎で得た青字:
-        <CopyPasteTarget
-          active={sourceActive && !copiedTarget}
-          isSelected={copiedTarget?.text === "0"}
-          label="コピペ解放小謎: 0"
-          onSelect={onSelectSource}
-        >
-          0
-        </CopyPasteTarget>
-      </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {formatOptions.map((option) => (
           <button
@@ -8444,6 +8880,7 @@ function CopyPastePreparationPanel({
                 : "border-white/10 bg-white/8 text-white hover:bg-white/14"
             }`}
             key={option.id}
+            disabled={isApplied}
             onClick={() => onChooseFormat(option.id)}
             type="button"
           >
@@ -8454,62 +8891,56 @@ function CopyPastePreparationPanel({
       <button
         className="mt-3 min-h-11 w-full rounded bg-casinoRed px-4 text-sm font-black text-white hover:bg-red-500"
         disabled={maxCopyPastes === 0}
+        aria-pressed={isSelecting}
         onClick={onStart}
         type="button"
       >
-        対象選択を開始
+        {isSelecting ? "対象選択を解除" : "対象選択を開始"}
       </button>
       <div className="mt-3 grid gap-2 text-sm font-bold leading-6 text-stone-100">
         <p>コピー元: {copiedTarget ? copiedTarget.label : "未選択"}</p>
         <p>上書き先: {pasteTarget ? pasteTarget.label : "未選択"}</p>
         <p>書式: {formatLabel}</p>
       </div>
-      {isApplied && copiedTarget && pasteTarget ? (
-        <p className="mt-3 rounded border border-emerald-300/45 bg-emerald-950/40 p-3 text-sm font-black leading-6 text-emerald-100">
-          {copiedTarget.text} を {formatLabel} として {pasteTarget.text} に上書きしました。
+      <button
+        className="mt-3 min-h-11 w-full rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
+        disabled={!copiedTarget || !pasteTarget || isApplied || maxCopyPastes === 0}
+        onClick={onPaste}
+        type="button"
+      >
+        ペースト実行
+      </button>
+      {successMessage || (isApplied && copiedTarget && pasteTarget) ? (
+        <p className="mt-3 rounded border border-emerald-300/45 bg-emerald-950/40 p-3 text-sm font-black leading-6 text-emerald-100" role="status" aria-live="polite">
+          {successMessage ?? `${appliedText ?? copiedTarget?.text} を ${formatLabel} として ${pasteTarget?.text} に上書きしました。`}
         </p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 rounded border border-red-400 bg-red-950/50 p-3 text-sm font-black text-red-100" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {isApplied ? (
+        <button
+          className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded border border-white/20 px-4 text-sm font-black text-white hover:bg-white/10"
+          onClick={onReset}
+          type="button"
+        >
+          <RotateCcw size={16} />
+          やり直し
+        </button>
       ) : null}
     </div>
   );
 }
 
-function CopyPasteTarget({
-  active,
-  children,
-  isSelected,
-  label,
-  onSelect,
-}: {
-  active: boolean;
-  children: string;
-  isSelected: boolean;
-  label: string;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      aria-label={label}
-      className={`mx-1 rounded px-1 font-black text-sky-300 underline decoration-sky-300 decoration-2 underline-offset-4 transition ${
-        active ? "bg-sky-400/25 ring-2 ring-sky-300" : ""
-      } ${isSelected ? "bg-sky-200 text-stone-950" : ""}`}
-      onClick={(event) => {
-        event.preventDefault();
-        if (active) {
-          onSelect();
-        }
-      }}
-      type="button"
-    >
-      {children}
-    </button>
-  );
-}
 
 function PokerCardGroup({
   actions,
   cards,
   copyPasteTarget,
   label,
+  notice,
 }: {
   actions?: ReactNode;
   cards: PlayingCard[];
@@ -8521,29 +8952,25 @@ function PokerCardGroup({
     onSelect: () => void;
   };
   label: string;
+  notice?: string;
 }) {
   return (
-    <div className="rounded border border-white/10 bg-black/35 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-          {label}
-        </p>
-        {actions}
-      </div>
-      <div className="mt-3 flex min-h-32 flex-wrap items-center justify-center gap-3 rounded border border-white/8 bg-emerald-950/25 p-3">
-        {cards.map((card) =>
-          copyPasteTarget && card.id === copyPasteTarget.cardId ? (
-            <CopyPasteCardTarget
-              card={card}
-              key={card.id}
-              target={copyPasteTarget}
-            />
-          ) : (
-            <PlayingCardView card={card} key={card.id} size="zone" />
-          ),
-        )}
-      </div>
-    </div>
+    <BlackjackField
+      actions={actions}
+      cards={cards}
+      label={label}
+      notice={notice}
+      isBlackjack={false}
+      revealSecond
+      score={null}
+      cardContent={copyPasteTarget ? cards.map((card) =>
+        card.id === copyPasteTarget.cardId ? (
+          <CopyPasteCardTarget card={card} key={card.id} target={copyPasteTarget} />
+        ) : (
+          <PlayingCardView card={card} key={card.id} size="hand" />
+        ),
+      ) : undefined}
+    />
   );
 }
 
@@ -8577,7 +9004,7 @@ function CopyPasteCardTarget({
       }}
       type="button"
     >
-      <PlayingCardView card={card} size="zone" />
+      <PlayingCardView card={card} size="hand" />
     </button>
   );
 }
@@ -8629,17 +9056,23 @@ function PokerSelectableGroup({
 }
 
 function ExchangeCardSectionPicker({
+  confirmedCardColors = {},
   longPressMode = false,
   onToggleCard,
   sections,
   selectedCardIds,
+  showEmptySections = false,
 }: {
+  confirmedCardColors?: Record<string, string>;
   longPressMode?: boolean;
   onToggleCard: (cardId: string) => void;
   sections: ExchangeCardSection[];
   selectedCardIds: string[];
+  showEmptySections?: boolean;
 }) {
-  const visibleSections = sections.filter((section) => section.cards.length > 0);
+  const visibleSections = sections.filter(
+    (section) => showEmptySections || section.cards.length > 0,
+  );
 
   return (
     <div className="mt-4 grid gap-3">
@@ -8661,10 +9094,14 @@ function ExchangeCardSectionPicker({
             </p>
           </div>
           <div className="mt-3 flex flex-wrap justify-center gap-3">
+            {section.cards.length === 0 ? (
+              <p className="text-sm text-stone-400">カードなし</p>
+            ) : null}
             {section.cards.map((card) => (
               <ExchangeCardButton
                 card={card}
                 disabled={
+                  Boolean(confirmedCardColors[card.id]) ||
                   section.disabled ||
                   section.interactionDisabled ||
                   section.displayOnly
@@ -8673,6 +9110,7 @@ function ExchangeCardSectionPicker({
                 longPressMode={longPressMode}
                 onSelect={() => onToggleCard(card.id)}
                 selected={selectedCardIds.includes(card.id)}
+                confirmedColor={confirmedCardColors[card.id]}
               />
             ))}
           </div>
@@ -8683,12 +9121,14 @@ function ExchangeCardSectionPicker({
 }
 
 function ExchangeCardButton({
+  confirmedColor,
   card,
   disabled = false,
   longPressMode,
   onSelect,
   selected,
 }: {
+  confirmedColor?: string;
   card: PlayingCard;
   disabled?: boolean;
   longPressMode: boolean;
@@ -8725,7 +9165,11 @@ function ExchangeCardButton({
       aria-disabled={disabled}
       aria-pressed={selected}
       className={`rounded border p-1 transition ${
-        disabled
+        confirmedColor
+          ? confirmedColor === "green"
+            ? "cursor-not-allowed border-emerald-300 bg-emerald-400/20 ring-4 ring-emerald-300/45"
+            : "cursor-not-allowed border-sky-300 bg-sky-400/20 ring-4 ring-sky-300/45"
+          : disabled
           ? "cursor-not-allowed border-white/5 bg-stone-900/70 grayscale opacity-65"
           : selected
           ? "border-brass bg-brass/20 ring-4 ring-brass/45"
@@ -8971,7 +9415,7 @@ function HighLowBattle({
     {
       cards: robotHand,
       id: "high-low-robot-hand",
-      label: "ハイアンドローのロボット手札",
+      label: "ハイ＆ローのロボット手札",
     },
     ...(stageId >= 3
       ? [
@@ -9165,7 +9609,7 @@ function HighLowBattle({
             className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
             onClick={() => setShowPreparationVehicle(false)}
             type="button"
-            aria-label="ハイアンドローに戻る"
+            aria-label="ハイ＆ローに戻る"
           >
             <ArrowLeft size={18} />
           </button>
@@ -9241,7 +9685,7 @@ function HighLowBattle({
             className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
             onClick={() => setShowPreparation(false)}
             type="button"
-            aria-label="ハイアンドローに戻る"
+            aria-label="ハイ＆ローに戻る"
           >
             <ArrowLeft size={18} />
           </button>
@@ -9342,7 +9786,8 @@ function HighLowBattle({
           className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
           href={backHref}
           onClick={onBack}
-          aria-label="選択画面に戻る"
+          aria-label="ゲーム会場へ"
+          title="ゲーム会場へ"
         >
           <ArrowLeft size={18} />
         </a>
@@ -9374,7 +9819,7 @@ function HighLowBattle({
         {showPostExchangeStartDialog ? (
           <PlayerCutInDialog
             onDismiss={() => setShowPostExchangeStartDialog(false)}
-            text="ゲームスタート時にエクスチェンジが発動後、ロボットはカードを選ぶのか"
+            text="ゲームスタート宣言時にエクスチェンジが発動後、ロボットはカードを選ぶのか"
           />
         ) : null}
 
@@ -9639,7 +10084,7 @@ function HighLowBattle({
               : "ロボットが先に配置しました。プレイヤーもHIGHかLOWを選べます。"
             : battleStarted
               ? "ロボットの配置を待っています。"
-              : "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。"}
+              : "ハイ＆ロー画面に入ると、ロボットが先にカードを置きます。"}
         </div>
       </div>
     </div>
@@ -9712,27 +10157,27 @@ function getModalText(modal: {
   return modal.kind === "rules" ? modal.robot.ruleText : modal.robot.specText;
 }
 
-function getBlackjackCardValue(card: PlayingCard) {
+function getBlackjackCardValue(card: PlayingCard, aceValue = 11) {
   const numericRank = Number(card.rank);
 
   if (Number.isFinite(numericRank)) {
     return numericRank;
   }
 
-  return card.rank === "A" ? 11 : 10;
+  return card.rank === "A" ? aceValue : 10;
 }
 
-function getBlackjackScore(cards: PlayingCard[]) {
-  return cards.reduce((total, card) => total + getBlackjackCardValue(card), 0);
+function getBlackjackScore(cards: PlayingCard[], aceValue = 11) {
+  return cards.reduce((total, card) => total + getBlackjackCardValue(card, aceValue), 0);
 }
 
-function getBlackjackResult(playerCards: PlayingCard[], robotCards: PlayingCard[]) {
-  if (getBlackjackScore(playerCards) === 21) {
+function getBlackjackResult(playerCards: PlayingCard[], robotCards: PlayingCard[], aceValue = 11) {
+  if (getBlackjackScore(playerCards, aceValue) === 21) {
     return "win";
   }
 
-  const playerDistance = Math.abs(21 - getBlackjackScore(playerCards));
-  const robotDistance = Math.abs(21 - getBlackjackScore(robotCards));
+  const playerDistance = Math.abs(21 - getBlackjackScore(playerCards, aceValue));
+  const robotDistance = Math.abs(21 - getBlackjackScore(robotCards, aceValue));
 
   if (playerDistance < robotDistance) {
     return "win";
@@ -9878,6 +10323,29 @@ function getBestPokerSelection(handCards: PlayingCard[], fieldCards: PlayingCard
       return currentBest;
     }, best);
   }, null);
+}
+
+function getPokerRobotWinRate(robotCards: PlayingCard[], fieldCards: PlayingCard[]) {
+  const robotSelection = getBestPokerSelection(robotCards, fieldCards);
+  if (!robotSelection) return 0;
+  const visibleIds = new Set([...robotCards, ...fieldCards].map((card) => card.id));
+  const unseenCards = deck.filter((card) => !visibleIds.has(card.id));
+  let wins = 0;
+  let total = 0;
+  // The robot knows its own cards and the field, but not the player's hand.
+  for (let first = 0; first < unseenCards.length; first += 1) {
+    for (let second = first + 1; second < unseenCards.length; second += 1) {
+      const playerSelection = getBestPokerSelection(
+        [unseenCards[first], unseenCards[second]], fieldCards,
+      );
+      if (!playerSelection) continue;
+      total += 1;
+      if (comparePokerHands(robotSelection.evaluation, playerSelection.evaluation) >= 0) {
+        wins += 1;
+      }
+    }
+  }
+  return total === 0 ? 0 : wins / total;
 }
 
 function formatPokerRankList(cards: PlayingCard[]) {
@@ -10038,6 +10506,7 @@ function BlackjackFieldValue({ value }: { value: number }) {
 function BlackjackField({
   actions,
   cards,
+  cardContent,
   draggableCardIds = [],
   highlightedCardId = null,
   isBlackjack,
@@ -10052,6 +10521,7 @@ function BlackjackField({
 }: {
   actions?: ReactNode;
   cards: PlayingCard[];
+  cardContent?: ReactNode;
   draggableCardIds?: string[];
   highlightedCardId?: string | null;
   isBlackjack: boolean;
@@ -10082,12 +10552,13 @@ function BlackjackField({
           ) : null}
         </div>
       </div>
-      <div className="relative mt-2 flex min-h-24 items-center justify-center gap-2 rounded border border-white/8 bg-emerald-950/25 p-2 sm:min-h-28">
+      <div className={`relative mt-2 flex min-h-24 flex-wrap items-center justify-center gap-2 rounded border border-white/8 bg-emerald-950/25 p-2 sm:min-h-28 ${notice ? "pt-7" : ""}`}>
         {notice ? (
-          <span className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded border border-red-300/60 bg-red-950/85 px-1.5 py-0.5 text-[9px] font-black leading-3 text-red-100 shadow-lg">
+          <span className="absolute left-1 top-1 z-10 rounded border border-red-300/60 bg-red-950/85 px-1.5 py-0.5 text-[9px] font-black leading-3 text-red-100 shadow-lg">
             {notice}
           </span>
         ) : null}
+        {cardContent ?? <>
         {firstCard ? (
           <PlayingCardView
             card={firstCard}
@@ -10110,6 +10581,7 @@ function BlackjackField({
             size="hand"
           />
         ) : null}
+        </>}
         {placementAnimation ? (
           <CardPlacementAnimation styleType={placementAnimation} />
         ) : null}
@@ -10336,7 +10808,7 @@ function ExchangeRuleList({
         <p className="mt-2">・{samePrintTimingLabel}→即時</p>
         <p>
           ・それ以外→
-          <span className="font-black text-sky-300">ゲームスタート</span>時
+          <SelectableBlueText id="exchange-start-timing">ゲームスタート</SelectableBlueText>宣言時
         </p>
       </div>
       {rankRestrictions.length > 0 ? (
@@ -10437,7 +10909,7 @@ function getHighLowGuideText({
 
     return battleStarted
       ? "ロボットの配置を待っています。"
-      : "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。";
+      : "ハイ＆ロー画面に入ると、ロボットが先にカードを置きます。";
   }
 
   if (playerZone === "LOW") {
@@ -10452,7 +10924,7 @@ function getHighLowGuideText({
     return "ロボットの配置を待っています。";
   }
 
-  return "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。";
+  return "ハイ＆ロー画面に入ると、ロボットが先にカードを置きます。";
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -10491,7 +10963,7 @@ function getHighLowTutorialStep({
 
   return {
     target: "start",
-    text: "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。",
+    text: "ハイ＆ロー画面に入ると、ロボットが先にカードを置きます。",
   };
 }
 
@@ -10547,7 +11019,7 @@ function getHighLowTutorialStepContent({
 
   return {
     target: "start",
-    text: "ハイアンドロー画面に入ると、ロボットが先にカードを置きます。",
+    text: "ハイ＆ロー画面に入ると、ロボットが先にカードを置きます。",
   };
 }
 

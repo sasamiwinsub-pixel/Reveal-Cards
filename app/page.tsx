@@ -1,4 +1,6 @@
 import CasinoGame from "@/components/CasinoGame";
+import TitleScreen from "@/components/TitleScreen";
+import { OpeningScreen, IntroductionScreen } from "@/components/OpeningPages";
 import type { GameType } from "@/lib/game-data";
 
 export default async function Home({
@@ -8,9 +10,16 @@ export default async function Home({
     battle?: string;
     robot?: string;
     stage?: string;
+    tutorial?: string;
+    screen?: string;
   }>;
 }) {
   const params = await searchParams;
+  if (!params?.stage && !params?.battle && !params?.tutorial) {
+    if (params?.screen === "introduction") return <IntroductionScreen />;
+    if (params?.screen === "title") return <TitleScreen />;
+    return <OpeningScreen />;
+  }
   const initialStageId = Number(params?.stage ?? 1);
   const battleGameType: GameType | null =
     params?.battle === "blackjack" ||
@@ -24,13 +33,18 @@ export default async function Home({
         robotId: params?.robot ?? "",
       }
     : null;
-  const gameKey = `${initialStageId}:${battleGameType ?? "select"}:${params?.robot ?? ""}`;
+  const gameKey = `${initialStageId}:${battleGameType ?? "select"}:${params?.robot ?? ""}:${params?.tutorial ?? ""}`;
 
   return (
     <CasinoGame
       key={gameKey}
       initialBattle={initialBattle}
       initialStageId={initialStageId}
+      initialGameSelectTutorial={initialStageId === 1 && params?.tutorial === "venue"}
+      initialPokerBettingTutorial={
+        initialStageId === 3 && params?.robot === "poker-3-2" &&
+        params?.tutorial === "betting" && battleGameType === "poker"
+      }
     />
   );
 }
