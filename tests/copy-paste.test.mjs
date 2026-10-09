@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { resolvePaste } from "../lib/copy-paste.ts";
 
+test("blackjack can replace the physical scan game", () => {
+  const source = { id: "blackjack-declaration", text: "ブラックジャック" };
+  assert.equal(resolvePaste(source, "scan-poker", "katakana"), "ブラックジャック");
+  assert.equal(resolvePaste(source, "scan-poker", "hiragana"), null);
+  assert.equal(resolvePaste({ ...source, text: "ハイ＆ロー" }, "scan-poker", "katakana"), null);
+});
+
 test("only configured source, target and format combinations are accepted", () => {
   const source = { id: "scan-example", text: "例" };
   assert.equal(resolvePaste(source, "blackjack-ace-value", "number"), "0");

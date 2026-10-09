@@ -12,7 +12,7 @@ const themes = [
       { text: "ゲームスタート宣言時にエクスチェンジできる対象は？", options: ["自分の手札", "ハイ＆ローロボットの手札", "ブラックジャックロボットの手札", "ポーカーロボットの手札", "フィールド"], answers: [0, 1, 2] },
       { text: "ポーカーロボットに勝利するには？", options: ["コピーペースト機能でポーカーのルールを変更する", "自分がフォーカードを出す"], answers: [1] },
       { text: "自分がフォーカードを出せる数字は？", options: ["A", "K", "Q", "J"], answers: [1] },
-      { text: "Kのフォーカードを作るにはエクスチェンジは何回必要？", options: ["0回", "1回", "2回"], answers: [2] },
+      { text: "Kのフォーカードを作るには、自分の手札へのエクスチェンジが何回必要？", options: ["0回", "1回", "2回"], answers: [2] },
     ],
   },
   {
@@ -37,7 +37,9 @@ export default function FinalSituationReview({ onBack }: { onBack: () => void })
       <button className="mb-5 flex min-h-11 items-center gap-2 rounded border border-white/20 px-3 text-sm font-bold hover:bg-white/10" onClick={onBack} type="button">
         <ArrowLeft size={18} />事前準備へ
       </button>
-      <h2 className="text-2xl font-black">状況整理</h2>
+      <h2 className="text-2xl font-black">
+        状況整理<span className="inline-block text-base">（全て埋めなくてもクリア可能）</span>
+      </h2>
       <div aria-label="状況整理のテーマ" className="my-5 grid grid-cols-2 gap-2" role="tablist">
         {themes.map((item, index) => (
           <button aria-selected={activeTheme === index} className={`min-h-14 min-w-0 rounded border px-2 py-2 text-sm font-black ${activeTheme === index ? "border-brass bg-brass text-stone-950" : "border-white/20 hover:bg-white/10"}`} id={`situation-tab-${index}`} key={item.title} onClick={() => setActiveTheme(index)} role="tab" type="button">

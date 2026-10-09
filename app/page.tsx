@@ -1,5 +1,6 @@
 import CasinoGame from "@/components/CasinoGame";
 import TitleScreen from "@/components/TitleScreen";
+import ClearScreen from "@/components/ClearScreen";
 import { OpeningScreen, IntroductionScreen } from "@/components/OpeningPages";
 import type { GameType } from "@/lib/game-data";
 
@@ -15,6 +16,7 @@ export default async function Home({
   }>;
 }) {
   const params = await searchParams;
+  if (params?.screen === "clear") return <ClearScreen />;
   if (!params?.stage && !params?.battle && !params?.tutorial) {
     if (params?.screen === "introduction") return <IntroductionScreen />;
     if (params?.screen === "title") return <TitleScreen />;

@@ -5,8 +5,12 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   CircleDollarSign,
   Info,
+  Lightbulb,
+  Map as MapIcon,
   Menu,
   RotateCcw,
   Trophy,
@@ -16,10 +20,16 @@ import Image from "next/image";
 import FinalSituationReview from "./FinalSituationReview";
 import { resolvePaste } from "@/lib/copy-paste";
 import { normalizeScanIllustrationName } from "@/lib/scan-input";
+import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit } from "@/lib/physical-scan";
+import { getGuaranteedWinOpening } from "@/lib/high-low-opening";
+import { shouldShowReservedExchange } from "@/lib/exchange-timing";
+import { getBlackjackOrderValue, isLargestBlackjackCard } from "@/lib/blackjack-order";
+import { isFinalGameClear } from "@/lib/final-clear";
 import Link from "next/link";
 import {
   Fragment,
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -55,7 +65,7 @@ import {
 
 type Outcome = "win" | "draw" | "lose";
 type ModalKind = "rules" | "spec";
-type GlobalNavAction = "battle" | "exchange" | "scan";
+type GlobalNavAction = "battle" | "preparation";
 type PokerHandCategory = "none" | "one-pair" | "two-pair" | "three-card" | "four-card";
 type PokerHandEvaluation = {
   category: PokerHandCategory;
@@ -315,7 +325,7 @@ const pokerBattleConfigs = {
     highLowRobotHandIds: ["Q-heart", "K-crub"],
     initialPlayerHandIds: ["A-daia", "J-heart"],
     initialRobotHandIds: ["A-spade", "A-heart"],
-    maxCopyPastes: 3,
+    maxCopyPastes: 4,
     maxExchanges: 2,
     maxScans: 3,
     scanRequirements: [
@@ -365,11 +375,12 @@ function GlobalGameHeader({
   isMenuOpen,
   onCloseMenu,
   onGoToBattle,
-  onGoToExchange,
-  onGoToScan,
+  onGoToPreparation,
   onGoToSelect,
   onResetStage,
   onToggleMenu,
+  onOpenVenueMap,
+  highlightVenueMap,
   stageId,
 }: {
   activeBattle: ActiveBattle | null;
@@ -377,11 +388,12 @@ function GlobalGameHeader({
   isMenuOpen: boolean;
   onCloseMenu: () => void;
   onGoToBattle: () => void;
-  onGoToExchange: () => void;
-  onGoToScan: () => void;
+  onGoToPreparation: () => void;
   onGoToSelect: () => void;
   onResetStage: () => void;
   onToggleMenu: () => void;
+  onOpenVenueMap: () => void;
+  highlightVenueMap: boolean;
   stageId: number;
 }) {
   const hasBattle = activeBattle !== null;
@@ -410,12 +422,6 @@ function GlobalGameHeader({
       setShowDevelopmentStory(true);
     }
   }
-  const canUseExchangeShortcut = hasBattle;
-  const canUseScanShortcut =
-    hasBattle &&
-    (activeBattle?.robotId === "blackjack-2-2" ||
-      activeBattle?.robotId === "blackjack-2-3" ||
-      stageId >= 3);
 
   return (
     <>
@@ -449,7 +455,7 @@ function GlobalGameHeader({
           {isMenuOpen ? (
             <div className="absolute right-0 top-12 w-64 rounded border border-white/14 bg-stone-950 p-3 text-white shadow-2xl">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brass">
-                Shortcut
+                ショートカット
               </p>
               <div className="mt-3 grid gap-2">
                 <GlobalNavButton
@@ -459,15 +465,24 @@ function GlobalGameHeader({
                 />
                 <GlobalNavButton label="ゲーム会場へ" onClick={onGoToSelect} />
                 <GlobalNavButton
-                  disabled={!canUseExchangeShortcut}
-                  label="エクスチェンジへ"
-                  onClick={onGoToExchange}
+                  disabled={!hasBattle}
+                  label="事前準備へ"
+                  onClick={onGoToPreparation}
                 />
-                <GlobalNavButton
-                  disabled={!canUseScanShortcut}
-                  label="スキャンへ"
-                  onClick={onGoToScan}
-                />
+                <button
+                  className={`flex min-h-10 items-center justify-center gap-2 rounded border px-3 text-sm font-black ${highlightVenueMap ? "border-sky-900 bg-sky-300 text-stone-950 ring-4 ring-sky-400 shadow-[0_0_24px_rgba(14,165,233,0.8)]" : "border-sky-200/55 bg-sky-950 text-sky-100 hover:bg-sky-900"}`}
+                  onClick={onOpenVenueMap}
+                  type="button"
+                >
+                  <MapIcon aria-hidden="true" size={16} />会場MAP
+                </button>
+                <button
+                  className="flex min-h-10 items-center justify-center gap-2 rounded border border-brass/50 bg-brass/10 px-3 text-sm font-black text-brass hover:bg-brass/20"
+                  type="button"
+                >
+                  <Lightbulb aria-hidden="true" size={16} />
+                  ヒント
+                </button>
                 <button
                   className="mt-1 flex min-h-10 items-center justify-center gap-2 rounded border border-white/14 bg-white/8 px-3 text-sm font-black text-stone-100 hover:bg-white/14"
                   onClick={onResetStage}
@@ -904,6 +919,7 @@ export default function CasinoGame({
   const [activeBattle, setActiveBattle] = useState<ActiveBattle | null>(
     initialBattle ? { ...initialBattle, gameType: getStageTableGameType(initialStage.id) } : null,
   );
+  const [isVenueVisible, setIsVenueVisible] = useState(false);
   const [
     hasReachedHighLowTutorialLosePart,
     setHasReachedHighLowTutorialLosePart,
@@ -918,15 +934,24 @@ export default function CasinoGame({
     ScanCatalogEntry[]
   >(initialScanCatalogEntries);
   const [isFinalDisclosureSeen, setIsFinalDisclosureSeen] = useState(false);
-  const [hasSeenFinalTableHint, setHasSeenFinalTableHint] = useState(false);
   const [isFinalScanCatalogComplete, setIsFinalScanCatalogComplete] =
     useState(false);
   const [isFinalAbilitySpecSeen, setIsFinalAbilitySpecSeen] = useState(false);
   const [isRiddleExchangeTimingRevealed, setIsRiddleExchangeTimingRevealed] =
     useState(false);
   const [showBlackjackUnlockDialog, setShowBlackjackUnlockDialog] =
-    useState(false);
+    useState(initialStage.id === 2 && !initialBattle);
+  const [showPokerUnlockDialog, setShowPokerUnlockDialog] =
+    useState(initialStage.id === 3 && !initialBattle);
   const [isGlobalMenuOpen, setIsGlobalMenuOpen] = useState(false);
+  const [isVenueMapOpen, setIsVenueMapOpen] = useState(false);
+  const [isVenueMapRequired, setIsVenueMapRequired] = useState(false);
+  const [showVenueMapInstruction, setShowVenueMapInstruction] = useState(false);
+  const [venueMapCloseSignal, setVenueMapCloseSignal] = useState(0);
+  const requestVenueMapTutorial = useCallback(() => {
+    setIsVenueMapRequired(true);
+    setShowVenueMapInstruction(true);
+  }, []);
   const [hasShownTableHandInfoDialog, setHasShownTableHandInfoDialog] =
     useState(false);
   const hasShownGameSelectTutorial = useSyncExternalStore(
@@ -1003,17 +1028,18 @@ export default function CasinoGame({
     setChips(destinationStage.startingChips);
     setPlayedRobotIds([]);
     setActiveBattle(null);
+    setIsVenueVisible(false);
     setHasReachedHighLowTutorialLosePart(false);
     setFocusedOptionIndex(0);
     setVenueGameType(destinationStage.id === 1 ? "high-low" : destinationStage.id === 3 ? "poker" : "blackjack");
     setModal(null);
     setHighLowExchangePreparations({});
     setIsFinalDisclosureSeen(false);
-    setHasSeenFinalTableHint(false);
     setIsFinalScanCatalogComplete(false);
     setIsFinalAbilitySpecSeen(false);
     setIsRiddleExchangeTimingRevealed(false);
     setShowBlackjackUnlockDialog(destinationStage.id === 2);
+    setShowPokerUnlockDialog(destinationStage.id === 3);
 
     if (options.replace) {
       window.history.replaceState(null, "", stageUrl);
@@ -1039,6 +1065,11 @@ export default function CasinoGame({
       return;
     }
 
+    if (activeBattle) {
+      setIsVenueVisible(false);
+      return;
+    }
+    setIsVenueVisible(false);
     setHasReachedHighLowTutorialLosePart(false);
     setActiveBattle({ gameType: getStageTableGameType(stage.id), robotId: robot.id });
   }
@@ -1096,6 +1127,7 @@ export default function CasinoGame({
   }
 
   function dispatchGlobalNavAction(action: GlobalNavAction) {
+    setIsVenueVisible(false);
     window.dispatchEvent(
       new CustomEvent<{ action: GlobalNavAction }>(GLOBAL_NAV_EVENT, {
         detail: { action },
@@ -1111,13 +1143,16 @@ export default function CasinoGame({
           activeBattle={activeBattle}
           currentObjective={getCurrentObjective()}
           isMenuOpen={isGlobalMenuOpen}
+          highlightVenueMap={isVenueMapRequired}
+          onOpenVenueMap={() => {
+            setIsVenueMapOpen(true);
+            setIsGlobalMenuOpen(false);
+          }}
           onCloseMenu={() => setIsGlobalMenuOpen(false)}
           onGoToBattle={() => dispatchGlobalNavAction("battle")}
-          onGoToExchange={() => dispatchGlobalNavAction("exchange")}
-          onGoToScan={() => dispatchGlobalNavAction("scan")}
+          onGoToPreparation={() => dispatchGlobalNavAction("preparation")}
           onGoToSelect={() => {
-            setHasReachedHighLowTutorialLosePart(false);
-            setActiveBattle(null);
+            setIsVenueVisible(true);
             setIsGlobalMenuOpen(false);
           }}
           onResetStage={() => {
@@ -1128,7 +1163,7 @@ export default function CasinoGame({
           stageId={stage.id}
         />
 
-        {shouldShowTableHandInfoDialog ? (
+        {shouldShowTableHandInfoDialog && !isVenueVisible ? (
           <TutorialDialog
             onDismiss={() => setHasShownTableHandInfoDialog(true)}
             text="プレイヤーは対戦相手と自分の手札を事前に把握することができます"
@@ -1138,16 +1173,14 @@ export default function CasinoGame({
 
         <div className="grid gap-3 lg:gap-5">
           <section className="overflow-hidden rounded border border-white/12 bg-[#1a1714] shadow-table">
+            <div hidden={isVenueVisible}>
             {isBlackjackBattle ? (
               <BlackjackBattle
-                backHref={`/?stage=${stage.id}`}
+                key={activeBattle.robotId}
                 hand={hand}
                 isRiddleExchangeTimingRevealed={
                   isRiddleExchangeTimingRevealed
                 }
-                onBack={() => {
-                  setActiveBattle(null);
-                }}
                 onRevealRiddleExchangeTiming={() =>
                   setIsRiddleExchangeTimingRevealed(true)
                 }
@@ -1165,8 +1198,7 @@ export default function CasinoGame({
                   isRiddleExchangeTimingRevealed
                 }
                 onBack={() => {
-                  setHasReachedHighLowTutorialLosePart(false);
-                  setActiveBattle(null);
+                  setIsVenueVisible(true);
                 }}
                 onAdvanceToSecondStage={() => goToStage(2)}
                 onOpenModal={(kind, gameType) =>
@@ -1206,8 +1238,6 @@ export default function CasinoGame({
             ) : isPokerBattle ? (
               <PokerBattle
                 key={activeBattle.robotId}
-                showFinalTableHint={activeBattle.robotId === "all-games-last" && !hasSeenFinalTableHint}
-                onDismissFinalTableHint={() => setHasSeenFinalTableHint(true)}
                 onScanCountChange={setPokerScanCount}
                 backHref={`/?stage=${stage.id}`}
                 hand={hand}
@@ -1215,10 +1245,13 @@ export default function CasinoGame({
                   isRiddleExchangeTimingRevealed
                 }
                 onBack={() => {
-                  setHasReachedHighLowTutorialLosePart(false);
-                  setActiveBattle(null);
+                  setIsVenueVisible(true);
                 }}
                 onWin={() => {
+                  if (activeBattle.robotId === "all-games-last") {
+                    window.location.assign("/?screen=clear");
+                    return;
+                  }
                   if (activeBattle.robotId === "poker-3-3") {
                     goToStage(4);
                     window.scrollTo(0, 0);
@@ -1258,7 +1291,10 @@ export default function CasinoGame({
                 robot={activeBattleRobot}
                 robotId={activeBattle.robotId}
               />
-            ) : shouldShowFinalDisclosure ? (
+            ) : null}
+            </div>
+            <div hidden={activeBattle !== null && !isVenueVisible}>
+            {shouldShowFinalDisclosure ? (
               <FinalDisclosure
                 onContinue={() => {
                   setIsFinalDisclosureSeen(true);
@@ -1291,20 +1327,23 @@ export default function CasinoGame({
               />
             ) : (
               <OpponentSelector
+                key={`venue-${stage.id}`}
                 focusedGameType={venueGameType}
                 focusedGameTypes={[venueGameType]}
                 isGameUnlocked={isVenueGameUnlocked}
                 focusedRobot={focusedRobot}
                 modalCloseSignal={modalCloseSignal}
+                venueMapCloseSignal={venueMapCloseSignal}
+                onRequestVenueMap={requestVenueMapTutorial}
                 canFocusNext={canFocusNext}
                 canFocusPrevious={canFocusPrevious}
                 shouldShowTutorial={
-                  (stage.id === 1 && (initialGameSelectTutorial
+                  !activeBattle && ((stage.id === 1 && (initialGameSelectTutorial
                     ? !hasCompletedNewGameTutorial
-                    : !hasShownGameSelectTutorial)) || showBlackjackUnlockDialog
+                    : !hasShownGameSelectTutorial)) || showBlackjackUnlockDialog || showPokerUnlockDialog)
                 }
                 tutorialVariant={
-                  showBlackjackUnlockDialog ? "blackjack-unlock" : "default"
+                  showPokerUnlockDialog ? "poker-unlock" : showBlackjackUnlockDialog ? "blackjack-unlock" : "default"
                 }
                 onFocusRobot={focusRobot}
                 onOpenModal={(robot, kind, gameType) =>
@@ -1312,7 +1351,9 @@ export default function CasinoGame({
                 }
                 onSelectRobot={selectRobot}
                 onTutorialShown={() => {
-                  if (showBlackjackUnlockDialog) {
+                  if (showPokerUnlockDialog) {
+                    setShowPokerUnlockDialog(false);
+                  } else if (showBlackjackUnlockDialog) {
                     setShowBlackjackUnlockDialog(false);
                   } else {
                     setHasCompletedNewGameTutorial(true);
@@ -1321,10 +1362,39 @@ export default function CasinoGame({
                 }}
               />
             )}
+            </div>
           </section>
         </div>
       </section>
 
+      {showVenueMapInstruction ? (
+        <TutorialDialog
+          text="最後に会場MAPを確認しましょう。画面右上のメニューにある、青く光る会場MAPボタンを押してください。"
+          tone="rules"
+          onDismiss={() => {
+            setShowVenueMapInstruction(false);
+            setIsGlobalMenuOpen(true);
+          }}
+        />
+      ) : null}
+      {isVenueMapOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/86 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="会場MAP" onClick={() => {
+          setIsVenueMapOpen(false);
+          setIsVenueMapRequired(false);
+          setVenueMapCloseSignal((current) => current + 1);
+        }}>
+          <section className="w-full max-w-6xl overflow-auto rounded border border-white/20 bg-white p-2" onClick={(event) => event.stopPropagation()}>
+            <div className="flex justify-end">
+              <button aria-label="会場MAPを閉じる" className="grid h-10 w-10 place-items-center rounded text-stone-950 hover:bg-stone-100" type="button" onClick={() => {
+                setIsVenueMapOpen(false);
+                setIsVenueMapRequired(false);
+                setVenueMapCloseSignal((current) => current + 1);
+              }}><X size={24} /></button>
+            </div>
+            <Image alt="会場MAP：ゲームテーブルと準備用車両" src="/venue-map.png" width={1920} height={1080} className="h-auto max-h-[80vh] w-full object-contain" />
+          </section>
+        </div>
+      ) : null}
       {modal ? (
         <div
           className="fixed inset-0 z-50 grid place-items-end bg-black/70 p-3 sm:place-items-center sm:p-4"
@@ -1546,6 +1616,10 @@ function FinalScanCatalogBuilder({
           <h3 className="mt-1 text-xl font-black">スキャン実行</h3>
           <ScanAnswerPanel
             answer={answer}
+            inventoryCards={entries.filter((entry) => entry.generated).flatMap((entry) => {
+              const cardId = entry.generatedNumber === "1" ? "scan-A" : entry.generatedNumber === "11" ? "scan-J" : `scan-${entry.generatedNumber}`;
+              return generatedScanCards[cardId] ? [generatedScanCards[cardId]] : [];
+            })}
             illustration={illustrationName}
             splitIndexes={splitIndexes}
             onAnswerChange={setAnswer}
@@ -1640,7 +1714,7 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
 }
 
 function DevelopmentStoryText() {
-  return <>ここまで遊んでくれてありがとう！これが最後の戦いだから頑張ってね！気づかなかったかもしれないけど、画面右上のメニューには直接指定の画面に遷移できる機能があったんだ。あとこのゲームのこだわりポイントとして、ゲームに登場する全ての車は僕の愛車の”<span className="font-black text-red-700">ハイエース</span>”なんだ。気にしてみてね</>;
+  return <>ここまで遊んでくれてありがとう！これが最後の戦いだから頑張ってね！このゲームのこだわりポイントとして、ゲームに登場する全ての車は僕の愛車の”<span className="font-black text-red-700">ハイエース</span>”なんだ。気にしてみてね</>;
 }
 
 function FinalDisclosureCardSection({
@@ -1748,16 +1822,27 @@ function FinalAbilitySpecTable({ compact = false }: { compact?: boolean }) {
 }
 
 function ScanTargetPreview({ alt, src }: { alt: string; src: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   return (
-    <div className="overflow-hidden rounded border border-white/12 bg-white">
-      <Image
-        alt={alt}
-        className="h-auto w-full"
-        height={900}
-        src={src}
-        width={1600}
-      />
-    </div>
+    <>
+      <button
+        aria-label={`${alt}を拡大表示`}
+        className="group block w-full cursor-zoom-in overflow-hidden rounded border border-white/12 bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
+        onClick={() => setIsExpanded(true)}
+        type="button"
+      >
+        <Image
+          alt={alt}
+          className="h-auto w-full transition-transform duration-200 group-hover:scale-[1.015]"
+          height={900}
+          src={src}
+          width={1600}
+        />
+      </button>
+      {isExpanded ? (
+        <RiddleImageModal alt={alt} src={src} onClose={() => setIsExpanded(false)} />
+      ) : null}
+    </>
   );
 }
 
@@ -1803,6 +1888,27 @@ function ScanRuleText() {
   );
 }
 
+function AbilitySpecToggleButton({ label, isVisible, onToggle }: {
+  label: string;
+  isVisible: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-expanded={isVisible}
+      className={`mt-3 flex min-h-12 w-full items-center justify-between gap-3 rounded border px-3 py-3 text-left text-sm font-black text-sky-100 transition-colors hover:bg-sky-900/45 ${isVisible ? "border-sky-200/70 bg-sky-900/45" : "border-sky-300/40 bg-sky-950/35"}`}
+      onClick={onToggle}
+      type="button"
+    >
+      <span className="min-w-0">{label}</span>
+      <span className="flex shrink-0 items-center gap-1 text-xs text-sky-200">
+        {isVisible ? "閉じる" : "開く"}
+        {isVisible ? <ChevronUp aria-hidden="true" size={20} /> : <ChevronDown aria-hidden="true" size={20} />}
+      </span>
+    </button>
+  );
+}
+
 function ScanSpecToggle({
   isVisible,
   onToggle,
@@ -1812,15 +1918,7 @@ function ScanSpecToggle({
 }) {
   return (
     <>
-      <button
-        className={`mt-3 min-h-11 w-full rounded border border-sky-300/40 bg-sky-950/35 px-3 py-2 text-sm font-black text-sky-100 hover:bg-sky-900/45 ${
-          isVisible ? "" : "animate-pulse ring-4 ring-sky-300/25"
-        }`}
-        onClick={onToggle}
-        type="button"
-      >
-        スキャン機能について
-      </button>
+      <AbilitySpecToggleButton label="スキャン機能について" isVisible={isVisible} onToggle={onToggle} />
       {isVisible ? (
         <p className="mt-3 whitespace-pre-line rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
           <ScanRuleText />
@@ -1831,21 +1929,15 @@ function ScanSpecToggle({
 }
 
 function ExchangeSpecToggle() {
-  const [isVisible, setIsVisible] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
 
   return (
     <>
-      <button
-        className="mt-3 min-h-11 w-full rounded border border-sky-300/40 bg-sky-950/35 px-3 py-2 text-sm font-black text-sky-100 hover:bg-sky-900/45"
-        onClick={() => setIsVisible((current) => !current)}
-        type="button"
-      >
-        エクスチェンジ機能について
-      </button>
+      <AbilitySpecToggleButton label="エクスチェンジ機能について" isVisible={isVisible} onToggle={() => setIsVisible((current) => !current)} />
       {isVisible ? (
         <p className="mt-3 rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
-          トランプ同士を選択し、決められたタイミングで交換される。印刷面のみ交換されるため、
-          <span className="text-red-300">常に目視されていない限り</span>
+          トランプ同士を選択し、決められたタイミングで交換される。数字とスート（マーク）の印刷面のみ交換されるため、
+          <span className="text-red-300">常に印刷面を目視されていない限り</span>
           不正に気付かれない
         </p>
       ) : null}
@@ -2018,8 +2110,8 @@ function BattleResultOverlay({ result, onDismiss }: { result: "win" | "lose"; on
   );
 }
 
-function GameStartHandNotice() {
-  return <p className="rounded border border-brass/45 bg-brass/10 px-3 py-2 text-sm font-black text-brass">ゲームスタート宣言時の手札状況</p>;
+function GameStartHandNotice({ timing = "ゲームスタート" }: { timing?: string }) {
+  return <p className="rounded border border-brass/45 bg-brass/10 px-3 py-2 text-sm font-black text-brass">{timing}宣言時の手札状況</p>;
 }
 
 function BattleDefeatNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -2670,6 +2762,8 @@ function OpponentSelector({
   onOpenModal,
   onSelectRobot,
   onTutorialShown,
+  onRequestVenueMap,
+  venueMapCloseSignal,
   shouldShowTutorial,
   tutorialVariant = "default",
 }: {
@@ -2684,18 +2778,28 @@ function OpponentSelector({
   onOpenModal: (robot: Robot, kind: ModalKind, gameType: GameType) => void;
   onSelectRobot: (robot: Robot, gameType: GameType) => void;
   onTutorialShown: () => void;
+  onRequestVenueMap: () => void;
+  venueMapCloseSignal: number;
   shouldShowTutorial: boolean;
-  tutorialVariant?: "default" | "blackjack-unlock";
+  tutorialVariant?: "default" | "blackjack-unlock" | "poker-unlock";
 }) {
   const [tutorialStep, setTutorialStep] = useState<
-    "rules" | "rules-close" | "spec" | "spec-close" | "start" | "done"
+    "rules" | "rules-close" | "spec" | "spec-close" | "map" | "start" | "done"
   >(shouldShowTutorial ? "rules" : "done");
   const [isTutorialDialogVisible, setIsTutorialDialogVisible] =
     useState(shouldShowTutorial);
   const shouldRenderTutorialDialog =
     shouldShowTutorial && isTutorialDialogVisible;
+  const isTutorialBlocking = shouldShowTutorial && tutorialStep !== "start" && tutorialStep !== "done";
   const tutorialMessages =
-    tutorialVariant === "blackjack-unlock"
+    tutorialVariant === "poker-unlock"
+      ? {
+          rules: "第3ステージはポーカーにも挑戦していただきます。まずはゲームのルールを確認しましょう。青く光る本のボタンを押してください。",
+          rulesClose: "ゲームルールを確認したら、右上の×ボタンで閉じてください。",
+          spec: "次にポーカーロボットの仕様を確認します。緑に光っている情報ボタンを押してください。",
+          specClose: "ロボットの仕様を確認したら、右上の×ボタンで閉じてください。",
+        }
+      : tutorialVariant === "blackjack-unlock"
       ? {
           rules:
             "第2ステージはブラックジャックにも挑戦していただきます。まずはゲームのルールを確認しましょう。青く光る本のボタンを押してください。",
@@ -2733,7 +2837,7 @@ function OpponentSelector({
 
         if (current === "spec-close") {
           setIsTutorialDialogVisible(false);
-          return "start";
+          return tutorialVariant === "default" ? "map" : "start";
         }
 
         return current;
@@ -2741,7 +2845,7 @@ function OpponentSelector({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [modalCloseSignal]);
+  }, [modalCloseSignal, tutorialVariant]);
 
   useEffect(() => {
     function handleModalClosed() {
@@ -2753,7 +2857,7 @@ function OpponentSelector({
 
         if (current === "spec-close") {
           setIsTutorialDialogVisible(false);
-          return "start";
+          return tutorialVariant === "default" ? "map" : "start";
         }
 
         return current;
@@ -2765,7 +2869,17 @@ function OpponentSelector({
     return () => {
       window.removeEventListener("casino-rule-modal-closed", handleModalClosed);
     };
-  }, []);
+  }, [tutorialVariant]);
+
+  useEffect(() => {
+    if (tutorialStep === "map") onRequestVenueMap();
+  }, [tutorialStep, onRequestVenueMap]);
+
+  useEffect(() => {
+    if (venueMapCloseSignal > 0) {
+      setTutorialStep((current) => current === "map" ? "start" : current);
+    }
+  }, [venueMapCloseSignal]);
 
   return (
     <div className="relative bg-black">
@@ -2829,7 +2943,7 @@ function OpponentSelector({
                       ? "bg-stone-100 text-stone-950 hover:bg-stone-200"
                       : "cursor-not-allowed bg-stone-200 text-stone-400 opacity-45"
                   }`}
-                  disabled={!canFocusPrevious}
+                  disabled={!canFocusPrevious || isTutorialBlocking}
                   onClick={() => onFocusRobot(-1)}
                   type="button"
                 >
@@ -2859,7 +2973,7 @@ function OpponentSelector({
                       ? "bg-stone-100 text-stone-950 hover:bg-stone-200"
                       : "cursor-not-allowed bg-stone-200 text-stone-400 opacity-45"
                   }`}
-                  disabled={!canFocusNext}
+                  disabled={!canFocusNext || isTutorialBlocking}
                   onClick={() => onFocusRobot(1)}
                   type="button"
                 >
@@ -2873,7 +2987,7 @@ function OpponentSelector({
                   disabled={!isGameUnlocked}
                   className={`grid h-11 place-items-center rounded border text-stone-950 max-[424px]:h-[38px] max-[374px]:h-[34px] ${
                     tutorialStep === "rules"
-                      ? "animate-pulse border-2 border-sky-500 bg-sky-50 shadow-[0_0_0_4px_rgba(14,165,233,0.24)]"
+                      ? "relative z-10 border-2 border-sky-900 bg-sky-300 ring-4 ring-sky-400 shadow-[0_0_24px_rgba(14,165,233,0.8)]"
                       : "border-stone-300 bg-stone-100 hover:bg-stone-200"
                   } disabled:cursor-not-allowed disabled:opacity-40`}
                   onClick={() => {
@@ -2910,7 +3024,7 @@ function OpponentSelector({
                   disabled={!isGameUnlocked}
                   className={`grid h-11 place-items-center rounded border text-stone-950 max-[424px]:h-[38px] max-[374px]:h-[34px] ${
                     tutorialStep === "spec"
-                      ? "animate-pulse border-2 border-emerald-500 bg-emerald-50 shadow-[0_0_0_4px_rgba(16,185,129,0.24)]"
+                      ? "relative z-10 border-2 border-emerald-900 bg-emerald-300 ring-4 ring-emerald-400 shadow-[0_0_24px_rgba(16,185,129,0.8)]"
                       : "border-stone-300 bg-stone-100 hover:bg-stone-200"
                   } disabled:cursor-not-allowed disabled:opacity-40`}
                   onClick={() => {
@@ -2942,7 +3056,7 @@ function OpponentSelector({
                 >
                   <Info size={18} />
                 </button>
-                {!isGameUnlocked || !focusedGameType ? (
+                {!isGameUnlocked || !focusedGameType || isTutorialBlocking ? (
                   <button
                     className="h-11 cursor-not-allowed rounded bg-stone-700 px-3 text-sm font-bold text-stone-400 max-[424px]:h-[38px] max-[424px]:px-2 max-[424px]:text-xs max-[374px]:h-[34px]"
                     disabled
@@ -2958,6 +3072,7 @@ function OpponentSelector({
                         : "bg-casinoRed hover:bg-red-700"
                     }`}
                     onClick={() => {
+                      if (isTutorialBlocking) return;
                       onTutorialShown();
                       setTutorialStep("done");
                       setIsTutorialDialogVisible(false);
@@ -2988,19 +3103,15 @@ type BlackjackPhase =
 type BlackjackActiveGame = "ready" | "high-low" | "blackjack";
 
 function BlackjackBattle({
-  backHref,
   hand,
   isRiddleExchangeTimingRevealed,
-  onBack,
   onOpenModal,
   onRevealRiddleExchangeTiming,
   robot,
   robotId,
 }: {
-  backHref: string;
   hand: PlayingCard[];
   isRiddleExchangeTimingRevealed: boolean;
-  onBack: () => void;
   onOpenModal: (kind: ModalKind, gameType: GameType) => void;
   onRevealRiddleExchangeTiming: () => void;
   robot: Robot;
@@ -3103,7 +3214,7 @@ function BlackjackBattle({
   } | null>(null);
   const [showScanPrintedItemsDialog, setShowScanPrintedItemsDialog] =
     useState(false);
-  const [isScanSpecVisible, setIsScanSpecVisible] = useState(false);
+  const [isScanSpecVisible, setIsScanSpecVisible] = useState(true);
   const [isScanCardExchanged, setIsScanCardExchanged] = useState(false);
   const [scanExchangeCardIds, setScanExchangeCardIds] = useState<string[]>([]);
   const [isScanExchangeConfirmed, setIsScanExchangeConfirmed] = useState(false);
@@ -3168,7 +3279,11 @@ function BlackjackBattle({
     (physicalScanConfig?.requiredSelectionCount ?? 0);
   const canRunPhysicalScan =
     isPhysicalScanCardCountReady && physicalScanReading.trim().length > 0;
-  const visiblePhysicalScanInventoryCards = physicalScanInventoryCards.filter(
+  const visiblePhysicalScanInventoryCards = Array.from(new Map([
+    ...physicalScanInventoryCards,
+    ...priorTutorialGeneratedCards,
+    ...getCardsById(scannedItems, generatedScanCards),
+  ].map((card) => [card.id, card])).values()).filter(
     (card) => !consumedPhysicalScanCardIds.includes(card.id),
   );
   const areScanCardsGenerated = scannedGeneratedCards.every((card) =>
@@ -3328,6 +3443,9 @@ function BlackjackBattle({
   const [showScanUnlockDialog, setShowScanUnlockDialog] = useState(
     robotId === "blackjack-2-2",
   );
+  const [hasDismissedScanAbilityIntro, setHasDismissedScanAbilityIntro] = useState(false);
+  const [showTrafficLightScanHint, setShowTrafficLightScanHint] = useState(false);
+  const hasShownTrafficLightScanHint = useRef(false);
   const [
     shouldHighlightScanPreparationButton,
     setShouldHighlightScanPreparationButton,
@@ -3359,14 +3477,18 @@ function BlackjackBattle({
     [],
   );
   const playerFirstCard = playerHand[0] ?? null;
-  const robotFirstCard = robotHand[0] ?? null;
-  const blackjackHighLowRobotCard = highLowRobotHand[0] ?? null;
+  const orderedBlackjackRobotHand = [...robotHand].sort((a, b) => getBlackjackOrderValue(b.rank) - getBlackjackOrderValue(a.rank));
+  const robotFirstCard = orderedBlackjackRobotHand[0] ?? null;
+  const [blackjackFirstPlacementPending, setBlackjackFirstPlacementPending] = useState(false);
+  const [blackjackOrderError, setBlackjackOrderError] = useState(false);
+  const blackjackGuaranteedWinOpening = getGuaranteedWinOpening(playerHand.map(getHighLowCardValue), highLowRobotHand.map(getHighLowCardValue));
+  const blackjackHighLowRobotCard = highLowRobotHand[blackjackGuaranteedWinOpening ?? 0] ?? null;
   const blackjackHighLowPlayerCard =
     (blackjackHighLowPlayerCardId
       ? playerHand.find((card) => card.id === blackjackHighLowPlayerCardId)
       : null) ??
     playerFirstCard;
-  const blackjackHighLowRobotZone = "HIGH" as HighLowZoneName;
+  const blackjackHighLowRobotZone: HighLowZoneName = blackjackGuaranteedWinOpening !== null ? "LOW" : "HIGH";
   const blackjackHighLowHighCard =
     blackjackHighLowRobotZone === "HIGH"
       ? blackjackHighLowRobotCard
@@ -3417,18 +3539,18 @@ function BlackjackBattle({
   const samePrintTimingLabel = isRiddleExchangeTimingRevealed
     ? "小謎の紙"
     : "対象が同じ紙面上の場合";
-  const blackjackPlacementConfirmationControls = blackjackSecondPlacementPending ? (
+  const blackjackPlacementConfirmationControls = blackjackFirstPlacementPending || blackjackSecondPlacementPending ? (
     <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-brass/45 bg-black/35 p-3">
       <button
         className="min-h-11 rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
-        onClick={confirmBlackjackSecondPlacement}
+        onClick={blackjackFirstPlacementPending ? confirmBlackjackFirstPlacement : confirmBlackjackSecondPlacement}
         type="button"
       >
         確定
       </button>
       <button
         className="min-h-11 rounded border border-white/15 bg-white/8 px-4 text-sm font-black text-white hover:bg-white/14"
-        onClick={resetBlackjackSecondPlacement}
+        onClick={blackjackFirstPlacementPending ? resetBlackjackFirstPlacement : resetBlackjackSecondPlacement}
         type="button"
       >
         選び直し
@@ -3479,8 +3601,8 @@ function BlackjackBattle({
         robotFirstCard,
         ...(isBlackjackSecondCardPlaced &&
         !blackjackSecondPlacementPending &&
-        robotHand[1]
-          ? [robotHand[1]]
+        orderedBlackjackRobotHand[1]
+          ? [orderedBlackjackRobotHand[1]]
           : []),
       ]
     : [];
@@ -3508,15 +3630,15 @@ function BlackjackBattle({
       ? getBlackjackScore(blackjackPlayerValueCards)
       : null;
   const visibleBlackjackRobotHand = isBlackjackFirstCardPlaced
-    ? robotHand.slice(
+    ? orderedBlackjackRobotHand.slice(
         isBlackjackSecondCardPlaced && !blackjackSecondPlacementPending ? 2 : 1,
       )
-    : robotHand;
+    : orderedBlackjackRobotHand;
   const visibleBlackjackPlayerHand = isBlackjackStarted
     ? playerHand.filter((card) => !blackjackPlacedCardIds.includes(card.id))
     : playerHand;
   const blackjackDraggableCardIds =
-    isBlackjackStarted && phase === "opening-card"
+    blackjackFirstPlacementPending ? [] : isBlackjackStarted && phase === "opening-card"
       ? playerHand.map((card) => card.id)
       : isBlackjackStarted && phase === "first-card"
         ? playerHand
@@ -3531,7 +3653,7 @@ function BlackjackBattle({
       : visibleBlackjackPlayerHand;
   const visibleHighLowRobotHand =
     activeBlackjackGame === "high-low" && blackjackHighLowRobotCard
-      ? highLowRobotHand.slice(1)
+      ? highLowRobotHand.filter((card) => card.id !== blackjackHighLowRobotCard.id)
       : highLowRobotHand;
   const shouldShowGameStartHandState =
     phase === "idle" &&
@@ -3738,16 +3860,15 @@ function BlackjackBattle({
       setBlackjackDragPreviewPoint(null);
       setPhase("first-card");
       setPlacementAnimation("gentle");
-      setPlacementAnimationMode("release");
-      setMessage("ロボットも1枚目を出しました。2枚目を1枚目に重ねてください。");
-      window.setTimeout(() => {
-        setPlacementAnimation(null);
-      }, 760);
+      setPlacementAnimationMode("hold");
+      setBlackjackFirstPlacementPending(true);
+      setMessage("この置き方で進めますか？");
       return;
     }
 
     if (
       phase === "first-card" &&
+      !blackjackFirstPlacementPending &&
       droppedCardId &&
       playerHand.some((card) => card.id === droppedCardId) &&
       !blackjackPlacedCardIds.includes(droppedCardId)
@@ -3759,7 +3880,27 @@ function BlackjackBattle({
     }
   }
 
+  function confirmBlackjackFirstPlacement() {
+    const card = playerHand.find((item) => item.id === blackjackPlacedCardIds[0]);
+    if (!card || !isLargestBlackjackCard(card.rank, playerHand.map((item) => item.rank))) {
+      setBlackjackOrderError(true);
+      return;
+    }
+    setBlackjackFirstPlacementPending(false);
+    setPlacementAnimationMode("release");
+    setMessage("ロボットも1枚目を出しました。2枚目を1枚目に重ねてください。");
+    window.setTimeout(() => setPlacementAnimation(null), 760);
+  }
+
+  function resetBlackjackFirstPlacement() {
+    setBlackjackFirstPlacementPending(false);
+    setBlackjackPlacedCardIds([]);
+    setPhase("opening-card");
+    setPlacementAnimation(null);
+  }
+
   function resetRound() {
+    setBlackjackFirstPlacementPending(false);
     if (robotId === "blackjack-high-low-2-3") {
       setIsFourthRobotExchangeConfirmed(false);
       setFourthRobotExchangeCardIds([]);
@@ -3827,6 +3968,7 @@ function BlackjackBattle({
 
     setIsScanTutorialAnswerSolved(true);
     setIsScanTutorialComplete(true);
+    setScannedItems((current) => current.includes("scan-J") ? current : [...current, "scan-J"]);
     setScanTutorialMessage("");
     setShowScanPrintedItemsDialog(true);
   }
@@ -3870,6 +4012,10 @@ function BlackjackBattle({
     }
 
     setAreScanRiddleAnswersConfirmed(true);
+    if (isPrintedScanBattle && !hasShownTrafficLightScanHint.current) {
+      hasShownTrafficLightScanHint.current = true;
+      setShowTrafficLightScanHint(true);
+    }
     setAreScanRiddleAnswersSolved(false);
     setScanExchangeChoice(null);
     setScanTutorialMessage(
@@ -4243,16 +4389,8 @@ function BlackjackBattle({
         return;
       }
 
-      if (action === "exchange" && canOpenPreparation) {
+      if (action === "preparation" && canOpenPreparation) {
         setShowPreparation(true);
-        setPreparationAbility("exchange");
-        setShouldHighlightScanPreparationButton(false);
-        return;
-      }
-
-      if (action === "scan" && canOpenPreparation && canUseScan) {
-        setShowPreparation(true);
-        setPreparationAbility("scan");
         setShouldHighlightScanPreparationButton(false);
       }
     }
@@ -4262,10 +4400,11 @@ function BlackjackBattle({
     return () => {
       window.removeEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
     };
-  }, [canOpenPreparation, canUseScan]);
+  }, [canOpenPreparation]);
 
   return (
     <div className="min-h-[620px] bg-[#071b12] text-white">
+      {blackjackOrderError ? <PlayerCutInDialog text="こちらは数字の小さい方だ。ルール通り大きい方から置こう" onDismiss={() => setBlackjackOrderError(false)} /> : null}
       {isRiddleExchangeModeActive || isCardExchangeModeActive ? (
         <div className="pointer-events-none fixed inset-0 z-[60] border-[10px] border-red-500/80 shadow-[inset_0_0_42px_rgba(239,68,68,0.75)]" />
       ) : null}
@@ -4291,16 +4430,33 @@ function BlackjackBattle({
         />
       ) : null}
 
+      {isPrintedScanBattle && showPreparation && preparationAbility === "scan" &&
+       !showScanUnlockDialog && !hasDismissedScanAbilityIntro ? (
+        <TutorialDialog
+          onDismiss={() => setHasDismissedScanAbilityIntro(true)}
+          text="新たに2つ目の能力を開示します。スキャン機能を活用しましょう"
+          tone="hands"
+        />
+      ) : null}
+
+      {showTrafficLightScanHint ? (
+        <TutorialDialog
+          onDismiss={() => setShowTrafficLightScanHint(false)}
+          text="⓪の緑黄赤の丸を信号機としてスキャンすることはできない。⓪の謎で信号機として捉えることがないためだ"
+          tone="hands"
+        />
+      ) : null}
+
       {showScanPrintedItemsDialog ? (
         <TutorialDialog
           onDismiss={() => setShowScanPrintedItemsDialog(false)}
           text={
             <>
               <span className="block">
-                スキャン機能が解放されたと同時に、印刷された小謎の紙を渡される。プリンターの故障で、インクがこぼれたそうだ...。
+                車内２つ目の機能、スキャン機能が公開されたと同時に、印刷された小謎の紙も渡された。
               </span>
               <span className="mt-2 block">
-                答えとイラストの呼称が正しければ問題なくスキャンできるらしい...。とりあえず解くか...。
+                イラストの呼称で入力した答えが導ければ、インクを無視してイラストをスキャンできるらしい。とりあえず謎を解いてみよう
               </span>
             </>
           }
@@ -4367,18 +4523,6 @@ function BlackjackBattle({
       ) : null}
 
       <div className="flex items-center gap-3 border-b border-white/10 bg-black/28 p-4">
-        <a
-          aria-label="ゲーム会場へ"
-          title="ゲーム会場へ"
-          className="grid h-12 w-12 shrink-0 place-items-center rounded border border-white/30 bg-black/30 hover:bg-white/10"
-          href={backHref}
-          onClick={(event) => {
-            event.preventDefault();
-            onBack();
-          }}
-        >
-          <ArrowLeft size={18} />
-        </a>
         <div className="flex flex-wrap items-center gap-2">
           <GameLogo gameType="blackjack" compact />
           {highLowRobotHand.length > 0 ? (
@@ -4394,6 +4538,7 @@ function BlackjackBattle({
               className="mb-3"
               onClick={() => setShowPreparation(false)}
             />
+            <div className="mb-3"><GameStartHandNotice /></div>
 
             {canExchangePlayerHand ? (
               <div className="rounded border border-brass/50 bg-brass/10 p-3">
@@ -5192,6 +5337,7 @@ function BlackjackBattle({
                     <ScanSolvedSummary hasFourthScanResult={scannedItems.includes(scannedNineCard.id)} />
                     <ScanAnswerPanel
                       answer={fourthScanAnswer}
+                      inventoryCards={visiblePhysicalScanInventoryCards}
                       illustration={fourthScanIllustration}
                       splitIndexes={fourthScanSplitIndexes}
                       onAnswerChange={setFourthScanAnswer}
@@ -5805,6 +5951,7 @@ function BlackjackBattle({
                         alt="チュートリアルでスキャンしたすごろく"
                         src={scanTargetImages.sugoroku}
                       />
+                      <ScanInventoryPanel cards={visiblePhysicalScanInventoryCards} disabled />
                       <p className="rounded border border-emerald-300/45 bg-emerald-950/35 p-3 text-sm font-black leading-6 text-emerald-100">
                         チュートリアル完了。すごろくを「す　ご　ろく」に区切ると、5 + 6 = 11。
                         11のトランプが生成されることを確認できました。
@@ -6138,6 +6285,7 @@ function BlackjackBattle({
               <ScanSolvedSummary hasFourthScanResult={scannedItems.includes(scannedNineCard.id)} />
               <ScanAnswerPanel
                 answer={fourthScanAnswer}
+                inventoryCards={visiblePhysicalScanInventoryCards}
                 illustration={fourthScanIllustration}
                 splitIndexes={fourthScanSplitIndexes}
                 onAnswerChange={setFourthScanAnswer}
@@ -6212,12 +6360,12 @@ function BlackjackBattle({
 
 function BlackjackDeclarationOverlay({ text = "ブラックジャック" }: { text?: string }) {
   return (
-    <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-black/20 p-4">
-      <div className="rounded border border-brass bg-stone-950/92 px-8 py-6 text-center shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
-        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-brass">
+    <div className="declaration-overlay pointer-events-none fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" role="status" aria-live="polite">
+      <div className="w-full max-w-lg rounded border-2 border-brass bg-white px-5 py-6 text-center shadow-[0_18px_60px_rgba(0,0,0,0.55)] sm:px-8">
+        <p className="text-sm font-black text-stone-600">
           宣言
         </p>
-        <p className="mt-2 break-words text-2xl font-black text-sky-300 drop-shadow sm:text-4xl">
+        <p className="mt-2 break-words text-2xl font-black leading-relaxed text-red-800 sm:text-4xl">
           {text}
         </p>
       </div>
@@ -6543,7 +6691,7 @@ function HighlightedBlackjackRuleText() {
         <SelectableBlueText id="blackjack-ace-value">11</SelectableBlueText>
         として扱い、それ以外は数字通り
       </span>
-      <span className="mt-3 block">①1枚目を置き、2枚目を重ねて置く</span>
+      <span className="mt-3 block">①数字の大きい1枚目を置き、2枚目を重ねて置く</span>
       <span className="block">
         ②
         <SelectableBlueText id="blackjack-declaration">ブラックジャック</SelectableBlueText>
@@ -6670,22 +6818,21 @@ function PokerRobotSpecContent({
   specText: string;
   showBettingSpec?: boolean;
 }) {
-  const highlightedSpecPrefix = "自分の手札とフィールドを常に見ており";
-  const shouldHighlightSpecPrefix = specText.startsWith(highlightedSpecPrefix);
+  const highlightedSpecParts = new Set([
+    "自分の手札とフィールドを常に見ており",
+    "AKQJの16枚の山札1つで3つのゲームを行うことを知っており",
+  ]);
+  const specParts = specText.split(/(自分の手札とフィールドを常に見ており|AKQJの16枚の山札1つで3つのゲームを行うことを知っており)/);
   const bettingFormula = "ポーカーロボット勝率（引き分けを含む）×所持チップ";
 
   return (
     <>
-      {shouldHighlightSpecPrefix ? (
-        <>
-          <span className="font-black text-red-300">
-            {highlightedSpecPrefix}
-          </span>
-          {specText.slice(highlightedSpecPrefix.length)}
-        </>
-      ) : (
-        specText
-      )}
+      {specParts.map((part, index) => highlightedSpecParts.has(part) ? (
+        <Fragment key={index}>
+          {part === "AKQJの16枚の山札1つで3つのゲームを行うことを知っており" ? <br /> : null}
+          <span className="font-black text-red-300">{part}</span>
+        </Fragment>
+      ) : <Fragment key={index}>{part}</Fragment>)}
       {showBettingSpec ? (
         <span className="mt-3 block">
           <span className="font-black text-red-300">{bettingFormula}</span>
@@ -6840,8 +6987,6 @@ function PokerBettingTutorial({
 }
 
 function PokerBattle({
-  showFinalTableHint,
-  onDismissFinalTableHint,
   onScanCountChange,
   backHref,
   hand,
@@ -6852,8 +6997,6 @@ function PokerBattle({
   robot,
   robotId,
 }: {
-  showFinalTableHint: boolean;
-  onDismissFinalTableHint: () => void;
   onScanCountChange: (count: number) => void;
   backHref: string;
   hand: PlayingCard[];
@@ -6872,14 +7015,23 @@ function PokerBattle({
   const [exchangeCardIds, setExchangeCardIds] = useState<string[]>([]);
   const [confirmedPokerExchangePairs, setConfirmedPokerExchangePairs] = useState<Array<{ firstCardId: string; secondCardId: string }>>([]);
   const [isExchangeApplied, setIsExchangeApplied] = useState(false);
+  const [hasFinalExchangeTriggered, setHasFinalExchangeTriggered] = useState(false);
+  const [settledFinalHighLowResult, setSettledFinalHighLowResult] = useState<"win" | "lose" | null>(null);
+  const [settledFinalBlackjackResult, setSettledFinalBlackjackResult] = useState<"win" | "lose" | "draw" | null>(null);
   const [scannedPokerCardIds, setScannedPokerCardIds] = useState<string[]>([]);
+  const [consumedPokerScanCardIds, setConsumedPokerScanCardIds] = useState<string[]>([]);
+  const [finalPhysicalScanIds, setFinalPhysicalScanIds] = useState<string[]>([]);
+  const [finalPhysicalScanReading, setFinalPhysicalScanReading] = useState("");
+  const [finalPhysicalScanSplitIndexes, setFinalPhysicalScanSplitIndexes] = useState<number[]>([]);
   useEffect(() => {
     onScanCountChange(scannedPokerCardIds.length);
   }, [onScanCountChange, scannedPokerCardIds.length]);
   const [pokerScanAnswer, setPokerScanAnswer] = useState("");
+  const [pokerBlackjackFirstPlacementPending, setPokerBlackjackFirstPlacementPending] = useState(false);
+  const [pokerBlackjackOrderError, setPokerBlackjackOrderError] = useState(false);
   const [pokerScanIllustration, setPokerScanIllustration] = useState("");
   const [pokerScanSplitIndexes, setPokerScanSplitIndexes] = useState<number[]>([]);
-  const [pokerScanSpecVisible, setPokerScanSpecVisible] = useState(false);
+  const [pokerScanSpecVisible, setPokerScanSpecVisible] = useState(true);
   const [expandedPokerRiddle, setExpandedPokerRiddle] = useState<{ alt: string; src: string } | null>(null);
   const hasShownPokerRiddleHint = useRef(false);
   const [showPokerRiddleHint, setShowPokerRiddleHint] = useState(false);
@@ -6893,6 +7045,18 @@ function PokerBattle({
     useState<PreparationAbility>("exchange");
   const [showPreparation, setShowPreparation] = useState(false);
   const [showSituationReview, setShowSituationReview] = useState(false);
+  useEffect(() => {
+    function handleGlobalNav(event: Event) {
+      const action = (event as CustomEvent<{ action?: GlobalNavAction }>).detail?.action;
+      if (action === "battle" || action === "preparation") {
+        setShowSituationReview(false);
+        setShowPreparation(action === "preparation");
+      }
+    }
+    window.addEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
+    return () => window.removeEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
+  }, []);
+  const [finalRobotBet, setFinalRobotBet] = useState(0);
   const [hasOpenedSituationReview, setHasOpenedSituationReview] = useState(false);
   const [showSituationReviewHint, setShowSituationReviewHint] = useState(false);
   const hasShownSituationReviewHint = useRef(false);
@@ -6990,7 +7154,7 @@ function PokerBattle({
     robotId === "poker-3-3",
   );
   const isFinalAllGamesBattle = robotId === "all-games-last";
-  const pokerLearningRestriction = !isPokerSecondBattle && !isPokerThirdBattle
+  const pokerLearningRestriction = !isPokerSecondBattle && !isPokerThirdBattle && !isFinalAllGamesBattle
     ? "勝利後条件追加：ハイ＆ローのロボットとエクスチェンジ不可"
     : isPokerSecondBattle
       ? "勝利後条件追加：プレイヤー・ブラックジャックの手札も交換不可"
@@ -7005,7 +7169,7 @@ function PokerBattle({
     : "対象が同じ紙面上の場合";
   const maxCopyPastes =
     config && "maxCopyPastes" in config ? config.maxCopyPastes : 0;
-  const remainingCopyPastes = isCopyPasteRiddleSolved ? Math.max(0, maxCopyPastes - copyPasteUseCount) : 0;
+  const remainingCopyPastes = Math.max(0, maxCopyPastes - copyPasteUseCount);
   const copyPasteTargets = [
     ...(config && "copyPasteTargets" in config ? [...config.copyPasteTargets] : []),
     ...Object.values(selectedBlueTexts),
@@ -7022,9 +7186,17 @@ function PokerBattle({
     kanji: "漢字",
     number: "数字",
   };
+  const isFinalBlackjackExchange = isFinalAllGamesBattle && pastedBlueTexts["exchange-start-timing"] === "ブラックジャック";
+  // Preparation previews the reservation; declaration-covered cards stay visually unchanged until poker.
+  const visibleExchangePairs = shouldShowReservedExchange({
+    deferred: isFinalBlackjackExchange,
+    preparation: showPreparation,
+    triggered: hasFinalExchangeTriggered,
+    game: activePokerGame,
+  }) ? confirmedPokerExchangePairs : [];
   const playerHandIds =
     config && isExchangeApplied
-      ? applyExchangePairs([...config.initialPlayerHandIds], confirmedPokerExchangePairs)
+      ? applyExchangePairs([...config.initialPlayerHandIds], visibleExchangePairs)
       : config
         ? [...config.initialPlayerHandIds]
         : hand.map((card) => card.id);
@@ -7035,14 +7207,14 @@ function PokerBattle({
           cardId === "A-spade" ? "scan-0" : cardId,
         )
       : config && isExchangeApplied
-      ? applyExchangePairs([...config.blackjackRobotHandIds], confirmedPokerExchangePairs)
+      ? applyExchangePairs([...config.blackjackRobotHandIds], visibleExchangePairs)
       : config
         ? [...config.blackjackRobotHandIds]
         : [];
   const playerHand = getCardsById(playerHandIds, generatedScanCards);
   const robotHand = getCardsById(
     config
-      ? applyExchangePairs([...config.initialRobotHandIds], confirmedPokerExchangePairs)
+      ? applyExchangePairs([...config.initialRobotHandIds], visibleExchangePairs)
       : robotId === "poker-3-2"
         ? ["K-crub", "Q-heart"]
         : ["Q-crub", "J-heart"],
@@ -7050,18 +7222,20 @@ function PokerBattle({
   );
   const fieldCards = getCardsById(
     config
-      ? applyExchangePairs([...config.fieldCardIds], confirmedPokerExchangePairs)
+      ? applyExchangePairs([...config.fieldCardIds], visibleExchangePairs)
       : ["A-spade", "K-heart", "Q-daia", "J-crub", "A-daia"],
     generatedScanCards,
   );
   const highLowRobotHand = config
-    ? getCardsById(applyExchangePairs([...config.highLowRobotHandIds], confirmedPokerExchangePairs), generatedScanCards)
+    ? getCardsById(applyExchangePairs([...config.highLowRobotHandIds], visibleExchangePairs), generatedScanCards)
     : [];
   const blackjackRobotHand = getCardsById(blackjackRobotHandIds, generatedScanCards);
-  const scannedPokerCards = getCardsById(scannedPokerCardIds, generatedScanCards);
-  const pokerHighLowRobotZone = "HIGH" as HighLowZoneName;
+  const orderedPokerBlackjackRobotHand = [...blackjackRobotHand].sort((a, b) => getBlackjackOrderValue(b.rank, pastedBlueTexts["blackjack-ace-value"] === "0") - getBlackjackOrderValue(a.rank, pastedBlueTexts["blackjack-ace-value"] === "0"));
+  const scannedPokerCards = getCardsById(scannedPokerCardIds.filter((id) => !consumedPokerScanCardIds.includes(id)), generatedScanCards);
+  const pokerGuaranteedWinOpening = getGuaranteedWinOpening(playerHand.map(getHighLowCardValue), highLowRobotHand.map(getHighLowCardValue));
+  const pokerHighLowRobotZone: HighLowZoneName = pokerGuaranteedWinOpening !== null ? "LOW" : "HIGH";
   const pokerHighLowRobotPlacedCard =
-    activePokerGame === "high-low" ? highLowRobotHand[0] ?? null : null;
+    activePokerGame === "high-low" ? highLowRobotHand[pokerGuaranteedWinOpening ?? 0] ?? null : null;
   const pokerHighLowPlayerPlacedCard =
     playerHand.find((card) => card.id === pokerHighLowPlayerCardId) ?? null;
   const pokerHighLowVisiblePlayerHand =
@@ -7093,7 +7267,7 @@ function PokerBattle({
         ? pokerHighLowPlayerPlacedCard
         : null;
   const pokerHighLowResult =
-    pokerHighLowPlacementConfirmed &&
+    isFinalAllGamesBattle && settledFinalHighLowResult !== null ? settledFinalHighLowResult : pokerHighLowPlacementConfirmed &&
     pokerHighLowHighCard &&
     pokerHighLowLowCard
       ? getHighLowResult(pokerHighLowHighCard, pokerHighLowLowCard)
@@ -7114,13 +7288,13 @@ function PokerBattle({
     playerHand.find((card) => card.id === pokerBlackjackPlacedCardIds[1]) ??
     null;
   const pokerBlackjackRobotFieldCards =
-    blackjackRobotHand[0] && pokerBlackjackFirstCardPlaced
+    orderedPokerBlackjackRobotHand[0] && pokerBlackjackFirstCardPlaced
       ? [
-          blackjackRobotHand[0],
+          orderedPokerBlackjackRobotHand[0],
           ...(pokerBlackjackSecondCardPlaced &&
           !pokerBlackjackSecondPlacementPending &&
-          blackjackRobotHand[1]
-            ? [blackjackRobotHand[1]]
+          orderedPokerBlackjackRobotHand[1]
+            ? [orderedPokerBlackjackRobotHand[1]]
             : []),
         ]
       : [];
@@ -7153,15 +7327,15 @@ function PokerBattle({
       )
     : playerHand;
   const pokerBlackjackVisibleRobotHand = pokerBlackjackFirstCardPlaced
-    ? blackjackRobotHand.slice(
+    ? orderedPokerBlackjackRobotHand.slice(
         pokerBlackjackSecondCardPlaced &&
           !pokerBlackjackSecondPlacementPending
           ? 2
           : 1,
       )
-    : blackjackRobotHand;
+    : orderedPokerBlackjackRobotHand;
   const pokerBlackjackDraggableCardIds =
-    pokerBlackjackStarted && pokerBlackjackPhase === "opening-card"
+    pokerBlackjackFirstPlacementPending ? [] : pokerBlackjackStarted && pokerBlackjackPhase === "opening-card"
       ? playerHand.map((card) => card.id)
       : pokerBlackjackStarted && pokerBlackjackPhase === "first-card"
         ? playerHand
@@ -7174,7 +7348,7 @@ function PokerBattle({
     playerHand.find((card) => card.id === pokerBlackjackDraggingCardId) ?? null;
   const pokerBlackjackResult =
     pokerBlackjackPhase === "result"
-      ? getBlackjackResult(playerHand, blackjackRobotHand, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11)
+      ? settledFinalBlackjackResult ?? getBlackjackResult(playerHand, blackjackRobotHand, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11)
       : null;
   const pokerPlayerHasBlackjack = getBlackjackScore(playerHand, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11) === 21;
   const playerHandCardIds = playerHand.map((card) => card.id);
@@ -7201,6 +7375,8 @@ function PokerBattle({
           ? "draw"
           : "lose"
       : null;
+  const finalRobotChips = pokerResult === "win" ? 100 - finalRobotBet : 100;
+  const finalGameCleared = isFinalGameClear({ highLow: pokerHighLowResult, blackjack: pokerBlackjackResult, poker: pokerResult, robotChips: finalRobotChips });
   const isPokerGameStarted = activePokerGame !== "ready";
   const pokerBattleLost =
     (activePokerGame === "high-low" && pokerHighLowResult !== null && pokerHighLowResult !== "win") ||
@@ -7294,6 +7470,35 @@ function PokerBattle({
           label: "フィールド",
         },
       ];
+
+  function startFinalPhysicalScan(cardIds: string[]) {
+    const cards = scannedPokerCards.filter((card) => cardIds.includes(card.id));
+    const reading = getFinalPhysicalScanReading(cards.map((card) => card.rank), pastedBlueTexts["scan-poker"], pastedBlueTexts["scan-role-name"]);
+    if (!isFinalAllGamesBattle || !reading || remainingScans === 0) {
+      setPokerScanMessage("上手くいかないようだ...");
+      return;
+    }
+    setFinalPhysicalScanIds(cardIds);
+    setFinalPhysicalScanReading(reading);
+    setFinalPhysicalScanSplitIndexes([]);
+    setPokerScanMessage("");
+  }
+
+  function runFinalPhysicalScan() {
+    const cards = scannedPokerCards.filter((card) => finalPhysicalScanIds.includes(card.id));
+    const reading = getFinalPhysicalScanReading(cards.map((card) => card.rank), pastedBlueTexts["scan-poker"], pastedBlueTexts["scan-role-name"]);
+    const cardId = resolveFinalPhysicalScanSplit(normalizeScanIllustrationName(finalPhysicalScanReading));
+    if (!isFinalAllGamesBattle || !reading || !cardId || remainingScans === 0 || scannedPokerCardIds.includes(cardId)) {
+      setPokerScanMessage("上手くいかないようだ...");
+      return;
+    }
+    setConsumedPokerScanCardIds((current) => [...new Set([...current, ...finalPhysicalScanIds])]);
+    setScannedPokerCardIds((current) => [...current, cardId]);
+    setFinalPhysicalScanIds([]);
+    setFinalPhysicalScanReading("");
+    setPokerScanPreviewSrc(null);
+    setPokerScanMessage("現物スキャン成功。2 + 11 = 13でKのカードを生成しました。使用したAとJは消費されます。");
+  }
 
   function resolvePokerScan() {
     const answer = normalizeRiddleAnswer(pokerScanAnswer);
@@ -7404,6 +7609,15 @@ function PokerBattle({
   }
 
   function startPokerSequence() {
+    setHasFinalExchangeTriggered(false);
+    setSettledFinalHighLowResult(null);
+    setSettledFinalBlackjackResult(null);
+    if (isFinalAllGamesBattle && config) {
+      const deferredExchange = pastedBlueTexts["exchange-start-timing"] === "ブラックジャック";
+      const bettingRobotHand = deferredExchange ? getCardsById([...config.initialRobotHandIds], generatedScanCards) : robotHand;
+      const bettingField = deferredExchange ? getCardsById([...config.fieldCardIds], generatedScanCards) : fieldCards;
+      setFinalRobotBet(Math.floor(100 * getPokerRobotWinRate(bettingRobotHand, bettingField)));
+    }
     setPokerResultOverlayDismissed(false);
     setShowPreparation(false);
     resetPokerHighLowPlacement();
@@ -7425,6 +7639,7 @@ function PokerBattle({
 
   function advancePokerSequence() {
     if (activePokerGame === "high-low" && pokerHighLowResult === "win") {
+      if (isFinalAllGamesBattle) setSettledFinalHighLowResult(pokerHighLowResult);
       if (blackjackRobotHand.length > 0) {
         setActivePokerGame("blackjack");
         startPokerBlackjack();
@@ -7544,6 +7759,7 @@ function PokerBattle({
   }
 
   function startPokerBlackjack() {
+    setPokerBlackjackFirstPlacementPending(false);
     setPokerBlackjackPhase("opening-card");
     setPokerBlackjackPlacedCardIds([]);
     setPokerBlackjackSecondPlacementPending(false);
@@ -7569,6 +7785,10 @@ function PokerBattle({
     if (pokerPlayerHasBlackjack || pastedBlueTexts["blackjack-declaration"]) {
       setPokerBlackjackPlacementAnimationMode("hold");
       setShowPokerBlackjackDeclaration(true);
+      if (isFinalBlackjackExchange && (pastedBlueTexts["blackjack-declaration"] ?? "ブラックジャック") === "ブラックジャック") {
+        setSettledFinalBlackjackResult(getBlackjackResult(playerHand, blackjackRobotHand, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11));
+        window.setTimeout(() => setHasFinalExchangeTriggered(true), 500);
+      }
       window.setTimeout(() => {
         setShowPokerBlackjackDeclaration(false);
         setPokerBlackjackSecondPlacementPending(false);
@@ -7601,6 +7821,7 @@ function PokerBattle({
   }
 
   function resetPokerBlackjackPlacement() {
+    setPokerBlackjackFirstPlacementPending(false);
     setPokerBlackjackPhase("idle");
     setPokerBlackjackPlacedCardIds([]);
     setPokerBlackjackSecondPlacementPending(false);
@@ -7627,15 +7848,14 @@ function PokerBattle({
       setPokerBlackjackDragPreviewPoint(null);
       setPokerBlackjackPhase("first-card");
       setPokerBlackjackPlacementAnimation("gentle");
-      setPokerBlackjackPlacementAnimationMode("release");
-      window.setTimeout(() => {
-        setPokerBlackjackPlacementAnimation(null);
-      }, 760);
+      setPokerBlackjackPlacementAnimationMode("hold");
+      setPokerBlackjackFirstPlacementPending(true);
       return;
     }
 
     if (
       pokerBlackjackPhase === "first-card" &&
+      !pokerBlackjackFirstPlacementPending &&
       playerHand.some((card) => card.id === droppedCardId) &&
       !pokerBlackjackPlacedCardIds.includes(droppedCardId)
     ) {
@@ -7644,6 +7864,24 @@ function PokerBattle({
       );
       placePokerBlackjackSecondCard();
     }
+  }
+
+  function confirmPokerBlackjackFirstPlacement() {
+    const card = playerHand.find((item) => item.id === pokerBlackjackPlacedCardIds[0]);
+    if (!card || !isLargestBlackjackCard(card.rank, playerHand.map((item) => item.rank), pastedBlueTexts["blackjack-ace-value"] === "0")) {
+      setPokerBlackjackOrderError(true);
+      return;
+    }
+    setPokerBlackjackFirstPlacementPending(false);
+    setPokerBlackjackPlacementAnimationMode("release");
+    window.setTimeout(() => setPokerBlackjackPlacementAnimation(null), 760);
+  }
+
+  function resetPokerBlackjackFirstPlacement() {
+    setPokerBlackjackFirstPlacementPending(false);
+    setPokerBlackjackPlacedCardIds([]);
+    setPokerBlackjackPhase("opening-card");
+    setPokerBlackjackPlacementAnimation(null);
   }
 
   function startPokerBlackjackDraggingCard(
@@ -7696,6 +7934,9 @@ function PokerBattle({
     reactivateExchangeMode?: boolean;
   } = {}) {
     setIsExchangeApplied(false);
+    setHasFinalExchangeTriggered(false);
+    setSettledFinalHighLowResult(null);
+    setSettledFinalBlackjackResult(null);
     setConfirmedPokerExchangePairs([]);
     setExchangeCardIds([]);
     setTargetSelectionAbility(reactivateExchangeMode ? "exchange" : null);
@@ -7751,13 +7992,6 @@ function PokerBattle({
           tone="hands"
         />
       ) : null}
-      {showFinalTableHint ? (
-        <TutorialDialog
-          onDismiss={onDismissFinalTableHint}
-          text="ポーカーでAのスリーカードを出しても引き分けでこちらの負け。勝つにはフォーカードしか無さそうだ..."
-          tone="quick"
-        />
-      ) : null}
       {showSituationReviewHint ? (
         <TutorialDialog
           onDismiss={() => setShowSituationReviewHint(false)}
@@ -7768,7 +8002,7 @@ function PokerBattle({
       {showCopyPasteUnlockDialog ? (
         <TutorialDialog
           onDismiss={() => setShowCopyPasteUnlockDialog(false)}
-          text={'最後の機能「コピーペースト機能」の解放謎を渡そう'}
+          text={<>最後の機能「コピーペースト機能」を開示<br />小謎の紙も追加する</>}
           tone="hands"
         />
       ) : null}
@@ -7780,10 +8014,9 @@ function PokerBattle({
         />
       ) : null}
       {showPokerZeroBetDialog ? (
-        <TutorialDialog
+        <PlayerCutInDialog
           onDismiss={() => setShowPokerZeroBetDialog(false)}
           text="なぜ賭けたチップが0なんだ...。ロボットの手札とフィールドから算出される勝率は8.9%だったはず...。"
-          tone="hands"
         />
       ) : null}
       {showPokerHighLowDeclaration ? (
@@ -7989,12 +8222,13 @@ function PokerBattle({
                 </div>
               ) : (
                 <p className="rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-black leading-6 text-sky-100">
-                  ロボットがHIGHにカードを置きました。プレイヤーの手札をLOWへ出してください。
+                  ロボットが{pokerHighLowRobotZone}にカードを置きました。プレイヤーの手札を{pokerHighLowRobotZone === "HIGH" ? "LOW" : "HIGH"}へ出してください。
                 </p>
               )}
             </div>
           ) : activePokerGame === "blackjack" ? (
             <div className="grid gap-3">
+              {pokerBlackjackOrderError ? <PlayerCutInDialog text="こちらは数字の小さい方だ。ルール通り大きい方から置こう" onDismiss={() => setPokerBlackjackOrderError(false)} /> : null}
               <BlackjackFieldArea
                 canDropPlayerCard={pokerBlackjackDraggableCardIds.length > 0}
                 onDropPlayerCard={dropPokerBlackjackPlayerCard}
@@ -8008,18 +8242,18 @@ function PokerBattle({
               {showPokerBlackjackDeclaration ? (
                 <BlackjackDeclarationOverlay text={pastedBlueTexts["blackjack-declaration"]} />
               ) : null}
-              {pokerBlackjackSecondPlacementPending ? (
+              {pokerBlackjackFirstPlacementPending || pokerBlackjackSecondPlacementPending ? (
                 <div className="grid grid-cols-2 gap-2 rounded border border-brass/45 bg-black/35 p-3">
                   <button
                     className="min-h-11 rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
-                    onClick={confirmPokerBlackjackSecondPlacement}
+                    onClick={pokerBlackjackFirstPlacementPending ? confirmPokerBlackjackFirstPlacement : confirmPokerBlackjackSecondPlacement}
                     type="button"
                   >
                     確定
                   </button>
                   <button
                     className="min-h-11 rounded border border-white/15 bg-white/8 px-4 text-sm font-black text-white hover:bg-white/14"
-                    onClick={resetPokerBlackjackSecondPlacement}
+                    onClick={pokerBlackjackFirstPlacementPending ? resetPokerBlackjackFirstPlacement : resetPokerBlackjackSecondPlacement}
                     type="button"
                   >
                     選び直し
@@ -8075,7 +8309,7 @@ function PokerBattle({
             </div>
           ) : (
             <div className="grid gap-3">
-              {activePokerGame === "ready" && isExchangeApplied ? <GameStartHandNotice /> : null}
+              {activePokerGame === "ready" && (isExchangeApplied || isFinalAllGamesBattle) ? <GameStartHandNotice /> : null}
               {showPokerSelectedHand ? (
               <PokerSelectableGroup
                 disabled
@@ -8142,7 +8376,7 @@ function PokerBattle({
               ) : null}
               {showPokerSection ? (
                 <>
-                  {isPokerThirdBattle && showPokerSelectedHand ? (
+                  {(isPokerThirdBattle || isFinalAllGamesBattle) && showPokerSelectedHand ? (
                     <section className="border-y border-brass/40 py-3">
                       <p className="text-[11px] font-black text-brass">チップの賭け</p>
                       <div className="mt-2 grid grid-cols-2 gap-3 text-sm font-bold leading-7">
@@ -8154,7 +8388,8 @@ function PokerBattle({
                         <div>
                           <h3 className="text-brass">ポーカーロボット</h3>
                           <p>所持：100chip</p>
-                          <p>ベット：0chip</p>
+                          <p>ベット：{isFinalAllGamesBattle ? finalRobotBet : 0}chip</p>
+                          {isFinalAllGamesBattle && pokerResult === "win" ? <p>対戦後：{finalRobotChips}chip</p> : null}
                         </div>
                       </div>
                     </section>
@@ -8313,6 +8548,7 @@ function PokerBattle({
                   <ExchangeSpecToggle />
                   <ExchangeRuleList samePrintTimingLabel={samePrintTimingLabel} />
                   {isFinalAllGamesBattle ? <ExchangeModeToggleButton className="mt-3" isActive={targetSelectionAbility === "exchange"} isCompleted={remainingExchanges === 0} onClick={togglePokerExchangeMode} /> : null}
+                  <div className="my-3"><GameStartHandNotice timing={isFinalAllGamesBattle ? pastedBlueTexts["exchange-start-timing"] ?? "ゲームスタート" : "ゲームスタート"} /></div>
                   <ExchangeCardSectionPicker
                     onToggleCard={toggleExchangeCard}
                     sections={[
@@ -8352,6 +8588,8 @@ function PokerBattle({
                       ]} />
                       <ScanAnswerPanel
                         answer={pokerScanAnswer} illustration={pokerScanIllustration} splitIndexes={pokerScanSplitIndexes}
+                        inventoryCards={scannedPokerCards}
+                        onPhysicalScan={isFinalAllGamesBattle ? startFinalPhysicalScan : undefined}
                         onAnswerChange={setPokerScanAnswer}
                         onIllustrationChange={(value) => { setPokerScanIllustration(value); setPokerScanSplitIndexes([]); }}
                         onSplitChange={(indexes, value) => { setPokerScanSplitIndexes(indexes); setPokerScanIllustration(value); }}
@@ -8360,6 +8598,23 @@ function PokerBattle({
                       >
                         {pokerScanPreviewSrc ? <ScanTargetPreview alt="今回スキャンした対象" src={pokerScanPreviewSrc} /> : null}
                       </ScanAnswerPanel>
+                      {isFinalAllGamesBattle && finalPhysicalScanReading ? (
+                        <section className="mt-3 rounded border border-sky-300/35 bg-sky-950/20 p-3">
+                          <p className="text-sm font-black text-sky-100">ブラックジャック：21（にじゅういち）</p>
+                          <div className="my-3 flex justify-center gap-2">
+                            {scannedPokerCards.filter((card) => finalPhysicalScanIds.includes(card.id)).map((card) => <PlayingCardView key={card.id} card={card} size="hand" />)}
+                          </div>
+                          <IllustrationSplitSelector
+                            value={finalPhysicalScanReading}
+                            selectedIndexes={finalPhysicalScanSplitIndexes}
+                            onChange={(indexes, value) => {
+                              setFinalPhysicalScanSplitIndexes(indexes);
+                              setFinalPhysicalScanReading(value);
+                            }}
+                          />
+                          <button className="mt-3 min-h-11 w-full rounded bg-brass px-3 text-sm font-black text-stone-950 disabled:bg-stone-700" disabled={remainingScans === 0} onClick={runFinalPhysicalScan} type="button">現物スキャン発動</button>
+                        </section>
+                      ) : null}
                     </>
                   ) : null}
                   </>
@@ -8443,6 +8698,7 @@ function PokerBattle({
             )}
             {!isPokerThirdBattle && !isFinalAllGamesBattle ? (
               <>
+                {pokerPreparationAbility === "exchange" ? <div className="my-3"><GameStartHandNotice /></div> : null}
                 {pokerPreparationAbility === "exchange" ? (
                   <ExchangeSpecToggle />
                 ) : null}
@@ -8492,6 +8748,7 @@ function PokerBattle({
                     />
                     <ScanAnswerPanel
                       answer={pokerScanAnswer}
+                      inventoryCards={scannedPokerCards}
                       physicalScanDisabled={remainingScans === 0}
                       illustration={pokerScanIllustration}
                       splitIndexes={pokerScanSplitIndexes}
@@ -8657,11 +8914,18 @@ function PokerBattle({
                   </div>
                     <button
                       className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-                      onClick={onWin}
+                      onClick={() => {
+                        if (!isFinalAllGamesBattle || finalGameCleared) onWin();
+                        else {
+                          setActivePokerGame("ready");
+                          setShowPreparation(true);
+                        }
+                      }}
                       type="button"
                     >
-                      {isPokerSecondBattle ? "賭けチュートリアルへ" : nextPokerBattleLabel}
+                      {isFinalAllGamesBattle ? finalGameCleared ? "クリア画面へ" : "事前準備へ" : isPokerSecondBattle ? "賭けチュートリアルへ" : nextPokerBattleLabel}
                     </button>
+                    {isFinalAllGamesBattle && !finalGameCleared ? <p className="text-sm font-bold leading-6 text-red-300">全勝しましたが、ロボットに{finalRobotChips}chip残っています。チップを0にして、もう一度全勝しよう。</p> : null}
                 </>
               ) : (
                 <BattleDefeatNotice
@@ -8850,6 +9114,7 @@ function CopyPastePreparationPanel({
   onStart: () => void;
   pasteTarget?: { label: string; text: string };
 }) {
+  const [isSpecVisible, setIsSpecVisible] = useState(true);
   const formatOptions: Array<{ id: CopyPasteFormat; label: string }> = [
     { id: "hiragana", label: "平仮名" },
     { id: "katakana", label: "カタカナ" },
@@ -8865,12 +9130,13 @@ function CopyPastePreparationPanel({
         </p>
         <p className="text-xs font-black text-red-100">残{maxCopyPastes}</p>
       </div>
-      <p className="mt-2 text-sm font-bold leading-6 text-stone-100">
+      <AbilitySpecToggleButton label="コピーペースト機能について" isVisible={isSpecVisible} onToggle={() => setIsSpecVisible((current) => !current)} />
+      {isSpecVisible ? <p className="mt-3 rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
         青字をコピーし、別の青字へ上書きペーストできる。ペースト時の書式は自由に選択できるが、
         <span className="font-black text-red-300">文章の意味が通る場合のみ</span>
         実行できる。
         ルールが変更された場合、ロボットはそのルールに従い勝利判定まで行う。
-      </p>
+      </p> : null}
       <div className="mt-3 grid grid-cols-2 gap-2">
         {formatOptions.map((option) => (
           <button
@@ -9262,6 +9528,7 @@ function HighLowBattle({
   const [exchangeConfirmed, setExchangeConfirmed] = useState(
     exchangePreparation?.confirmed ?? false,
   );
+  const [isHighLowExchangeModeActive, setIsHighLowExchangeModeActive] = useState(false);
   const [exchangeApplied, setExchangeApplied] = useState(
     exchangePreparation?.applied ?? false,
   );
@@ -9323,7 +9590,8 @@ function HighLowBattle({
     : null;
   const configuredRobotOpeningZone =
     preExchangeRobotOpening?.robotOpeningZone ?? null;
-  const defaultRobotCard =
+  const guaranteedWinOpening = getGuaranteedWinOpening(playerHand.map(getHighLowCardValue), robotHand.map(getHighLowCardValue));
+  const defaultRobotCard = guaranteedWinOpening !== null ? robotHand[guaranteedWinOpening] :
     isFinalHighLowBattle
       ? robotHand.find((card) => card.rank === "K") ?? robotHand[0]
       :
@@ -9371,7 +9639,7 @@ function HighLowBattle({
   });
   const tutorialStepText =
     isTutorial && isExchangeApplied && tutorialStep.target === "player-card"
-      ? "エクスチェンジ発動後、ロボットが先にAをHIGHゾーンへ置きました。手札のKをLOWゾーンへドラッグして置いて勝利しましょう。"
+      ? `エクスチェンジ発動後、ロボットが先にAを${robotZone}ゾーンへ置きました。手札の${robotZone === "LOW" ? "A" : "K"}を${robotZone === "LOW" ? "HIGH" : "LOW"}ゾーンへドラッグして置いて勝利しましょう。`
       : tutorialStep.text;
   const draggableCardIds =
     canPlaceCard && !playerZone
@@ -9443,7 +9711,7 @@ function HighLowBattle({
   function startBattle() {
     setBattleStarted(true);
     setRobotZone(
-      configuredRobotOpeningZone ??
+      guaranteedWinOpening !== null ? "LOW" : configuredRobotOpeningZone ??
         getRobotOpeningZone({
           isExchangeCorrect,
           isFinalHighLowBattle,
@@ -9559,6 +9827,7 @@ function HighLowBattle({
   }
 
   function toggleExchangeCard(cardId: string) {
+    if (!isHighLowExchangeModeActive || exchangeConfirmed) return;
     const nextCardIds = exchangeCardIds.includes(cardId)
       ? exchangeCardIds.filter((id) => id !== cardId)
       : exchangeCardIds.length >= 2
@@ -9586,7 +9855,7 @@ function HighLowBattle({
         return;
       }
 
-      if (action === "exchange" && requiresExchangeBeforeStart) {
+      if (action === "preparation" && requiresExchangeBeforeStart) {
         setShowPreparationVehicle(false);
         setShowPreparation(true);
         setShowPreparationIntro(false);
@@ -9660,7 +9929,7 @@ function HighLowBattle({
                   このままではプレイヤーが勝つことはできません。
                 </span>
                 <span className="mt-2 block font-black">
-                  車内に用意した能力を駆使して全勝してください。
+                  車内に用意した能力の内、一つを解放します。
                 </span>
               </p>
               <button
@@ -9700,7 +9969,7 @@ function HighLowBattle({
               このままではプレイヤーが勝つことはできません。
             </span>
             <span className="mt-2 block font-black">
-              車内に用意した能力を駆使して全勝してください。
+              車内に用意した能力の内、一つを解放します。
             </span>
           </TutorialBubble>
           </div>
@@ -9718,6 +9987,22 @@ function HighLowBattle({
           </section>
 
           <section className="mt-4 rounded border border-white/12 bg-black/35 p-3 sm:p-5">
+            <ExchangeModeToggleButton
+              className="mb-4"
+              isActive={isHighLowExchangeModeActive}
+              isCompleted={exchangeConfirmed}
+              onClick={() => {
+                if (isHighLowExchangeModeActive || exchangeConfirmed) {
+                  setIsHighLowExchangeModeActive(false);
+                  setExchangeCardIds([]);
+                  setExchangeConfirmed(false);
+                  setExchangeApplied(false);
+                  onSaveExchangePreparation({ applied: false, cardIds: [], confirmed: false });
+                } else {
+                  setIsHighLowExchangeModeActive(true);
+                }
+              }}
+            />
             <div className="flex items-end justify-between gap-3">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
@@ -9725,13 +10010,17 @@ function HighLowBattle({
                 </p>
                 <h3 className="mt-1 text-xl font-black">交換対象を2枚選択</h3>
               </div>
-              <p className="text-sm font-bold text-stone-300">
+              <p className="rounded bg-white px-2 py-1 text-xs font-black text-stone-950">
                 {exchangeCardIds.length}/2
               </p>
             </div>
 
+            <div className="my-3"><GameStartHandNotice /></div>
             <ExchangeCardSectionPicker
-              sections={exchangeSections}
+              sections={exchangeSections.map((section) => ({
+                ...section,
+                interactionDisabled: !isHighLowExchangeModeActive || exchangeConfirmed,
+              }))}
               selectedCardIds={exchangeCardIds}
               onToggleCard={toggleExchangeCard}
             />
@@ -9753,11 +10042,11 @@ function HighLowBattle({
               ) : null}
               <button
                 className={`min-h-11 rounded px-5 text-sm font-black ${
-                  exchangeCardIds.length === 2 && !exchangeConfirmed
+                  isHighLowExchangeModeActive && exchangeCardIds.length === 2 && !exchangeConfirmed
                     ? "bg-brass text-stone-950 hover:bg-yellow-300"
                     : "cursor-not-allowed bg-stone-700 text-stone-400"
                 }`}
-                disabled={exchangeCardIds.length !== 2 || exchangeConfirmed}
+                disabled={!isHighLowExchangeModeActive || exchangeCardIds.length !== 2 || exchangeConfirmed}
                 onClick={() => {
                   const nextPreparation = {
                     applied: isSelectedExchangeCorrect,
@@ -9765,12 +10054,13 @@ function HighLowBattle({
                     confirmed: true,
                   };
                   setExchangeConfirmed(true);
+                  setIsHighLowExchangeModeActive(false);
                   setExchangeApplied(isSelectedExchangeCorrect);
                   onSaveExchangePreparation(nextPreparation);
                 }}
                 type="button"
               >
-                決定
+                エクスチェンジ決定
               </button>
             </div>
           </section>
@@ -9785,7 +10075,10 @@ function HighLowBattle({
         <a
           className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
           href={backHref}
-          onClick={onBack}
+          onClick={(event) => {
+            event.preventDefault();
+            onBack();
+          }}
           aria-label="ゲーム会場へ"
           title="ゲーム会場へ"
         >
@@ -9912,7 +10205,7 @@ function HighLowBattle({
                   placementAnimation?.zone === "HIGH" ? placementAnimation : null
                 }
                 placeDisabled={robotZone === "HIGH"}
-                spotlight={false}
+                spotlight={isTutorial && tutorialStep.target === "player-card" && robotZone === "LOW"}
                 onDropCard={() => dropPlayerCard("HIGH")}
                 robotPlaced={robotZone === "HIGH"}
                 robotCard={robotZone === "HIGH" ? robotPlacedCard : null}
@@ -9928,7 +10221,7 @@ function HighLowBattle({
                   placementAnimation?.zone === "LOW" ? placementAnimation : null
                 }
                 placeDisabled={robotZone === "LOW"}
-                spotlight={isTutorial && tutorialStep.target === "player-card"}
+                spotlight={isTutorial && tutorialStep.target === "player-card" && robotZone !== "LOW"}
                 onDropCard={() => dropPlayerCard("LOW")}
                 robotPlaced={robotZone === "LOW"}
                 robotCard={robotZone === "LOW" ? robotPlacedCard : null}
@@ -9966,7 +10259,7 @@ function HighLowBattle({
               cards={visiblePlayerHand}
               draggableCardIds={draggableCardIds}
               highlightedCardId={
-                isTutorial && tutorialStep.target === "player-card"
+                isTutorial && !isExchangeApplied && tutorialStep.target === "player-card"
                   ? tutorialPlayerCard?.id
                   : null
               }

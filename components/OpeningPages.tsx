@@ -36,7 +36,7 @@ export function IntroductionScreen() {
         <h1 className="mb-8 text-3xl font-black text-brass sm:text-4xl">Reveal Cards</h1>
         <div className="grid gap-6 text-base font-bold leading-8 sm:text-lg sm:leading-9">
           <p>これからテレビゲーム「Reveal Cards」をプレイしていただきます。</p>
-          <p>このゲームに特段ストーリーはなく、ファイナルステージの勝利条件を満たすことでエンディングへ到達できます。</p>
+          <p>このゲームに特段ストーリーはなく、ファイナルステージの勝利条件を満たすことでクリアすることができます。</p>
           <p className="text-red-300">ファイナルステージは3つのゲームと3つの能力を駆使する必要があり、そのゲームと能力は1stStage～3rdStageで段々と明かされていきます。</p>
           <p>クリアを目指して頑張ってください。</p>
         </div>

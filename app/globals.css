@@ -29,3 +29,19 @@ button,
 input {
   font: inherit;
 }
+
+@keyframes declaration-fade {
+  0% { opacity: 0; }
+  20%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.declaration-overlay {
+  animation: declaration-fade 1s ease-in-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .declaration-overlay {
+    animation: none;
+  }
+}
