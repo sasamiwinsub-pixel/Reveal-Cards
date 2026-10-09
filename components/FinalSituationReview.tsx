@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeft, Check } from "lucide-react";
-import { useState } from "react";
+import { useSessionState } from "@/lib/session-state";
 
 const themes = [
   {
@@ -26,10 +26,10 @@ const themes = [
 ];
 
 export default function FinalSituationReview({ onBack }: { onBack: () => void }) {
-  const [activeTheme, setActiveTheme] = useState(0);
-  const [progress, setProgress] = useState([0, 0]);
-  const [selections, setSelections] = useState<Record<string, number[]>>({});
-  const [errors, setErrors] = useState<Record<string, boolean>>({});
+  const [activeTheme, setActiveTheme] = useSessionState("stage-4:FinalSituationReview:activeTheme", 0);
+  const [progress, setProgress] = useSessionState("stage-4:FinalSituationReview:progress", [0, 0]);
+  const [selections, setSelections] = useSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections", {});
+  const [errors, setErrors] = useSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors", {});
   const theme = themes[activeTheme];
 
   return (

@@ -24,6 +24,8 @@ import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit } from "@/li
 import { getGuaranteedWinOpening } from "@/lib/high-low-opening";
 import { shouldShowReservedExchange } from "@/lib/exchange-timing";
 import { getBlackjackOrderValue, isLargestBlackjackCard } from "@/lib/blackjack-order";
+import { applyExchangePairs } from "@/lib/card-exchange";
+import { clearStageSession, useSessionState } from "@/lib/session-state";
 import { isFinalGameClear } from "@/lib/final-clear";
 import Link from "next/link";
 import {
@@ -895,7 +897,13 @@ const finalBattleDisclosureSections: ExchangeCardSection[] = [
   },
 ];
 
-export default function CasinoGame({
+export default function CasinoGame(props: Parameters<typeof CasinoGameSession>[0]) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  return ready ? <CasinoGameSession {...props} /> : null;
+}
+
+function CasinoGameSession({
   initialBattle = null,
   initialStageId = 1,
   initialPokerBettingTutorial = false,
@@ -908,52 +916,52 @@ export default function CasinoGame({
 }) {
   const initialStage = stages.find((item) => item.id === initialStageId) ?? stages[0];
   const [stageId, setStageId] = useState(initialStage.id);
-  const [hasCompletedNewGameTutorial, setHasCompletedNewGameTutorial] = useState(false);
-  const [, setChips] = useState(initialStage.startingChips);
-  const [, setPlayedRobotIds] = useState<string[]>([]);
-  const [pokerScanCount, setPokerScanCount] = useState(0);
-  const [showPokerBettingTutorial, setShowPokerBettingTutorial] = useState(initialPokerBettingTutorial);
-  const [isPokerBettingRevealed, setIsPokerBettingRevealed] = useState(
-    initialPokerBettingTutorial || initialBattle?.robotId === "poker-3-3",
+  const [hasCompletedNewGameTutorial, setHasCompletedNewGameTutorial] = useSessionState(`stage-${stageId}:CasinoGame:hasCompletedNewGameTutorial`, false);
+  const [, setChips] = useSessionState(`stage-${stageId}:CasinoGame:Chips`, initialStage.startingChips);
+  const [, setPlayedRobotIds] = useSessionState<string[]>(`stage-${stageId}:CasinoGame:PlayedRobotIds`, []);
+  const [pokerScanCount, setPokerScanCount] = useSessionState(`stage-${stageId}:CasinoGame:pokerScanCount`, 0);
+  const [showPokerBettingTutorial, setShowPokerBettingTutorial] = useSessionState(`stage-${stageId}:CasinoGame:showPokerBettingTutorial`, initialPokerBettingTutorial);
+  const [isPokerBettingRevealed, setIsPokerBettingRevealed] = useSessionState(
+    `stage-${stageId}:CasinoGame:isPokerBettingRevealed`, initialPokerBettingTutorial || initialBattle?.robotId === "poker-3-3",
   );
-  const [activeBattle, setActiveBattle] = useState<ActiveBattle | null>(
-    initialBattle ? { ...initialBattle, gameType: getStageTableGameType(initialStage.id) } : null,
+  const [activeBattle, setActiveBattle] = useSessionState<ActiveBattle | null>(
+    `stage-${stageId}:CasinoGame:activeBattle`, initialBattle ? { ...initialBattle, gameType: getStageTableGameType(initialStage.id) } : null,
   );
-  const [isVenueVisible, setIsVenueVisible] = useState(false);
+  const [isVenueVisible, setIsVenueVisible] = useSessionState(`stage-${stageId}:CasinoGame:isVenueVisible`, false);
   const [
     hasReachedHighLowTutorialLosePart,
     setHasReachedHighLowTutorialLosePart,
-  ] = useState(false);
-  const [focusedOptionIndex, setFocusedOptionIndex] = useState(0);
-  const [venueGameType, setVenueGameType] = useState<GameType>(
-    initialStage.id === 1 ? "high-low" : initialStage.id === 3 ? "poker" : "blackjack",
+  ] = useSessionState(`stage-${stageId}:CasinoGame:hasReachedHighLowTutorialLosePart`, false);
+  const [focusedOptionIndex, setFocusedOptionIndex] = useSessionState(`stage-${stageId}:CasinoGame:focusedOptionIndex`, 0);
+  const [venueGameType, setVenueGameType] = useSessionState<GameType>(
+    `stage-${stageId}:CasinoGame:venueGameType`, initialStage.id === 1 ? "high-low" : initialStage.id === 3 ? "poker" : "blackjack",
   );
   const [highLowExchangePreparations, setHighLowExchangePreparations] =
-    useState<Record<string, HighLowExchangePreparation>>({});
-  const [finalScanCatalogEntries, setFinalScanCatalogEntries] = useState<
+    useSessionState<Record<string, HighLowExchangePreparation>>(`stage-${stageId}:CasinoGame:highLowExchangePreparations`, {});
+  const [finalScanCatalogEntries, setFinalScanCatalogEntries] = useSessionState<
     ScanCatalogEntry[]
-  >(initialScanCatalogEntries);
-  const [isFinalDisclosureSeen, setIsFinalDisclosureSeen] = useState(false);
+  >(`stage-${stageId}:CasinoGame:finalScanCatalogEntries`, initialScanCatalogEntries);
+  const [isFinalDisclosureSeen, setIsFinalDisclosureSeen] = useSessionState(`stage-${stageId}:CasinoGame:isFinalDisclosureSeen`, false);
   const [isFinalScanCatalogComplete, setIsFinalScanCatalogComplete] =
-    useState(false);
-  const [isFinalAbilitySpecSeen, setIsFinalAbilitySpecSeen] = useState(false);
+    useSessionState(`stage-${stageId}:CasinoGame:isFinalScanCatalogComplete`, false);
+  const [isFinalAbilitySpecSeen, setIsFinalAbilitySpecSeen] = useSessionState(`stage-${stageId}:CasinoGame:isFinalAbilitySpecSeen`, false);
   const [isRiddleExchangeTimingRevealed, setIsRiddleExchangeTimingRevealed] =
-    useState(false);
+    useSessionState(`stage-${stageId}:CasinoGame:isRiddleExchangeTimingRevealed`, false);
   const [showBlackjackUnlockDialog, setShowBlackjackUnlockDialog] =
-    useState(initialStage.id === 2 && !initialBattle);
+    useSessionState(`stage-${stageId}:CasinoGame:showBlackjackUnlockDialog`, initialStage.id === 2 && !initialBattle);
   const [showPokerUnlockDialog, setShowPokerUnlockDialog] =
-    useState(initialStage.id === 3 && !initialBattle);
+    useSessionState(`stage-${stageId}:CasinoGame:showPokerUnlockDialog`, initialStage.id === 3 && !initialBattle);
   const [isGlobalMenuOpen, setIsGlobalMenuOpen] = useState(false);
   const [isVenueMapOpen, setIsVenueMapOpen] = useState(false);
-  const [isVenueMapRequired, setIsVenueMapRequired] = useState(false);
-  const [showVenueMapInstruction, setShowVenueMapInstruction] = useState(false);
-  const [venueMapCloseSignal, setVenueMapCloseSignal] = useState(0);
+  const [isVenueMapRequired, setIsVenueMapRequired] = useSessionState(`stage-${stageId}:CasinoGame:isVenueMapRequired`, false);
+  const [showVenueMapInstruction, setShowVenueMapInstruction] = useSessionState(`stage-${stageId}:CasinoGame:showVenueMapInstruction`, false);
+  const [venueMapCloseSignal, setVenueMapCloseSignal] = useSessionState(`stage-${stageId}:CasinoGame:venueMapCloseSignal`, 0);
   const requestVenueMapTutorial = useCallback(() => {
     setIsVenueMapRequired(true);
     setShowVenueMapInstruction(true);
   }, []);
   const [hasShownTableHandInfoDialog, setHasShownTableHandInfoDialog] =
-    useState(false);
+    useSessionState(`stage-${stageId}:CasinoGame:hasShownTableHandInfoDialog`, false);
   const hasShownGameSelectTutorial = useSyncExternalStore(
     subscribeGameSelectTutorialSeen,
     getGameSelectTutorialSeenSnapshot,
@@ -1000,16 +1008,16 @@ export default function CasinoGame({
     activeBattle?.gameType === "high-low" &&
     activeBattle.robotId === HIGH_LOW_TUTORIAL_ROBOT_ID &&
     !hasShownTableHandInfoDialog;
-  const [modal, setModal] = useState<{
+  const [modal, setModal] = useSessionState<{
     gameType: GameType;
     kind: ModalKind;
     robot: Robot;
-  } | null>(null);
-  const [expandedGuideImage, setExpandedGuideImage] = useState<{
+  } | null>(`stage-${stageId}:CasinoGame:modal`, null);
+  const [expandedGuideImage, setExpandedGuideImage] = useSessionState<{
     alt: string;
     src: string;
-  } | null>(null);
-  const [modalCloseSignal, setModalCloseSignal] = useState(0);
+  } | null>(`stage-${stageId}:CasinoGame:expandedGuideImage`, null);
+  const [modalCloseSignal, setModalCloseSignal] = useSessionState(`stage-${stageId}:CasinoGame:modalCloseSignal`, 0);
 
   function closeModal() {
     window.dispatchEvent(new Event("casino-rule-modal-closed"));
@@ -1021,6 +1029,7 @@ export default function CasinoGame({
     const destinationStage =
       stages.find((item) => item.id === nextStageId) ?? stage;
     const stageUrl = `/?stage=${destinationStage.id}`;
+    clearStageSession(destinationStage.id);
 
     setStageId(destinationStage.id);
     setShowPokerBettingTutorial(false);
@@ -3133,112 +3142,112 @@ function BlackjackBattle({
   const areRobotHandsExchangeDisabled =
     robotId !== "blackjack-2-1" && robotId !== "blackjack-high-low-2-3";
   const [preparationAbility, setPreparationAbility] =
-    useState<PreparationAbility>(
-      canUseScan ? "scan" : "exchange",
+    useSessionState<PreparationAbility>(
+      `stage-2:BlackjackBattle:${robotId}:preparationAbility`, canUseScan ? "scan" : "exchange",
     );
-  const [scannedItems, setScannedItems] = useState<string[]>([]);
-  const [scanTutorialAnswer, setScanTutorialAnswer] = useState("");
+  const [scannedItems, setScannedItems] = useSessionState<string[]>(`stage-2:BlackjackBattle:${robotId}:scannedItems`, []);
+  const [scanTutorialAnswer, setScanTutorialAnswer] = useSessionState(`stage-2:BlackjackBattle:${robotId}:scanTutorialAnswer`, "");
   const [isScanTutorialAnswerSolved, setIsScanTutorialAnswerSolved] =
-    useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:isScanTutorialAnswerSolved`, false);
   const [scanTutorialIllustrationName, setScanTutorialIllustrationName] =
-    useState("");
-  const [scanTutorialSplit, setScanTutorialSplit] = useState("");
-  const [isScanTutorialComplete, setIsScanTutorialComplete] = useState(false);
-  const [scanTutorialMessage, setScanTutorialMessage] = useState("");
-  const [scanRiddleAnswerOne, setScanRiddleAnswerOne] = useState("");
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:scanTutorialIllustrationName`, "");
+  const [scanTutorialSplit, setScanTutorialSplit] = useSessionState(`stage-2:BlackjackBattle:${robotId}:scanTutorialSplit`, "");
+  const [isScanTutorialComplete, setIsScanTutorialComplete] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isScanTutorialComplete`, false);
+  const [scanTutorialMessage, setScanTutorialMessage] = useSessionState(`stage-2:BlackjackBattle:${robotId}:scanTutorialMessage`, "");
+  const [scanRiddleAnswerOne, setScanRiddleAnswerOne] = useSessionState(`stage-2:BlackjackBattle:${robotId}:scanRiddleAnswerOne`, "");
   const [scanRiddleIllustrationOne, setScanRiddleIllustrationOne] =
-    useState("");
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:scanRiddleIllustrationOne`, "");
   const [
     scanRiddleIllustrationOneSplitIndexes,
     setScanRiddleIllustrationOneSplitIndexes,
-  ] = useState<number[]>([]);
-  const [scanRiddleAnswerTwo, setScanRiddleAnswerTwo] = useState("");
+  ] = useSessionState<number[]>(`stage-2:BlackjackBattle:${robotId}:scanRiddleIllustrationOneSplitIndexes`, []);
+  const [scanRiddleAnswerTwo, setScanRiddleAnswerTwo] = useSessionState(`stage-2:BlackjackBattle:${robotId}:scanRiddleAnswerTwo`, "");
   const [scanRiddleIllustrationTwo, setScanRiddleIllustrationTwo] =
-    useState("");
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:scanRiddleIllustrationTwo`, "");
   const [
     scanRiddleIllustrationTwoSplitIndexes,
     setScanRiddleIllustrationTwoSplitIndexes,
-  ] = useState<number[]>([]);
-  const [postTutorialScanAnswer, setPostTutorialScanAnswer] = useState("");
+  ] = useSessionState<number[]>(`stage-2:BlackjackBattle:${robotId}:scanRiddleIllustrationTwoSplitIndexes`, []);
+  const [postTutorialScanAnswer, setPostTutorialScanAnswer] = useSessionState(`stage-2:BlackjackBattle:${robotId}:postTutorialScanAnswer`, "");
   const [
     postTutorialScanIllustrationName,
     setPostTutorialScanIllustrationName,
-  ] = useState("");
+  ] = useSessionState(`stage-2:BlackjackBattle:${robotId}:postTutorialScanIllustrationName`, "");
   const [
     postTutorialScanSplitIndexes,
     setPostTutorialScanSplitIndexes,
-  ] = useState<number[]>([]);
+  ] = useSessionState<number[]>(`stage-2:BlackjackBattle:${robotId}:postTutorialScanSplitIndexes`, []);
   const [isRiddleExchangeModeActive, setIsRiddleExchangeModeActive] =
-    useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:isRiddleExchangeModeActive`, false);
   const [isCardExchangeModeActive, setIsCardExchangeModeActive] =
-    useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:isCardExchangeModeActive`, false);
   const [isRiddlePrintExchangeApplied, setIsRiddlePrintExchangeApplied] =
-    useState(false);
-  const [fourthScanAnswer, setFourthScanAnswer] = useState("");
-  const [fourthScanIllustration, setFourthScanIllustration] = useState("");
-  const [fourthScanSplitIndexes, setFourthScanSplitIndexes] = useState<
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:isRiddlePrintExchangeApplied`, false);
+  const [fourthScanAnswer, setFourthScanAnswer] = useSessionState(`stage-2:BlackjackBattle:${robotId}:fourthScanAnswer`, "");
+  const [fourthScanIllustration, setFourthScanIllustration] = useSessionState(`stage-2:BlackjackBattle:${robotId}:fourthScanIllustration`, "");
+  const [fourthScanSplitIndexes, setFourthScanSplitIndexes] = useSessionState<
     number[]
-  >([]);
-  const [isFourthScanGenerated, setIsFourthScanGenerated] = useState(false);
-  const [fourthRobotExchangeCardIds, setFourthRobotExchangeCardIds] = useState<
+  >(`stage-2:BlackjackBattle:${robotId}:fourthScanSplitIndexes`, []);
+  const [isFourthScanGenerated, setIsFourthScanGenerated] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isFourthScanGenerated`, false);
+  const [fourthRobotExchangeCardIds, setFourthRobotExchangeCardIds] = useSessionState<
     string[]
-  >([]);
+  >(`stage-2:BlackjackBattle:${robotId}:fourthRobotExchangeCardIds`, []);
   const [
     isFourthRobotExchangeConfirmed,
     setIsFourthRobotExchangeConfirmed,
-  ] = useState(false);
+  ] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isFourthRobotExchangeConfirmed`, false);
   const [
     areScanRiddleAnswersConfirmed,
     setAreScanRiddleAnswersConfirmed,
-  ] = useState(false);
-  const [scanRiddleAnswerResults, setScanRiddleAnswerResults] = useState<{
+  ] = useSessionState(`stage-2:BlackjackBattle:${robotId}:areScanRiddleAnswersConfirmed`, false);
+  const [scanRiddleAnswerResults, setScanRiddleAnswerResults] = useSessionState<{
     one: boolean | null;
     two: boolean | null;
-  }>({ one: null, two: null });
+  }>(`stage-2:BlackjackBattle:${robotId}:scanRiddleAnswerResults`, { one: null, two: null });
   const [
     scanRiddleIllustrationResults,
     setScanRiddleIllustrationResults,
-  ] = useState<{
+  ] = useSessionState<{
     one: boolean | null;
     two: boolean | null;
-  }>({ one: null, two: null });
+  }>(`stage-2:BlackjackBattle:${robotId}:scanRiddleIllustrationResults`, { one: null, two: null });
   const [areScanRiddleAnswersSolved, setAreScanRiddleAnswersSolved] =
-    useState(false);
-  const [scanExchangeChoice, setScanExchangeChoice] = useState<string | null>(
-    null,
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:areScanRiddleAnswersSolved`, false);
+  const [scanExchangeChoice, setScanExchangeChoice] = useSessionState<string | null>(
+    `stage-2:BlackjackBattle:${robotId}:scanExchangeChoice`, null,
   );
-  const [scanGeneratedPreviewSources, setScanGeneratedPreviewSources] = useState<string[]>([]);
-  const [expandedRiddleImage, setExpandedRiddleImage] = useState<{
+  const [scanGeneratedPreviewSources, setScanGeneratedPreviewSources] = useSessionState<string[]>(`stage-2:BlackjackBattle:${robotId}:scanGeneratedPreviewSources`, []);
+  const [expandedRiddleImage, setExpandedRiddleImage] = useSessionState<{
     alt: string;
     src: string;
-  } | null>(null);
+  } | null>(`stage-2:BlackjackBattle:${robotId}:expandedRiddleImage`, null);
   const [showScanPrintedItemsDialog, setShowScanPrintedItemsDialog] =
-    useState(false);
-  const [isScanSpecVisible, setIsScanSpecVisible] = useState(true);
-  const [isScanCardExchanged, setIsScanCardExchanged] = useState(false);
-  const [scanExchangeCardIds, setScanExchangeCardIds] = useState<string[]>([]);
-  const [isScanExchangeConfirmed, setIsScanExchangeConfirmed] = useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:showScanPrintedItemsDialog`, false);
+  const [isScanSpecVisible, setIsScanSpecVisible] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isScanSpecVisible`, true);
+  const [isScanCardExchanged, setIsScanCardExchanged] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isScanCardExchanged`, false);
+  const [scanExchangeCardIds, setScanExchangeCardIds] = useSessionState<string[]>(`stage-2:BlackjackBattle:${robotId}:scanExchangeCardIds`, []);
+  const [isScanExchangeConfirmed, setIsScanExchangeConfirmed] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isScanExchangeConfirmed`, false);
   const [showPhysicalScanGuideDialog, setShowPhysicalScanGuideDialog] =
-    useState(false);
-  const [physicalScanCardIds, setPhysicalScanCardIds] = useState<string[]>([]);
-  const [consumedPhysicalScanCardIds, setConsumedPhysicalScanCardIds] = useState<string[]>([]);
-  const [physicalScanReading, setPhysicalScanReading] = useState("");
-  const [physicalScanSplitIndexes, setPhysicalScanSplitIndexes] = useState<
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:showPhysicalScanGuideDialog`, false);
+  const [physicalScanCardIds, setPhysicalScanCardIds] = useSessionState<string[]>(`stage-2:BlackjackBattle:${robotId}:physicalScanCardIds`, []);
+  const [consumedPhysicalScanCardIds, setConsumedPhysicalScanCardIds] = useSessionState<string[]>(`stage-2:BlackjackBattle:${robotId}:consumedPhysicalScanCardIds`, []);
+  const [physicalScanReading, setPhysicalScanReading] = useSessionState(`stage-2:BlackjackBattle:${robotId}:physicalScanReading`, "");
+  const [physicalScanSplitIndexes, setPhysicalScanSplitIndexes] = useSessionState<
     number[]
-  >([]);
-  const [isPhysicalScanGenerated, setIsPhysicalScanGenerated] = useState(false);
-  const [physicalScanMessage, setPhysicalScanMessage] = useState("");
+  >(`stage-2:BlackjackBattle:${robotId}:physicalScanSplitIndexes`, []);
+  const [isPhysicalScanGenerated, setIsPhysicalScanGenerated] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isPhysicalScanGenerated`, false);
+  const [physicalScanMessage, setPhysicalScanMessage] = useSessionState(`stage-2:BlackjackBattle:${robotId}:physicalScanMessage`, "");
   const [
     showPhysicalScanDisposalDialog,
     setShowPhysicalScanDisposalDialog,
-  ] = useState(false);
+  ] = useSessionState(`stage-2:BlackjackBattle:${robotId}:showPhysicalScanDisposalDialog`, false);
   const [
     showRiddlePrintChangedDialog,
     setShowRiddlePrintChangedDialog,
-  ] = useState(false);
+  ] = useSessionState(`stage-2:BlackjackBattle:${robotId}:showRiddlePrintChangedDialog`, false);
   const physicalScanPanelRef = useRef<HTMLDivElement | null>(null);
-  const [selectedRiddlePrintIds, setSelectedRiddlePrintIds] = useState<string[]>(
-    [],
+  const [selectedRiddlePrintIds, setSelectedRiddlePrintIds] = useSessionState<string[]>(
+    `stage-2:BlackjackBattle:${robotId}:selectedRiddlePrintIds`, [],
   );
   const scannedOneCard = generatedScanCards["scan-10"];
   const scannedTwelveCard = generatedScanCards["scan-12"];
@@ -3362,11 +3371,11 @@ function BlackjackBattle({
               );
             }))
       : false;
-  const [blackjackExchangeCardIds, setBlackjackExchangeCardIds] = useState<
+  const [blackjackExchangeCardIds, setBlackjackExchangeCardIds] = useSessionState<
     string[]
-  >([]);
+  >(`stage-2:BlackjackBattle:${robotId}:blackjackExchangeCardIds`, []);
   const [isBlackjackExchangeConfirmed, setIsBlackjackExchangeConfirmed] =
-    useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:isBlackjackExchangeConfirmed`, false);
   const blackjackExchangeSections: ExchangeCardSection[] =
     config && canExchangePlayerHand
       ? [
@@ -3421,9 +3430,9 @@ function BlackjackBattle({
           generatedScanCards,
         )
       : [];
-  const [phase, setPhase] = useState<BlackjackPhase>("idle");
-  const [settledResult, setSettledResult] = useState<Outcome | null>(null);
-  const [message, setMessage] = useState("全ての対戦に勝利しましょう。");
+  const [phase, setPhase] = useSessionState<BlackjackPhase>(`stage-2:BlackjackBattle:${robotId}:phase`, "idle");
+  const [settledResult, setSettledResult] = useSessionState<Outcome | null>(`stage-2:BlackjackBattle:${robotId}:settledResult`, null);
+  const [message, setMessage] = useSessionState(`stage-2:BlackjackBattle:${robotId}:message`, "全ての対戦に勝利しましょう。");
   const [placementAnimation, setPlacementAnimation] =
     useState<PlacementStyle | null>(null);
   const [placementAnimationMode, setPlacementAnimationMode] =
@@ -3431,35 +3440,35 @@ function BlackjackBattle({
   const [showBlackjackDeclaration, setShowBlackjackDeclaration] =
     useState(false);
   const [blackjackResultOverlayDismissed, setBlackjackResultOverlayDismissed] =
-    useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:blackjackResultOverlayDismissed`, false);
   const [blackjackSecondPlacementPending, setBlackjackSecondPlacementPending] =
-    useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:blackjackSecondPlacementPending`, false);
   const [isFinalPreparationApplied, setIsFinalPreparationApplied] =
-    useState(false);
-  const [showPreparation, setShowPreparation] = useState(false);
-  const [showSecondStageIntro, setShowSecondStageIntro] = useState(
-    robotId === "blackjack-2-1",
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:isFinalPreparationApplied`, false);
+  const [showPreparation, setShowPreparation] = useSessionState(`stage-2:BlackjackBattle:${robotId}:showPreparation`, false);
+  const [showSecondStageIntro, setShowSecondStageIntro] = useSessionState(
+    `stage-2:BlackjackBattle:${robotId}:showSecondStageIntro`, robotId === "blackjack-2-1",
   );
-  const [showScanUnlockDialog, setShowScanUnlockDialog] = useState(
-    robotId === "blackjack-2-2",
+  const [showScanUnlockDialog, setShowScanUnlockDialog] = useSessionState(
+    `stage-2:BlackjackBattle:${robotId}:showScanUnlockDialog`, robotId === "blackjack-2-2",
   );
-  const [hasDismissedScanAbilityIntro, setHasDismissedScanAbilityIntro] = useState(false);
-  const [showTrafficLightScanHint, setShowTrafficLightScanHint] = useState(false);
+  const [hasDismissedScanAbilityIntro, setHasDismissedScanAbilityIntro] = useSessionState(`stage-2:BlackjackBattle:${robotId}:hasDismissedScanAbilityIntro`, false);
+  const [showTrafficLightScanHint, setShowTrafficLightScanHint] = useSessionState(`stage-2:BlackjackBattle:${robotId}:showTrafficLightScanHint`, false);
   const hasShownTrafficLightScanHint = useRef(false);
   const [
     shouldHighlightScanPreparationButton,
     setShouldHighlightScanPreparationButton,
-  ] = useState(robotId === "blackjack-2-2");
+  ] = useSessionState(`stage-2:BlackjackBattle:${robotId}:shouldHighlightScanPreparationButton`, robotId === "blackjack-2-2");
   const [activeBlackjackGame, setActiveBlackjackGame] =
-    useState<BlackjackActiveGame>("ready");
+    useSessionState<BlackjackActiveGame>(`stage-2:BlackjackBattle:${robotId}:activeBlackjackGame`, "ready");
   const [blackjackHighLowPlayerZone, setBlackjackHighLowPlayerZone] =
-    useState<HighLowZoneName | null>(null);
+    useSessionState<HighLowZoneName | null>(`stage-2:BlackjackBattle:${robotId}:blackjackHighLowPlayerZone`, null);
   const [blackjackHighLowPlayerCardId, setBlackjackHighLowPlayerCardId] =
-    useState<string | null>(null);
+    useSessionState<string | null>(`stage-2:BlackjackBattle:${robotId}:blackjackHighLowPlayerCardId`, null);
   const [blackjackHighLowPlacementPending, setBlackjackHighLowPlacementPending] =
-    useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:blackjackHighLowPlacementPending`, false);
   const [blackjackHighLowPlacementConfirmed, setBlackjackHighLowPlacementConfirmed] =
-    useState(false);
+    useSessionState(`stage-2:BlackjackBattle:${robotId}:blackjackHighLowPlacementConfirmed`, false);
   const [blackjackHighLowPlacementAnimation, setBlackjackHighLowPlacementAnimation] =
     useState<{
       mode: "hold" | "release";
@@ -3473,13 +3482,13 @@ function BlackjackBattle({
     x: number;
     y: number;
   } | null>(null);
-  const [blackjackPlacedCardIds, setBlackjackPlacedCardIds] = useState<string[]>(
-    [],
+  const [blackjackPlacedCardIds, setBlackjackPlacedCardIds] = useSessionState<string[]>(
+    `stage-2:BlackjackBattle:${robotId}:blackjackPlacedCardIds`, [],
   );
   const playerFirstCard = playerHand[0] ?? null;
   const orderedBlackjackRobotHand = [...robotHand].sort((a, b) => getBlackjackOrderValue(b.rank) - getBlackjackOrderValue(a.rank));
   const robotFirstCard = orderedBlackjackRobotHand[0] ?? null;
-  const [blackjackFirstPlacementPending, setBlackjackFirstPlacementPending] = useState(false);
+  const [blackjackFirstPlacementPending, setBlackjackFirstPlacementPending] = useSessionState(`stage-2:BlackjackBattle:${robotId}:blackjackFirstPlacementPending`, false);
   const [blackjackOrderError, setBlackjackOrderError] = useState(false);
   const blackjackGuaranteedWinOpening = getGuaranteedWinOpening(playerHand.map(getHighLowCardValue), highLowRobotHand.map(getHighLowCardValue));
   const blackjackHighLowRobotCard = highLowRobotHand[blackjackGuaranteedWinOpening ?? 0] ?? null;
@@ -7011,40 +7020,40 @@ function PokerBattle({
     robotId in pokerBattleConfigs
       ? pokerBattleConfigs[robotId as keyof typeof pokerBattleConfigs]
       : null;
-  const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
-  const [exchangeCardIds, setExchangeCardIds] = useState<string[]>([]);
-  const [confirmedPokerExchangePairs, setConfirmedPokerExchangePairs] = useState<Array<{ firstCardId: string; secondCardId: string }>>([]);
-  const [isExchangeApplied, setIsExchangeApplied] = useState(false);
-  const [hasFinalExchangeTriggered, setHasFinalExchangeTriggered] = useState(false);
-  const [settledFinalHighLowResult, setSettledFinalHighLowResult] = useState<"win" | "lose" | null>(null);
-  const [settledFinalBlackjackResult, setSettledFinalBlackjackResult] = useState<"win" | "lose" | "draw" | null>(null);
-  const [scannedPokerCardIds, setScannedPokerCardIds] = useState<string[]>([]);
-  const [consumedPokerScanCardIds, setConsumedPokerScanCardIds] = useState<string[]>([]);
-  const [finalPhysicalScanIds, setFinalPhysicalScanIds] = useState<string[]>([]);
-  const [finalPhysicalScanReading, setFinalPhysicalScanReading] = useState("");
-  const [finalPhysicalScanSplitIndexes, setFinalPhysicalScanSplitIndexes] = useState<number[]>([]);
+  const [selectedCardIds, setSelectedCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:selectedCardIds`, []);
+  const [exchangeCardIds, setExchangeCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:exchangeCardIds`, []);
+  const [confirmedPokerExchangePairs, setConfirmedPokerExchangePairs] = useSessionState<Array<{ firstCardId: string; secondCardId: string }>>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:confirmedPokerExchangePairs`, []);
+  const [isExchangeApplied, setIsExchangeApplied] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:isExchangeApplied`, false);
+  const [hasFinalExchangeTriggered, setHasFinalExchangeTriggered] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:hasFinalExchangeTriggered`, false);
+  const [settledFinalHighLowResult, setSettledFinalHighLowResult] = useSessionState<"win" | "lose" | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:settledFinalHighLowResult`, null);
+  const [settledFinalBlackjackResult, setSettledFinalBlackjackResult] = useSessionState<"win" | "lose" | "draw" | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:settledFinalBlackjackResult`, null);
+  const [scannedPokerCardIds, setScannedPokerCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:scannedPokerCardIds`, []);
+  const [consumedPokerScanCardIds, setConsumedPokerScanCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:consumedPokerScanCardIds`, []);
+  const [finalPhysicalScanIds, setFinalPhysicalScanIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhysicalScanIds`, []);
+  const [finalPhysicalScanReading, setFinalPhysicalScanReading] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhysicalScanReading`, "");
+  const [finalPhysicalScanSplitIndexes, setFinalPhysicalScanSplitIndexes] = useSessionState<number[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhysicalScanSplitIndexes`, []);
   useEffect(() => {
     onScanCountChange(scannedPokerCardIds.length);
   }, [onScanCountChange, scannedPokerCardIds.length]);
-  const [pokerScanAnswer, setPokerScanAnswer] = useState("");
-  const [pokerBlackjackFirstPlacementPending, setPokerBlackjackFirstPlacementPending] = useState(false);
+  const [pokerScanAnswer, setPokerScanAnswer] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerScanAnswer`, "");
+  const [pokerBlackjackFirstPlacementPending, setPokerBlackjackFirstPlacementPending] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerBlackjackFirstPlacementPending`, false);
   const [pokerBlackjackOrderError, setPokerBlackjackOrderError] = useState(false);
-  const [pokerScanIllustration, setPokerScanIllustration] = useState("");
-  const [pokerScanSplitIndexes, setPokerScanSplitIndexes] = useState<number[]>([]);
-  const [pokerScanSpecVisible, setPokerScanSpecVisible] = useState(true);
-  const [expandedPokerRiddle, setExpandedPokerRiddle] = useState<{ alt: string; src: string } | null>(null);
+  const [pokerScanIllustration, setPokerScanIllustration] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerScanIllustration`, "");
+  const [pokerScanSplitIndexes, setPokerScanSplitIndexes] = useSessionState<number[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerScanSplitIndexes`, []);
+  const [pokerScanSpecVisible, setPokerScanSpecVisible] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerScanSpecVisible`, true);
+  const [expandedPokerRiddle, setExpandedPokerRiddle] = useSessionState<{ alt: string; src: string } | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:expandedPokerRiddle`, null);
   const hasShownPokerRiddleHint = useRef(false);
-  const [showPokerRiddleHint, setShowPokerRiddleHint] = useState(false);
+  const [showPokerRiddleHint, setShowPokerRiddleHint] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showPokerRiddleHint`, false);
   const hasShownCopyPasteHint = useRef(false);
-  const [showCopyPasteHint, setShowCopyPasteHint] = useState(false);
-  const [pokerScanMessage, setPokerScanMessage] = useState("");
-  const [pokerScanPreviewSrc, setPokerScanPreviewSrc] = useState<string | null>(
-    null,
+  const [showCopyPasteHint, setShowCopyPasteHint] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showCopyPasteHint`, false);
+  const [pokerScanMessage, setPokerScanMessage] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerScanMessage`, "");
+  const [pokerScanPreviewSrc, setPokerScanPreviewSrc] = useSessionState<string | null>(
+    `stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerScanPreviewSrc`, null,
   );
   const [pokerPreparationAbility, setPokerPreparationAbility] =
-    useState<PreparationAbility>("exchange");
-  const [showPreparation, setShowPreparation] = useState(false);
-  const [showSituationReview, setShowSituationReview] = useState(false);
+    useSessionState<PreparationAbility>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerPreparationAbility`, "exchange");
+  const [showPreparation, setShowPreparation] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showPreparation`, false);
+  const [showSituationReview, setShowSituationReview] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showSituationReview`, false);
   useEffect(() => {
     function handleGlobalNav(event: Event) {
       const action = (event as CustomEvent<{ action?: GlobalNavAction }>).detail?.action;
@@ -7056,21 +7065,21 @@ function PokerBattle({
     window.addEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
     return () => window.removeEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
   }, []);
-  const [finalRobotBet, setFinalRobotBet] = useState(0);
-  const [hasOpenedSituationReview, setHasOpenedSituationReview] = useState(false);
-  const [showSituationReviewHint, setShowSituationReviewHint] = useState(false);
+  const [finalRobotBet, setFinalRobotBet] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalRobotBet`, 0);
+  const [hasOpenedSituationReview, setHasOpenedSituationReview] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:hasOpenedSituationReview`, false);
+  const [showSituationReviewHint, setShowSituationReviewHint] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showSituationReviewHint`, false);
   const hasShownSituationReviewHint = useRef(false);
-  const [activePokerGame, setActivePokerGame] = useState<
+  const [activePokerGame, setActivePokerGame] = useSessionState<
     "ready" | "high-low" | "blackjack" | "poker" | "result" | "lose"
-  >("ready");
+  >(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:activePokerGame`, "ready");
   const [pokerHighLowPlayerZone, setPokerHighLowPlayerZone] =
-    useState<HighLowZoneName | null>(null);
+    useSessionState<HighLowZoneName | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerHighLowPlayerZone`, null);
   const [pokerHighLowPlayerCardId, setPokerHighLowPlayerCardId] =
-    useState<string | null>(null);
+    useSessionState<string | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerHighLowPlayerCardId`, null);
   const [pokerHighLowPlacementPending, setPokerHighLowPlacementPending] =
-    useState(false);
+    useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerHighLowPlacementPending`, false);
   const [pokerHighLowPlacementConfirmed, setPokerHighLowPlacementConfirmed] =
-    useState(false);
+    useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerHighLowPlacementConfirmed`, false);
   const [pokerHighLowPlacementAnimation, setPokerHighLowPlacementAnimation] =
     useState<{
       mode: "hold" | "release";
@@ -7081,13 +7090,13 @@ function PokerBattle({
     useState<string | null>(null);
   const [pokerHighLowDragPreviewPoint, setPokerHighLowDragPreviewPoint] =
     useState<{ x: number; y: number } | null>(null);
-  const [pokerBlackjackPhase, setPokerBlackjackPhase] = useState<
+  const [pokerBlackjackPhase, setPokerBlackjackPhase] = useSessionState<
     "idle" | "opening-card" | "first-card" | "second-card" | "result"
-  >("idle");
+  >(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerBlackjackPhase`, "idle");
   const [pokerBlackjackPlacedCardIds, setPokerBlackjackPlacedCardIds] =
-    useState<string[]>([]);
+    useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerBlackjackPlacedCardIds`, []);
   const [pokerBlackjackSecondPlacementPending, setPokerBlackjackSecondPlacementPending] =
-    useState(false);
+    useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerBlackjackSecondPlacementPending`, false);
   const [pokerBlackjackPlacementAnimation, setPokerBlackjackPlacementAnimation] =
     useState<PlacementStyle | null>(null);
   const [
@@ -7101,23 +7110,23 @@ function PokerBattle({
   const [showPokerBlackjackDeclaration, setShowPokerBlackjackDeclaration] =
     useState(false);
   const [showPokerRobotPunchDialog, setShowPokerRobotPunchDialog] =
-    useState(false);
+    useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showPokerRobotPunchDialog`, false);
   const [targetSelectionAbility, setTargetSelectionAbility] =
-    useState<TargetSelectionAbility | null>(null);
-  const [copyPasteStep, setCopyPasteStep] = useState<"source" | "target">(
-    "source",
+    useSessionState<TargetSelectionAbility | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:targetSelectionAbility`, null);
+  const [copyPasteStep, setCopyPasteStep] = useSessionState<"source" | "target">(
+    `stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteStep`, "source",
   );
-  const [copiedTargetId, setCopiedTargetId] = useState<string | null>(null);
-  const [pasteTargetId, setPasteTargetId] = useState<string | null>(null);
-  const [selectedBlueTexts, setSelectedBlueTexts] = useState<Record<string, { id: string; label: string; text: string }>>({});
+  const [copiedTargetId, setCopiedTargetId] = useSessionState<string | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copiedTargetId`, null);
+  const [pasteTargetId, setPasteTargetId] = useSessionState<string | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pasteTargetId`, null);
+  const [selectedBlueTexts, setSelectedBlueTexts] = useSessionState<Record<string, { id: string; label: string; text: string }>>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:selectedBlueTexts`, {});
   const [copyPasteFormat, setCopyPasteFormat] =
-    useState<CopyPasteFormat>("hiragana");
-  const [isCopyPasteApplied, setIsCopyPasteApplied] = useState(false);
-  const [copyPasteUseCount, setCopyPasteUseCount] = useState(0);
-  const [isCopyPasteRiddleSolved, setIsCopyPasteRiddleSolved] = useState(robotId === "all-games-last");
-  const [pastedBlueTexts, setPastedBlueTexts] = useState<Record<string, string>>({});
-  const [copyPasteError, setCopyPasteError] = useState("");
-  const [copyPasteSuccessMessage, setCopyPasteSuccessMessage] = useState("");
+    useSessionState<CopyPasteFormat>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteFormat`, "hiragana");
+  const [isCopyPasteApplied, setIsCopyPasteApplied] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:isCopyPasteApplied`, false);
+  const [copyPasteUseCount, setCopyPasteUseCount] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteUseCount`, 0);
+  const [isCopyPasteRiddleSolved, setIsCopyPasteRiddleSolved] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:isCopyPasteRiddleSolved`, robotId === "all-games-last");
+  const [pastedBlueTexts, setPastedBlueTexts] = useSessionState<Record<string, string>>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pastedBlueTexts`, {});
+  const [copyPasteError, setCopyPasteError] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteError`, "");
+  const [copyPasteSuccessMessage, setCopyPasteSuccessMessage] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteSuccessMessage`, "");
   const [showPokerHighLowDeclaration, setShowPokerHighLowDeclaration] = useState(false);
   const maxExchanges = config ? config.maxExchanges : 1;
   const maxExchangeCardSelections = 2;
@@ -7136,8 +7145,8 @@ function PokerBattle({
     maxExchanges - confirmedPokerExchangePairs.length,
   );
   const isPokerSecondBattle = robotId === "poker-3-2";
-  const [showPokerScanRiddlesDialog, setShowPokerScanRiddlesDialog] = useState(
-    robotId === "poker-3-2",
+  const [showPokerScanRiddlesDialog, setShowPokerScanRiddlesDialog] = useSessionState(
+    `stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showPokerScanRiddlesDialog`, robotId === "poker-3-2",
   );
   const pokerScanRiddles = [
         { src: "/riddles/riddle_1.png", label: "①" },
@@ -7150,8 +7159,8 @@ function PokerBattle({
     pokerScanRiddles.push({ src: "/riddles/riddle_5.png", label: "⑤" });
   }
   const isPokerThirdBattle = robotId === "poker-3-3";
-  const [showCopyPasteUnlockDialog, setShowCopyPasteUnlockDialog] = useState(
-    robotId === "poker-3-3",
+  const [showCopyPasteUnlockDialog, setShowCopyPasteUnlockDialog] = useSessionState(
+    `stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showCopyPasteUnlockDialog`, robotId === "poker-3-3",
   );
   const isFinalAllGamesBattle = robotId === "all-games-last";
   const pokerLearningRestriction = !isPokerSecondBattle && !isPokerThirdBattle && !isFinalAllGamesBattle
@@ -7361,8 +7370,8 @@ function PokerBattle({
     ? evaluatePokerHand(selectedPokerHand)
     : null;
   const robotPokerSelection = getBestPokerSelection(robotHand, fieldCards);
-  const [pokerResultOverlayDismissed, setPokerResultOverlayDismissed] = useState(false);
-  const [showPokerZeroBetDialog, setShowPokerZeroBetDialog] = useState(false);
+  const [pokerResultOverlayDismissed, setPokerResultOverlayDismissed] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerResultOverlayDismissed`, false);
+  const [showPokerZeroBetDialog, setShowPokerZeroBetDialog] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showPokerZeroBetDialog`, false);
   const pokerOutcome =
     playerPokerEvaluation && robotPokerSelection
       ? comparePokerHands(playerPokerEvaluation, robotPokerSelection.evaluation)
@@ -9503,42 +9512,42 @@ function HighLowBattle({
   const initialRobotHand = highLowConfig
     ? getCardsById([...highLowConfig.initialRobotHandIds])
     : hand.slice().reverse();
-  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
-  const [dragPreviewPoint, setDragPreviewPoint] = useState<{
+  const [draggingCardId, setDraggingCardId] = useSessionState<string | null>(`stage-${stageId}:HighLowBattle:${robotId}:draggingCardId`, null);
+  const [dragPreviewPoint, setDragPreviewPoint] = useSessionState<{
     x: number;
     y: number;
-  } | null>(null);
-  const [playerPlacedCardId, setPlayerPlacedCardId] = useState<string | null>(
-    null,
+  } | null>(`stage-${stageId}:HighLowBattle:${robotId}:dragPreviewPoint`, null);
+  const [playerPlacedCardId, setPlayerPlacedCardId] = useSessionState<string | null>(
+    `stage-${stageId}:HighLowBattle:${robotId}:playerPlacedCardId`, null,
   );
-  const [battleStarted, setBattleStarted] = useState(false);
-  const [robotZone, setRobotZone] = useState<HighLowZoneName | null>(null);
-  const [playerZone, setPlayerZone] = useState<HighLowZoneName | null>(null);
-  const [showPreparationVehicle, setShowPreparationVehicle] = useState(false);
-  const [showPreparation, setShowPreparation] = useState(false);
-  const [showPreparationIntro, setShowPreparationIntro] = useState(isTutorial);
-  const [showExchangeWarning, setShowExchangeWarning] = useState(false);
+  const [battleStarted, setBattleStarted] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:battleStarted`, false);
+  const [robotZone, setRobotZone] = useSessionState<HighLowZoneName | null>(`stage-${stageId}:HighLowBattle:${robotId}:robotZone`, null);
+  const [playerZone, setPlayerZone] = useSessionState<HighLowZoneName | null>(`stage-${stageId}:HighLowBattle:${robotId}:playerZone`, null);
+  const [showPreparationVehicle, setShowPreparationVehicle] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:showPreparationVehicle`, false);
+  const [showPreparation, setShowPreparation] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:showPreparation`, false);
+  const [showPreparationIntro, setShowPreparationIntro] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:showPreparationIntro`, isTutorial);
+  const [showExchangeWarning, setShowExchangeWarning] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:showExchangeWarning`, false);
   const [showPostExchangeStartDialog, setShowPostExchangeStartDialog] =
-    useState(false);
-  const [winOverlayDismissed, setWinOverlayDismissed] = useState(false);
-  const [hasEnteredPreparation, setHasEnteredPreparation] = useState(false);
-  const [exchangeCardIds, setExchangeCardIds] = useState<string[]>(
-    exchangePreparation?.cardIds ?? [],
+    useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:showPostExchangeStartDialog`, false);
+  const [winOverlayDismissed, setWinOverlayDismissed] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:winOverlayDismissed`, false);
+  const [hasEnteredPreparation, setHasEnteredPreparation] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:hasEnteredPreparation`, false);
+  const [exchangeCardIds, setExchangeCardIds] = useSessionState<string[]>(
+    `stage-${stageId}:HighLowBattle:${robotId}:exchangeCardIds`, exchangePreparation?.cardIds ?? [],
   );
-  const [exchangeConfirmed, setExchangeConfirmed] = useState(
-    exchangePreparation?.confirmed ?? false,
+  const [exchangeConfirmed, setExchangeConfirmed] = useSessionState(
+    `stage-${stageId}:HighLowBattle:${robotId}:exchangeConfirmed`, exchangePreparation?.confirmed ?? false,
   );
-  const [isHighLowExchangeModeActive, setIsHighLowExchangeModeActive] = useState(false);
-  const [exchangeApplied, setExchangeApplied] = useState(
-    exchangePreparation?.applied ?? false,
+  const [isHighLowExchangeModeActive, setIsHighLowExchangeModeActive] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:isHighLowExchangeModeActive`, false);
+  const [exchangeApplied, setExchangeApplied] = useSessionState(
+    `stage-${stageId}:HighLowBattle:${robotId}:exchangeApplied`, exchangePreparation?.applied ?? false,
   );
   const [placementAnimation, setPlacementAnimation] = useState<{
     mode: "hold" | "release";
     styleType: PlacementStyle;
     zone: HighLowZoneName;
   } | null>(null);
-  const [placementPendingConfirm, setPlacementPendingConfirm] = useState(false);
-  const [placementConfirmed, setPlacementConfirmed] = useState(false);
+  const [placementPendingConfirm, setPlacementPendingConfirm] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:placementPendingConfirm`, false);
+  const [placementConfirmed, setPlacementConfirmed] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:placementConfirmed`, false);
   const isSelectedExchangeCorrect =
     Boolean(highLowConfig) &&
     highLowConfig?.correctExchangePairs.some((pair) =>
@@ -10410,23 +10419,6 @@ function swapSelectedCardIds(cardIds: string[], selectedCardIds: string[]) {
     }
 
     return cardId;
-  });
-}
-
-function applyExchangePairs(
-  cardIds: string[],
-  exchangePairs: Array<{ firstCardId: string; secondCardId: string }>,
-) {
-  return cardIds.map((cardId) => {
-    const pair = exchangePairs.find(
-      (item) => item.firstCardId === cardId || item.secondCardId === cardId,
-    );
-
-    if (!pair) {
-      return cardId;
-    }
-
-    return pair.firstCardId === cardId ? pair.secondCardId : pair.firstCardId;
   });
 }
 
