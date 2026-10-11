@@ -27,7 +27,6 @@ import { getBlackjackOrderValue, isLargestBlackjackCard } from "@/lib/blackjack-
 import { applyExchangePairs } from "@/lib/card-exchange";
 import { clearStageSession, useSessionState } from "@/lib/session-state";
 import { isFinalGameClear } from "@/lib/final-clear";
-import Link from "next/link";
 import {
   Fragment,
   createContext,
@@ -1083,6 +1082,20 @@ function CasinoGameSession({
     setActiveBattle({ gameType: getStageTableGameType(stage.id), robotId: robot.id });
   }
 
+  function advanceBattle(robotId: string) {
+    const gameType = getStageTableGameType(stage.id);
+    setPlayedRobotIds((current) => [
+      ...new Set([...current, ...(activeBattle ? [activeBattle.robotId] : [])]),
+    ]);
+    setFocusedOptionIndex(
+      Math.max(0, stage.robots.findIndex((robot) => robot.id === robotId)),
+    );
+    setIsVenueVisible(false);
+    setActiveBattle({ gameType, robotId });
+    window.history.pushState(null, "", `/?stage=${stage.id}&battle=${gameType}&robot=${robotId}`);
+    window.scrollTo(0, 0);
+  }
+
   function getCurrentObjective() {
     if (stage.id === 4 && !ENABLE_FINAL_DISCOVERY_PHASE) {
       return "ロボットのチップを0にして完ぺきな全勝する";
@@ -1175,7 +1188,7 @@ function CasinoGameSession({
         {shouldShowTableHandInfoDialog && !isVenueVisible ? (
           <TutorialDialog
             onDismiss={() => setHasShownTableHandInfoDialog(true)}
-            text="プレイヤーは対戦相手と自分の手札を事前に把握することができます"
+            text="プレイヤーには対戦相手の手札と自分の手札が事前に開示されます"
             tone="hands"
           />
         ) : null}
@@ -1186,6 +1199,8 @@ function CasinoGameSession({
             {isBlackjackBattle ? (
               <BlackjackBattle
                 key={activeBattle.robotId}
+                onNextBattle={advanceBattle}
+                onAdvanceToThirdStage={() => goToStage(3)}
                 hand={hand}
                 isRiddleExchangeTimingRevealed={
                   isRiddleExchangeTimingRevealed
@@ -1201,6 +1216,8 @@ function CasinoGameSession({
               />
             ) : isHighLowBattle ? (
               <HighLowBattle
+                key={activeBattle.robotId}
+                onNextBattle={advanceBattle}
                 backHref={`/?stage=${stage.id}`}
                 hand={hand}
                 isRiddleExchangeTimingRevealed={
@@ -3114,6 +3131,8 @@ type BlackjackActiveGame = "ready" | "high-low" | "blackjack";
 function BlackjackBattle({
   hand,
   isRiddleExchangeTimingRevealed,
+  onNextBattle,
+  onAdvanceToThirdStage,
   onOpenModal,
   onRevealRiddleExchangeTiming,
   robot,
@@ -3121,6 +3140,8 @@ function BlackjackBattle({
 }: {
   hand: PlayingCard[];
   isRiddleExchangeTimingRevealed: boolean;
+  onNextBattle: (robotId: string) => void;
+  onAdvanceToThirdStage: () => void;
   onOpenModal: (kind: ModalKind, gameType: GameType) => void;
   onRevealRiddleExchangeTiming: () => void;
   robot: Robot;
@@ -5662,39 +5683,43 @@ function BlackjackBattle({
           ) : null}
 
           {phase === "result" && result === "win" && robotId === "blackjack-2-1" ? (
-            <Link
+            <button
               className="grid min-h-12 place-items-center rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-              href="/?stage=2&battle=blackjack&robot=blackjack-2-2"
+              onClick={() => onNextBattle("blackjack-2-2")}
+              type="button"
             >
               2戦目へ
-            </Link>
+            </button>
           ) : null}
 
           {phase === "result" && result === "win" && robotId === "blackjack-2-2" ? (
-            <Link
+            <button
               className="grid min-h-12 place-items-center rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-              href="/?stage=2&battle=blackjack&robot=blackjack-2-3"
+              onClick={() => onNextBattle("blackjack-2-3")}
+              type="button"
             >
               3戦目へ
-            </Link>
+            </button>
           ) : null}
 
           {phase === "result" && result === "win" && robotId === "blackjack-2-3" ? (
-            <Link
+            <button
               className="grid min-h-12 place-items-center rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-              href="/?stage=2&battle=blackjack&robot=blackjack-high-low-2-3"
+              onClick={() => onNextBattle("blackjack-high-low-2-3")}
+              type="button"
             >
               4戦目へ
-            </Link>
+            </button>
           ) : null}
 
           {phase === "result" && result === "win" && robotId === "blackjack-high-low-2-3" ? (
-            <Link
+            <button
               className="grid min-h-12 place-items-center rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-              href="/?stage=3"
+              onClick={onAdvanceToThirdStage}
+              type="button"
             >
               第3ステージへ
-            </Link>
+            </button>
           ) : null}
           <div className="hidden">
           <div className="rounded border border-white/10 bg-white/6 p-3">
@@ -6570,10 +6595,12 @@ function FinalCopyPasteWorkbench({ isApplied, onAppliedChange }: {
 }
 
 function CardPlacementAnimation({
+  cardSize = "hand",
   className = "",
   mode = "release",
   styleType,
 }: {
+  cardSize?: "hand" | "zone";
   className?: string;
   mode?: "hold" | "release";
   styleType: PlacementStyle;
@@ -6583,13 +6610,13 @@ function CardPlacementAnimation({
 
   return (
     <div className={`pointer-events-none absolute inset-0 z-20 grid place-items-center overflow-hidden ${className}`}>
-      <div className={animationClass}>
+      <div className={`${animationClass} ${cardSize === "zone" ? "zoneHand" : ""}`}>
         <Image
           alt=""
           className="object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.34)]"
           fill
           priority
-          sizes="144px"
+          sizes={cardSize === "zone" ? "(min-width: 640px) 300px, 200px" : "(min-width: 640px) 200px, 170px"}
           src="/hand.png"
         />
       </div>
@@ -6598,14 +6625,31 @@ function CardPlacementAnimation({
         .holdingHand,
         .snapHand {
           position: absolute;
-          height: 174px;
-          width: 154px;
+          --card-height: 80px;
+          height: calc(var(--card-height) * 2.3);
+          width: calc(var(--card-height) * 1.725);
           transform-origin: center;
+        }
+
+        .zoneHand {
+          --card-height: 96px;
+        }
+
+        @media (min-width: 640px) {
+          .gentleHand,
+          .holdingHand,
+          .snapHand {
+            --card-height: 96px;
+          }
+
+          .zoneHand {
+            --card-height: 144px;
+          }
         }
 
         .holdingHand {
           opacity: 1;
-          transform: translate(-4px, 8px) scale(1.18);
+          transform: translate(-4px, calc(var(--card-height) * -0.45)) scale(1.18);
         }
 
         .gentleHand {
@@ -6619,37 +6663,37 @@ function CardPlacementAnimation({
         @keyframes gentle-place {
           0% {
             opacity: 1;
-            transform: translate(-4px, 8px) scale(1.18);
+            transform: translate(-4px, calc(var(--card-height) * -0.45)) scale(1.18);
           }
           38% {
             opacity: 1;
-            transform: translate(-4px, 8px) scale(1.18);
+            transform: translate(-4px, calc(var(--card-height) * -0.45)) scale(1.18);
           }
           62% {
             opacity: 1;
-            transform: translate(-4px, -2px) scale(1.02);
+            transform: translate(-4px, calc(var(--card-height) * -0.45 - 10px)) scale(1.02);
           }
           100% {
             opacity: 0;
-            transform: translate(-4px, -36px) scale(1);
+            transform: translate(-4px, calc(var(--card-height) * -0.45 - 44px)) scale(1);
           }
         }
 
         @keyframes snap-place {
           0% {
             opacity: 1;
-            transform: translate(-4px, 8px) rotate(-7deg) scale(1.18);
+            transform: translate(-4px, calc(var(--card-height) * -0.45)) rotate(-7deg) scale(1.18);
           }
           32% {
             opacity: 1;
-            transform: translate(-4px, 8px) rotate(-7deg) scale(1.18);
+            transform: translate(-4px, calc(var(--card-height) * -0.45)) rotate(-7deg) scale(1.18);
           }
           48% {
-            transform: translate(-6px, -1px) rotate(-10deg) scale(1.02);
+            transform: translate(-6px, calc(var(--card-height) * -0.45 - 9px)) rotate(-10deg) scale(1.02);
           }
           100% {
             opacity: 0;
-            transform: translate(-10px, -34px) rotate(-4deg) scale(1);
+            transform: translate(-10px, calc(var(--card-height) * -0.45 - 42px)) rotate(-4deg) scale(1);
           }
         }
       `}</style>
@@ -9479,6 +9523,7 @@ function HighLowBattle({
   hand,
   isRiddleExchangeTimingRevealed,
   onAdvanceToSecondStage,
+  onNextBattle,
   onBack,
   onOpenModal,
   onSaveExchangePreparation,
@@ -9492,6 +9537,7 @@ function HighLowBattle({
   hand: PlayingCard[];
   isRiddleExchangeTimingRevealed: boolean;
   onAdvanceToSecondStage: () => void;
+  onNextBattle: (robotId: string) => void;
   onBack: () => void;
   onOpenModal: (kind: ModalKind, gameType: GameType) => void;
   onSaveExchangePreparation: (preparation: HighLowExchangePreparation) => void;
@@ -10337,23 +10383,25 @@ function HighLowBattle({
 
           {robotId === HIGH_LOW_TUTORIAL_ROBOT_ID && highLowResult === "win" ? (
             <div className="mt-3 flex justify-end">
-              <Link
+              <button
                 className="grid min-h-11 place-items-center rounded bg-brass px-5 text-sm font-black text-stone-950 hover:bg-yellow-300"
-                href="/?stage=1&battle=high-low&robot=high-low-1-2"
+                onClick={() => onNextBattle("high-low-1-2")}
+                type="button"
               >
                 2戦目へ
-              </Link>
+              </button>
             </div>
           ) : null}
 
           {robotId === "high-low-1-2" && highLowResult === "win" ? (
             <div className="mt-3 flex justify-end">
-              <Link
+              <button
                 className="grid min-h-11 place-items-center rounded bg-brass px-5 text-sm font-black text-stone-950 hover:bg-yellow-300"
-                href="/?stage=1&battle=high-low&robot=high-low-1-3"
+                onClick={() => onNextBattle("high-low-1-3")}
+                type="button"
               >
                 3戦目へ
-              </Link>
+              </button>
             </div>
           ) : null}
 
@@ -11369,7 +11417,7 @@ function HighLowZone({
         onDropCard();
       }}
     >
-      <span className="absolute left-2 top-1/2 flex -translate-y-1/2 flex-col items-center text-lg font-black leading-none text-white/95 drop-shadow-[0_2px_8px_rgba(0,0,0,0.75)] sm:left-5 sm:text-4xl">
+      <span className="absolute left-2 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center text-lg font-black leading-none text-white/95 drop-shadow-[0_2px_8px_rgba(0,0,0,0.75)] sm:left-5 sm:text-4xl">
         {label.split("").map((letter, index) => (
           <span key={`${label}-${letter}-${index}`}>{letter}</span>
         ))}
@@ -11379,11 +11427,12 @@ function HighLowZone({
       </div>
       {placementAnimation ? (
         <CardPlacementAnimation
+          cardSize="zone"
           mode={placementAnimation.mode}
           styleType={placementAnimation.styleType}
         />
       ) : null}
-      <div className="absolute inset-x-2 bottom-2 flex items-center justify-between gap-1 sm:inset-x-3 sm:bottom-3 sm:gap-2">
+      <div className="absolute inset-x-2 bottom-2 z-30 flex items-center justify-between gap-1 sm:inset-x-3 sm:bottom-3 sm:gap-2">
         {robotPlaced ? (
           <span className="rounded bg-brass px-2 py-1 text-xs font-black text-stone-950">
             ロボット
