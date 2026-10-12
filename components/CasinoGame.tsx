@@ -7535,6 +7535,11 @@ function PokerBattle({
           label: "ポーカーロボットの手札",
         },
         {
+          cards: fieldCards,
+          id: "field",
+          label: "フィールド",
+        },
+        {
           cards: scannedPokerCards,
           id: "scan-generated",
           label: "スキャン生成カード",
@@ -8131,10 +8136,9 @@ function PokerBattle({
         <BlackjackDeclarationOverlay text={pastedBlueTexts["high-low-declaration"] ?? "ハイ＆ロー"} />
       ) : null}
       {showPokerRiddleHint ? (
-        <TutorialDialog
+        <PlayerCutInDialog
           onDismiss={() => setShowPokerRiddleHint(false)}
           text="ポーカーの役一覧を見ると、④で1(ワン)は生成できそうだな"
-          tone="hands"
         />
       ) : null}
       {showPokerRobotPunchDialog ? (
