@@ -1974,7 +1974,6 @@ function PhysicalScanPanel({
   prompt,
   reading,
   readingPrompt,
-  requiredSelectionCount,
   selectedCardIds,
   splitIndexes,
 }: {
@@ -2006,9 +2005,6 @@ function PhysicalScanPanel({
           {prompt}
         </p>
       ) : null}
-      <p className="mt-2 text-xs font-black text-sky-100">
-        選択中: {selectedCardIds.length}/{requiredSelectionCount}枚
-      </p>
       <div className="mt-3 flex flex-wrap justify-center gap-2">
         {cards.map((card) => {
           const selected = selectedCardIds.includes(card.id);
@@ -2072,14 +2068,9 @@ function PhysicalScanPanel({
         {isGenerated ? generatedLabel : "現物スキャン発動"}
       </button>
       {isGenerated ? (
-        <>
-        {generatedCard.rank === "A" ? (
-          <ScanTargetPreview alt="今回スキャンした対象: ワンペア" src={scanTargetImages.onepair} />
-        ) : null}
         <div className="mt-3 flex justify-center rounded border border-emerald-300/35 bg-emerald-950/30 p-3">
           <PlayingCardView card={generatedCard} size="hand" />
         </div>
-        </>
       ) : null}
       {message ? (
         <ScanFeedbackMessage message={message} />
