@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyExchangePairs } from "../lib/card-exchange.ts";
 
+test("declaration exchange preserves the positions of placed blackjack cards", () => {
+  for (const [aceKing, jackKing] of [["scan-K", "K-crub"], ["K-crub", "scan-K"]]) {
+    const pairs = [
+      { firstCardId: "A-daia", secondCardId: aceKing },
+      { firstCardId: "J-heart", secondCardId: jackKing },
+    ];
+    assert.deepEqual(applyExchangePairs(["A-daia", "J-heart"], pairs), [aceKing, jackKing]);
+  }
+});
+
 test("final stage accepts either allocation of the two kings", () => {
   const variants = [
     [{ firstCardId: "K-crub", secondCardId: "J-heart" }, { firstCardId: "A-daia", secondCardId: "scan-K" }],

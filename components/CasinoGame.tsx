@@ -820,7 +820,7 @@ function normalizeRiddleAnswer(value: string) {
 
 function getCheckedInputClass(value: string, result: boolean | null) {
   const base =
-    "min-h-11 rounded border bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none";
+    "min-h-11 min-w-0 w-full max-w-full rounded border bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none";
 
   if (result === true) {
     return `${base} border-emerald-400 ring-4 ring-emerald-400/25`;
@@ -4358,6 +4358,11 @@ function BlackjackBattle({
       return;
     }
 
+    if (robotId === "blackjack-2-3") {
+      setScanTutorialMessage("今しても意味がなさそうだ");
+      return;
+    }
+
     setIsRiddlePrintExchangeApplied(true);
     setIsCardExchangeModeActive(false);
     setScanExchangeCardIds([]);
@@ -7391,11 +7396,19 @@ function PokerBattle({
   const pokerBlackjackSecondCardPlaced =
     pokerBlackjackPhase === "second-card" ||
     pokerBlackjackPhase === "result";
+  const pokerBlackjackDisplayedPlacedCardIds =
+    isFinalBlackjackExchange && hasFinalExchangeTriggered
+      ? applyExchangePairs(pokerBlackjackPlacedCardIds, confirmedPokerExchangePairs)
+      : pokerBlackjackPlacedCardIds;
+  const pokerBlackjackDisplayedPlacedCards = getCardsById(
+    pokerBlackjackDisplayedPlacedCardIds,
+    generatedScanCards,
+  );
   const pokerBlackjackFirstPlacedCard =
-    playerHand.find((card) => card.id === pokerBlackjackPlacedCardIds[0]) ??
+    pokerBlackjackDisplayedPlacedCards[0] ??
     null;
   const pokerBlackjackSecondPlacedCard =
-    playerHand.find((card) => card.id === pokerBlackjackPlacedCardIds[1]) ??
+    pokerBlackjackDisplayedPlacedCards[1] ??
     null;
   const pokerBlackjackRobotFieldCards =
     orderedPokerBlackjackRobotHand[0] && pokerBlackjackFirstCardPlaced
