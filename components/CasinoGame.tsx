@@ -7396,8 +7396,18 @@ function PokerBattle({
   const pokerBlackjackSecondCardPlaced =
     pokerBlackjackPhase === "second-card" ||
     pokerBlackjackPhase === "result";
+  const shouldFinalRobotAllIn = isFinalAllGamesBattle && Boolean(config) && isExchangeApplied && isFinalAllInPreparation({
+    exchangeTiming: pastedBlueTexts["exchange-start-timing"],
+    declaration: pastedBlueTexts["blackjack-declaration"] ?? "ブラックジャック",
+    riddleGame: pastedBlueTexts["riddle-four-game"],
+    scanGame: pastedBlueTexts["scan-poker"],
+    scanRole: pastedBlueTexts["scan-role-name"],
+    playerRanks: getCardsById(applyExchangePairs([...(config?.initialPlayerHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
+    fieldRanks: getCardsById(applyExchangePairs([...(config?.fieldCardIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
+    robotRanks: getCardsById(applyExchangePairs([...(config?.initialRobotHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
+  });
   const pokerBlackjackDisplayedPlacedCardIds =
-    isFinalBlackjackExchange && hasFinalExchangeTriggered
+    shouldFinalRobotAllIn && hasFinalExchangeTriggered
       ? applyExchangePairs(pokerBlackjackPlacedCardIds, confirmedPokerExchangePairs)
       : pokerBlackjackPlacedCardIds;
   const pokerBlackjackDisplayedPlacedCards = getCardsById(
@@ -7498,16 +7508,6 @@ function PokerBattle({
           ? "draw"
           : "lose"
       : null;
-  const shouldFinalRobotAllIn = isFinalAllGamesBattle && Boolean(config) && isExchangeApplied && isFinalAllInPreparation({
-    exchangeTiming: pastedBlueTexts["exchange-start-timing"],
-    declaration: pastedBlueTexts["blackjack-declaration"] ?? "ブラックジャック",
-    riddleGame: pastedBlueTexts["riddle-four-game"],
-    scanGame: pastedBlueTexts["scan-poker"],
-    scanRole: pastedBlueTexts["scan-role-name"],
-    playerRanks: getCardsById(applyExchangePairs([...(config?.initialPlayerHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
-    fieldRanks: getCardsById(applyExchangePairs([...(config?.fieldCardIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
-    robotRanks: getCardsById(applyExchangePairs([...(config?.initialRobotHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
-  });
   const finalRobotBet = shouldFinalRobotAllIn ? 100 : storedFinalRobotBet;
   const finalRobotChips = pokerResult === "win" ? 100 - finalRobotBet : 100;
   const finalGameCleared = isFinalGameClear({ highLow: pokerHighLowResult, blackjack: pokerBlackjackResult, poker: pokerResult, robotChips: finalRobotChips });
