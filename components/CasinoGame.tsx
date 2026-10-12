@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   BookOpen,
+  Check,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -5628,6 +5629,7 @@ function BlackjackBattle({
 
             <BlackjackField
               cards={visibleActivePlayerHand}
+              selectedCardId={blackjackDraggingCardId}
               draggableCardIds={
                 activeBlackjackGame === "blackjack"
                   ? blackjackDraggableCardIds
@@ -7787,7 +7789,7 @@ function PokerBattle({
 
   function placePokerHighLowCard(
     zone: HighLowZoneName,
-    cardId = playerHand[0]?.id,
+    cardId = pokerHighLowDraggingCardId ?? playerHand[0]?.id,
   ) {
     if (
       activePokerGame !== "high-low" ||
@@ -8339,6 +8341,7 @@ function PokerBattle({
               <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
                 <HandPanel
                   cards={pokerHighLowVisiblePlayerHand}
+                  selectedCardId={pokerHighLowDraggingCardId}
                   draggableCardIds={pokerHighLowDraggableCardIds}
                   onCardDragEnd={endPokerHighLowDraggingCard}
                   onCardDragMove={movePokerHighLowDraggingCard}
@@ -8414,6 +8417,7 @@ function PokerBattle({
               <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
                 <BlackjackField
                   cards={pokerBlackjackVisiblePlayerHand}
+                  selectedCardId={pokerBlackjackDraggingCardId}
                   draggableCardIds={pokerBlackjackDraggableCardIds}
                   isBlackjack={false}
                   label="プレイヤーの手札"
@@ -9442,7 +9446,7 @@ function PokerSelectableGroup({
               onClick={() => onToggle(card.id)}
               type="button"
             >
-              <PlayingCardView card={card} size="zone" />
+              <PlayingCardView card={card} selected={selected} size="zone" />
             </button>
           );
         })}
@@ -9853,7 +9857,7 @@ function HighLowBattle({
     setShowPostExchangeStartDialog(isTutorial && isExchangeCorrect);
   }
 
-  function placePlayerCard(zone: "HIGH" | "LOW", cardId = playerDefaultCard?.id) {
+  function placePlayerCard(zone: "HIGH" | "LOW", cardId = draggingCardId ?? playerDefaultCard?.id) {
     if (!canPlaceCard) {
       return;
     }
@@ -10391,6 +10395,7 @@ function HighLowBattle({
             ) : null}
             <HandPanel
               cards={visiblePlayerHand}
+              selectedCardId={draggingCardId}
               draggableCardIds={draggableCardIds}
               highlightedCardId={
                 isTutorial && !isExchangeApplied && tutorialStep.target === "player-card"
@@ -10836,6 +10841,18 @@ function BlackjackFieldSlot({
           ? "border-brass/70 ring-2 ring-brass/25"
           : "border-white/8"
       }`}
+      role={canDropCard ? "button" : undefined}
+      aria-label={canDropCard ? "プレイヤーフィールドへ配置" : undefined}
+      tabIndex={canDropCard ? 0 : undefined}
+      onClick={() => {
+        if (canDropCard) onDropCard?.();
+      }}
+      onKeyDown={(event) => {
+        if (canDropCard && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onDropCard?.();
+        }
+      }}
       onDragOver={(event) => {
         if (canDropCard) {
           event.preventDefault();
@@ -10921,6 +10938,7 @@ function BlackjackField({
   cardContent,
   draggableCardIds = [],
   highlightedCardId = null,
+  selectedCardId = null,
   isBlackjack,
   label,
   notice,
@@ -10936,6 +10954,7 @@ function BlackjackField({
   cardContent?: ReactNode;
   draggableCardIds?: string[];
   highlightedCardId?: string | null;
+  selectedCardId?: string | null;
   isBlackjack: boolean;
   label: string;
   notice?: string;
@@ -10976,6 +10995,7 @@ function BlackjackField({
             card={firstCard}
             draggable={draggableCardIds.includes(firstCard.id)}
             highlighted={highlightedCardId === firstCard.id}
+            selected={selectedCardId === firstCard.id}
             onDragEnd={onCardDragEnd}
             onDragMove={onCardDragMove}
             onDragStart={(point) => onCardDragStart?.(firstCard.id, point)}
@@ -10987,6 +11007,7 @@ function BlackjackField({
             card={secondCard}
             draggable={draggableCardIds.includes(secondCard.id)}
             highlighted={highlightedCardId === secondCard.id}
+            selected={selectedCardId === secondCard.id}
             onDragEnd={onCardDragEnd}
             onDragMove={onCardDragMove}
             onDragStart={(point) => onCardDragStart?.(secondCard.id, point)}
@@ -11536,6 +11557,7 @@ function HandPanel({
   cards,
   draggableCardIds = [],
   highlightedCardId = null,
+  selectedCardId = null,
   onCardDragEnd,
   onCardDragMove,
   onCardDragStart,
@@ -11545,6 +11567,7 @@ function HandPanel({
   cards: PlayingCard[];
   draggableCardIds?: string[];
   highlightedCardId?: string | null;
+  selectedCardId?: string | null;
   onCardDragEnd?: () => void;
   onCardDragMove?: (point: { x: number; y: number } | null) => void;
   onCardDragStart?: (cardId: string, point: { x: number; y: number } | null) => void;
@@ -11564,6 +11587,7 @@ function HandPanel({
             card={card}
             draggable={draggableCardIds.includes(card.id)}
             highlighted={highlightedCardId === card.id}
+            selected={selectedCardId === card.id}
             key={`${owner}-${card.id}`}
             onDragEnd={onCardDragEnd}
             onDragMove={onCardDragMove}
@@ -11613,6 +11637,7 @@ function PlayingCardView({
   card,
   draggable = false,
   highlighted = false,
+  selected = false,
   onDragEnd,
   onDragMove,
   onDragStart,
@@ -11621,6 +11646,7 @@ function PlayingCardView({
   card: PlayingCard;
   draggable?: boolean;
   highlighted?: boolean;
+  selected?: boolean;
   onDragEnd?: () => void;
   onDragMove?: (point: { x: number; y: number } | null) => void;
   onDragStart?: (point: { x: number; y: number } | null) => void;
@@ -11640,6 +11666,17 @@ function PlayingCardView({
       : size === "field"
         ? "h-16 w-11 sm:h-20 sm:w-14"
       : "h-20 w-14 sm:h-24 sm:w-16";
+  const selectionClass = selected
+    ? "-translate-y-1 ring-4 ring-yellow-300 shadow-[0_0_20px_rgba(250,204,21,0.65)]"
+    : "";
+  const selectionMarker = selected ? (
+    <span className="pointer-events-none absolute right-0 top-0 z-10 grid h-5 w-5 place-items-center rounded-bl bg-yellow-300 text-stone-950">
+      <Check size={16} strokeWidth={3} />
+    </span>
+  ) : null;
+  function selectCard() {
+    if (draggable) onDragStart?.(null);
+  }
   function startCardDrag(event: DragEvent<HTMLDivElement>) {
     if (!draggable) {
       return;
@@ -11665,12 +11702,24 @@ function PlayingCardView({
       <div
         className={`relative overflow-hidden rounded border border-brass bg-stone-50 shadow ${sizeClass} ${
           highlighted ? "animate-pulse ring-4 ring-brass/70" : ""
-        } ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
+        } ${selectionClass} ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
+        role={draggable ? "button" : undefined}
+        aria-label={draggable ? `${card.rank} ${card.suit}` : undefined}
+        aria-pressed={draggable ? selected : undefined}
+        tabIndex={draggable ? 0 : undefined}
+        onClick={selectCard}
+        onKeyDown={(event) => {
+          if (draggable && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            selectCard();
+          }
+        }}
         draggable={draggable}
         onDrag={moveCardDrag}
         onDragEnd={onDragEnd}
         onDragStart={startCardDrag}
       >
+        {selectionMarker}
         <Image
           alt={`${card.rank} ${card.suit}`}
           className="object-cover"
@@ -11686,16 +11735,28 @@ function PlayingCardView({
 
   return (
     <div
-      className={`grid place-items-center rounded border border-brass bg-stone-50 text-center font-black shadow ${sizeClass} ${
+      className={`relative grid place-items-center rounded border border-brass bg-stone-50 text-center font-black shadow ${sizeClass} ${selectionClass} ${
         isRed ? "text-casinoRed" : "text-stone-950"
       } ${highlighted ? "animate-pulse ring-4 ring-brass/70" : ""} ${
         draggable ? "cursor-grab active:cursor-grabbing" : ""
       }`}
+      role={draggable ? "button" : undefined}
+      aria-label={draggable ? `${card.rank} ${card.suit}` : undefined}
+      aria-pressed={draggable ? selected : undefined}
+      tabIndex={draggable ? 0 : undefined}
+      onClick={selectCard}
+      onKeyDown={(event) => {
+        if (draggable && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          selectCard();
+        }
+      }}
       draggable={draggable}
       onDrag={moveCardDrag}
       onDragEnd={onDragEnd}
       onDragStart={startCardDrag}
     >
+      {selectionMarker}
       <span className="text-2xl leading-none sm:text-3xl">{card.rank}</span>
       <span className="text-lg leading-none sm:text-xl">{suitSymbols[card.suit]}</span>
     </div>
