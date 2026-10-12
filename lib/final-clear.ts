@@ -4,6 +4,7 @@ export function isFinalAllInPreparation(preparation: {
   riddleGame: string | undefined;
   scanGame: string | undefined;
   scanRole: string | undefined;
+  exchangePairs: { firstCardId: string; secondCardId: string }[];
   playerRanks: string[];
   fieldRanks: string[];
   robotRanks: string[];
@@ -13,6 +14,9 @@ export function isFinalAllInPreparation(preparation: {
     preparation.riddleGame === "ハイ＆ロー" &&
     preparation.scanGame === "ブラックジャック" &&
     preparation.scanRole === "じゅういち" &&
+    preparation.exchangePairs.length === 1 &&
+    [preparation.exchangePairs[0].firstCardId, preparation.exchangePairs[0].secondCardId].includes("A-daia") &&
+    [preparation.exchangePairs[0].firstCardId, preparation.exchangePairs[0].secondCardId].includes("scan-K") &&
     preparation.playerRanks.length === 2 && preparation.playerRanks.every((rank) => rank === "K") &&
     preparation.fieldRanks.filter((rank) => rank === "K").length >= 2 &&
     preparation.robotRanks.length === 2 && preparation.robotRanks.every((rank) => rank === "A");

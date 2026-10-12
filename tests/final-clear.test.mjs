@@ -3,10 +3,10 @@ import test from "node:test";
 import { isFinalGameClear, isFinalAllInPreparation } from "../lib/final-clear.ts";
 import { applyExchangePairs } from "../lib/card-exchange.ts";
 
-test("final correct preparation makes the robot all-in with either king allocation", () => {
+test("final correct preparation requires exchanging the generated king with the player's ace", () => {
   const variants = [
-    [{ firstCardId: "K-crub", secondCardId: "J-heart" }, { firstCardId: "A-daia", secondCardId: "scan-K" }],
-    [{ firstCardId: "K-crub", secondCardId: "A-daia" }, { firstCardId: "scan-K", secondCardId: "J-heart" }],
+    [{ firstCardId: "A-daia", secondCardId: "scan-K" }],
+    [{ firstCardId: "scan-K", secondCardId: "A-daia" }],
   ];
   for (const pairs of variants) {
     const preparation = {
@@ -15,11 +15,16 @@ test("final correct preparation makes the robot all-in with either king allocati
       riddleGame: "ハイ＆ロー",
       scanGame: "ブラックジャック",
       scanRole: "じゅういち",
-      playerRanks: applyExchangePairs(["A-daia", "J-heart"], pairs).map((id) => id === "scan-K" ? "K" : id.split("-")[0]),
+      exchangePairs: pairs,
+      playerRanks: applyExchangePairs(["A-daia", "K-crub"], pairs).map((id) => id === "scan-K" ? "K" : id.split("-")[0]),
       fieldRanks: ["K", "K", "Q", "J"],
       robotRanks: ["A", "A"],
     };
     assert.equal(isFinalAllInPreparation(preparation), true);
+    assert.equal(isFinalAllInPreparation({ ...preparation, exchangePairs: [] }), false);
+    assert.equal(isFinalAllInPreparation({ ...preparation, exchangePairs: [{ firstCardId: "A-daia", secondCardId: "K-spade" }] }), false);
+    assert.equal(isFinalAllInPreparation({ ...preparation, exchangePairs: [{ firstCardId: "J-heart", secondCardId: "scan-K" }] }), false);
+    assert.equal(isFinalAllInPreparation({ ...preparation, exchangePairs: [...pairs, { firstCardId: "J-heart", secondCardId: "K-crub" }] }), false);
     assert.equal(isFinalAllInPreparation({ ...preparation, exchangeTiming: "ゲームスタート" }), false);
     assert.equal(isFinalAllInPreparation({ ...preparation, riddleGame: "ポーカー" }), false);
     assert.equal(isFinalAllInPreparation({ ...preparation, scanGame: "ポーカー" }), false);
@@ -40,4 +45,19 @@ test("final clear requires all three wins and zero robot chips", () => {
       assert.equal(isFinalGameClear({ ...results, [game]: outcome }), false);
     }
   }
+});
+
+test("final player starting with a king needs only one exchange for all-in preparation", () => {
+  const pairs = [{ firstCardId: "A-daia", secondCardId: "scan-K" }];
+  assert.equal(isFinalAllInPreparation({
+    exchangeTiming: "ブラックジャック",
+    declaration: "ブラックジャック",
+    riddleGame: "ハイ＆ロー",
+    scanGame: "ブラックジャック",
+    scanRole: "じゅういち",
+    exchangePairs: pairs,
+    playerRanks: applyExchangePairs(["A-daia", "K-crub"], pairs).map((id) => id === "scan-K" ? "K" : id.split("-")[0]),
+    fieldRanks: ["A", "K", "K", "J"],
+    robotRanks: ["A", "A"],
+  }), true);
 });

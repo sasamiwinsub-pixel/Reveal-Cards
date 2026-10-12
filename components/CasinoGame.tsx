@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
+  Eye,
   Info,
   Lightbulb,
   Map as MapIcon,
@@ -201,9 +202,9 @@ const highLowBattleConfigs = {
   },
   "all-games-last": {
     correctExchangePairs: [],
-    initialPlayerHandIds: ["A-daia", "J-heart"],
-    initialRobotHandIds: ["Q-heart", "K-crub"],
-    robotHighCardAfterExchangeId: "K-crub",
+    initialPlayerHandIds: ["A-daia", "K-crub"],
+    initialRobotHandIds: ["Q-heart", "Q-crub"],
+    robotHighCardAfterExchangeId: "Q-crub",
   },
 } as const;
 
@@ -235,8 +236,8 @@ const blackjackBattleConfigs = {
     initialRobotHandIds: ["Q-daia", "scan-10"],
   },
   "all-games-last": {
-    highLowRobotHandIds: ["Q-heart", "K-crub"],
-    initialPlayerHandIds: ["A-daia", "J-heart"],
+    highLowRobotHandIds: ["Q-heart", "Q-crub"],
+    initialPlayerHandIds: ["A-daia", "K-crub"],
     initialRobotHandIds: ["K-heart", "Q-daia"],
   },
 } as const;
@@ -324,11 +325,11 @@ const pokerBattleConfigs = {
     blackjackRobotHandIds: ["K-heart", "Q-daia"],
     exchangePairs: [],
     fieldCardIds: ["A-crub", "K-spade", "K-daia", "J-crub"],
-    highLowRobotHandIds: ["Q-heart", "K-crub"],
-    initialPlayerHandIds: ["A-daia", "J-heart"],
+    highLowRobotHandIds: ["Q-heart", "Q-crub"],
+    initialPlayerHandIds: ["A-daia", "K-crub"],
     initialRobotHandIds: ["A-spade", "A-heart"],
     maxCopyPastes: 4,
-    maxExchanges: 2,
+    maxExchanges: 1,
     maxScans: 3,
     scanRequirements: [
       {
@@ -430,6 +431,7 @@ function GlobalGameHeader({
       {stageId === 4 && showDevelopmentStory ? (
         <TutorialDialog
           onDismiss={() => setShowDevelopmentStory(false)}
+          dismissOnlyOnButton
           tone="spec"
           text={<><span className="mb-3 block text-lg font-black">ゲームの開発秘話</span><DevelopmentStoryText /></>}
         />
@@ -859,12 +861,12 @@ const ENABLE_FINAL_DISCOVERY_PHASE = false;
 
 const finalBattleDisclosureSections: ExchangeCardSection[] = [
   {
-    cards: getCardsById(["A-daia", "J-heart"]),
+    cards: getCardsById(["A-daia", "K-crub"]),
     id: "final-player-hand",
     label: "自分の手札",
   },
   {
-    cards: getCardsById(["Q-heart", "K-crub"]),
+    cards: getCardsById(["Q-heart", "Q-crub"]),
     id: "final-high-low-robot-hand",
     label: "ハイ＆ローのロボット手札",
   },
@@ -1580,7 +1582,7 @@ function FinalScanCatalogBuilder({
         />
       ) : null}
       {expandedScanRiddle ? <RiddleImageModal {...expandedScanRiddle} onClose={() => setExpandedScanRiddle(null)} /> : null}
-      <details className="mt-3 rounded border border-white/12 bg-black/30 p-3">
+      <details open className="mt-3 rounded border border-white/12 bg-black/30 p-3">
         <summary className="cursor-pointer text-sm font-black leading-6 text-brass">小謎の紙</summary>
         <ScanRiddleImages
           images={[
@@ -1698,6 +1700,9 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
                   <span className="my-7 block text-xl font-black leading-8 text-red-300 sm:text-2xl">「ロボットのチップを0にして全勝する」</span>
                   <span className="mt-3 block">最後の1戦で使われる手札とフィールドが<span className="text-red-300">公開</span>。事前準備を整えて、ファイナルゲームに挑もう</span>
                 </>}
+          </p>
+          <p className="mt-3 text-sm font-bold leading-7 text-red-300">
+            ファイナルゲームでは、これまでのコピーペーストによる変更とエクスチェンジをすべてリセットします。各能力の使用回数もリセットされます。
           </p>
           <div className="mt-5 grid gap-3">
             {finalBattleDisclosureSections.map((section) => (
@@ -1861,7 +1866,7 @@ function ScanTargetPreview({ alt, src }: { alt: string; src: string }) {
   );
 }
 
-function ScanRuleText() {
+function ScanRuleText({ showPhysicalRules = true }: { showPhysicalRules?: boolean }) {
   return (
     <>
       <span className="block">
@@ -1875,23 +1880,26 @@ function ScanRuleText() {
       <span className="block">
         ③エクスチェンジ機能を使ってゲームで利用
       </span>
-      <span className="block">
+      {showPhysicalRules ? <span className="block">
         ※
         <span className="text-red-300">
-          トランプのスキャンはできない
+          小謎内のトランプはスキャンできない
         </span>
-        が、
+      </span> : null}
+      {showPhysicalRules ? <span className="block">
+        ※ただし、
         <SelectableBlueText id="scan-poker">ポーカー</SelectableBlueText>
         として現物のトランプをセットした時に
         <SelectableBlueText id="scan-role-name">役名</SelectableBlueText>
         なら生成できる。
-      </span>
+      </span> : null}
       <span className="mt-5 block">
         イラストの呼称の入力<SelectableBlueText id="scan-example">例</SelectableBlueText>
       </span>
       <span className="block">イチ　ゴ→6</span>
       <span className="block">フォー　カード→4</span>
       <span className="block">レース　クイーン→12</span>
+      <span className="block">レイ　チョウルイ→0</span>
       <span className="block">ひ　ふ　み→和名のためNG</span>
       <span className="block">
         レイチ　ョウルイ→0でも1でもないためNG
@@ -1927,16 +1935,18 @@ function AbilitySpecToggleButton({ label, isVisible, onToggle }: {
 function ScanSpecToggle({
   isVisible,
   onToggle,
+  showPhysicalRules = true,
 }: {
   isVisible: boolean;
   onToggle: () => void;
+  showPhysicalRules?: boolean;
 }) {
   return (
     <>
       <AbilitySpecToggleButton label="スキャン機能について" isVisible={isVisible} onToggle={onToggle} />
       {isVisible ? (
         <p className="mt-3 whitespace-pre-line rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
-          <ScanRuleText />
+          <ScanRuleText showPhysicalRules={showPhysicalRules} />
         </p>
       ) : null}
     </>
@@ -2293,6 +2303,7 @@ function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, o
       </label>
       <label className="grid gap-2 text-sm font-bold text-stone-100">
         イラスト読み方
+        <span className="text-xs text-stone-300">区切りは後から指定</span>
         <input className="min-h-11 min-w-0 w-full rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20" onChange={(event) => onIllustrationChange(event.target.value)} placeholder="イラスト読み方を入力" value={illustration} />
       </label>
       <IllustrationSplitSelector onChange={onSplitChange} selectedIndexes={splitIndexes} value={illustration} />
@@ -2609,12 +2620,14 @@ function TutorialDialog({
   onAction,
   text,
   tone,
+  dismissOnlyOnButton = false,
 }: {
   actionLabel?: string;
   onDismiss: () => void;
   onAction?: () => void;
   text: ReactNode;
   tone: "hands" | "quick" | "rules" | "spec" | "start";
+  dismissOnlyOnButton?: boolean;
 }) {
   const toneClass = {
     hands: "border-cyan-300 bg-cyan-950 text-cyan-50",
@@ -2625,6 +2638,7 @@ function TutorialDialog({
   }[tone];
 
   useEffect(() => {
+    if (dismissOnlyOnButton) return;
     function handleDismissEvent(event: MouseEvent) {
       const target = event.target instanceof Element ? event.target : null;
 
@@ -2662,18 +2676,18 @@ function TutorialDialog({
       document.removeEventListener("mousedown", handleDismissEvent, true);
       document.removeEventListener("focusin", handleFocusIn, true);
     };
-  }, [onDismiss]);
+  }, [onDismiss, dismissOnlyOnButton]);
 
   return (
     <div
       className="fixed inset-0 z-40 grid cursor-default place-items-center bg-black/78 p-4 text-left backdrop-blur-[3px]"
       onClick={(event) => {
-        if (event.target === event.currentTarget) {
+        if (!dismissOnlyOnButton && event.target === event.currentTarget) {
           onDismiss();
         }
       }}
       onPointerDown={(event) => {
-        if (event.target === event.currentTarget) {
+        if (!dismissOnlyOnButton && event.target === event.currentTarget) {
           onDismiss();
         }
       }}
@@ -2684,7 +2698,7 @@ function TutorialDialog({
         onClick={(event) => {
           event.stopPropagation();
 
-          if (!actionLabel) {
+          if (!dismissOnlyOnButton && !actionLabel) {
             onDismiss();
           }
         }}
@@ -2715,9 +2729,9 @@ function TutorialDialog({
             }}
             onPointerDown={(event) => {
               event.stopPropagation();
-              onDismiss();
+              if (!dismissOnlyOnButton) onDismiss();
             }}
-            onFocus={onDismiss}
+            onFocus={dismissOnlyOnButton ? undefined : onDismiss}
             type="button"
           >
             閉じる
@@ -3238,6 +3252,8 @@ function BlackjackBattle({
   const [showScanPrintedItemsDialog, setShowScanPrintedItemsDialog] =
     useSessionState(`stage-2:BlackjackBattle:${robotId}:showScanPrintedItemsDialog`, false);
   const [isScanSpecVisible, setIsScanSpecVisible] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isScanSpecVisible`, true);
+  const [hasUnlockedScanSpec, setHasUnlockedScanSpec] = useSessionState(`stage-2:BlackjackBattle:${robotId}:hasUnlockedScanSpec`, false);
+  const [hasUnlockedPhysicalScanSpec, setHasUnlockedPhysicalScanSpec] = useSessionState(`stage-2:BlackjackBattle:${robotId}:hasUnlockedPhysicalScanSpec`, false);
   const [isScanCardExchanged, setIsScanCardExchanged] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isScanCardExchanged`, false);
   const [scanExchangeCardIds, setScanExchangeCardIds] = useSessionState<string[]>(`stage-2:BlackjackBattle:${robotId}:scanExchangeCardIds`, []);
   const [isScanExchangeConfirmed, setIsScanExchangeConfirmed] = useSessionState(`stage-2:BlackjackBattle:${robotId}:isScanExchangeConfirmed`, false);
@@ -3362,7 +3378,7 @@ function BlackjackBattle({
                 {
                   cards: scanGeneratedDisplayCards,
                   id: "scan-generated-card",
-                  label: "スキャン生成カード",
+                  label: "所持カード",
                 },
               ]
             : []),
@@ -3463,6 +3479,7 @@ function BlackjackBattle({
     useState<"hold" | "release">("release");
   const [showBlackjackDeclaration, setShowBlackjackDeclaration] =
     useState(false);
+  const [showBlackjackDrawDialog, setShowBlackjackDrawDialog] = useState(false);
   const [blackjackResultOverlayDismissed, setBlackjackResultOverlayDismissed] =
     useSessionState(`stage-2:BlackjackBattle:${robotId}:blackjackResultOverlayDismissed`, false);
   const [blackjackSecondPlacementPending, setBlackjackSecondPlacementPending] =
@@ -3568,7 +3585,7 @@ function BlackjackBattle({
       ? settledResult ?? getBlackjackResult(playerHand, robotHand)
       : null;
   const showBlackjackResultOverlay =
-    (result === "win" || result === "lose") && !blackjackResultOverlayDismissed;
+    (result === "win" || result === "lose") && !blackjackResultOverlayDismissed && !showBlackjackDrawDialog;
   const samePrintTimingLabel = isRiddleExchangeTimingRevealed
     ? "小謎の紙"
     : "対象が同じ紙面上の場合";
@@ -3577,6 +3594,7 @@ function BlackjackBattle({
       <button
         className="min-h-11 rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
         onClick={blackjackFirstPlacementPending ? confirmBlackjackFirstPlacement : confirmBlackjackSecondPlacement}
+        disabled={showBlackjackDeclaration}
         type="button"
       >
         確定
@@ -3584,6 +3602,7 @@ function BlackjackBattle({
       <button
         className="min-h-11 rounded border border-white/15 bg-white/8 px-4 text-sm font-black text-white hover:bg-white/14"
         onClick={blackjackFirstPlacementPending ? resetBlackjackFirstPlacement : resetBlackjackSecondPlacement}
+        disabled={showBlackjackDeclaration}
         type="button"
       >
         選び直し
@@ -3810,6 +3829,7 @@ function BlackjackBattle({
 
   function revealSecondCard() {
     const blackjackOutcome = getBlackjackResult(playerHand, robotHand);
+    if (blackjackOutcome === "draw") setShowBlackjackDrawDialog(true);
     const outcome =
       blackjackOutcome === "win" &&
       (highLowChainResult === null || highLowChainResult === "win")
@@ -3841,6 +3861,7 @@ function BlackjackBattle({
   }
 
   function confirmBlackjackSecondPlacement() {
+    if (showBlackjackDeclaration) return;
     setPlacementAnimation("gentle");
 
     if (playerHasBlackjack) {
@@ -3867,6 +3888,7 @@ function BlackjackBattle({
   }
 
   function resetBlackjackSecondPlacement() {
+    if (showBlackjackDeclaration) return;
     setBlackjackSecondPlacementPending(false);
     setBlackjackDraggingCardId(null);
     setBlackjackDragPreviewPoint(null);
@@ -4045,6 +4067,8 @@ function BlackjackBattle({
     }
 
     setAreScanRiddleAnswersConfirmed(true);
+    setHasUnlockedScanSpec(true);
+    setIsScanSpecVisible(true);
     if (isPrintedScanBattle && !hasShownTrafficLightScanHint.current) {
       hasShownTrafficLightScanHint.current = true;
       setShowTrafficLightScanHint(true);
@@ -4183,6 +4207,8 @@ function BlackjackBattle({
     setIsCardExchangeModeActive(false);
 
     if (isCorrect && robotId === "blackjack-2-2") {
+      setHasUnlockedPhysicalScanSpec(true);
+      setIsScanSpecVisible(true);
       setShowPhysicalScanGuideDialog(true);
     }
   }
@@ -4469,6 +4495,13 @@ function BlackjackBattle({
   return (
     <div className="min-h-[620px] bg-[#071b12] text-white">
       {blackjackOrderError ? <PlayerCutInDialog text="こちらは数字の小さい方だ。ルール通り大きい方から置こう" onDismiss={() => setBlackjackOrderError(false)} /> : null}
+      {showBlackjackDrawDialog ? (
+        <TutorialDialog
+          text="引き分けになったため、ブラックジャックロボットに倒された。"
+          tone="hands"
+          onDismiss={() => setShowBlackjackDrawDialog(false)}
+        />
+      ) : null}
       {isRiddleExchangeModeActive || isCardExchangeModeActive ? (
         <div className="pointer-events-none fixed inset-0 z-[60] border-[10px] border-red-500/80 shadow-[inset_0_0_42px_rgba(239,68,68,0.75)]" />
       ) : null}
@@ -4506,7 +4539,7 @@ function BlackjackBattle({
       {showTrafficLightScanHint ? (
         <TutorialDialog
           onDismiss={() => setShowTrafficLightScanHint(false)}
-          text="⓪の緑黄赤の丸を信号機としてスキャンすることはできない。⓪の謎で信号機として捉えることがないためだ"
+          text="ちなみに、⓪の緑黄赤の丸を信号機としてスキャンすることはできない。⓪の謎で信号機として捉えることがないためだ"
           tone="hands"
         />
       ) : null}
@@ -4606,6 +4639,7 @@ function BlackjackBattle({
 
             {canExchangePlayerHand ? (
               <div className="rounded border border-brass/50 bg-brass/10 p-3">
+                <ExchangeSpecToggle />
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
                   事前準備
                 </p>
@@ -4697,6 +4731,14 @@ function BlackjackBattle({
                 </div>
                 )}
 
+                {preparationAbility === "scan" && (!isPrintedScanBattle || hasUnlockedScanSpec || areScanRiddleAnswersConfirmed || isScanExchangeConfirmed) ? (
+                  <ScanSpecToggle
+                    isVisible={isScanSpecVisible}
+                    onToggle={() => setIsScanSpecVisible((current) => !current)}
+                    showPhysicalRules={!isPrintedScanBattle || hasUnlockedPhysicalScanSpec || (isScanExchangeConfirmed && isScanExchangeCorrect)}
+                  />
+                ) : null}
+                {preparationAbility === "exchange" ? <ExchangeSpecToggle /> : null}
                 {preparationAbility === "scan" ? (
                   <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
                     {!isPrintedScanBattle ? (
@@ -4776,6 +4818,7 @@ function BlackjackBattle({
                           </label>
                           <label className="grid gap-2 text-sm font-bold text-stone-100">
                             イラスト読み方
+                            <span className="text-xs text-stone-300">区切りは後から指定</span>
                             <input
                               className="min-h-11 rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20"
                               onChange={(event) => {
@@ -4892,12 +4935,6 @@ function BlackjackBattle({
                             src="/riddles/riddle_0.png"
                           />
                         </details>
-                        <ScanSpecToggle
-                          isVisible={isScanSpecVisible}
-                          onToggle={() =>
-                            setIsScanSpecVisible((current) => !current)
-                          }
-                        />
                         <p className="mt-3 text-[11px] font-black uppercase tracking-[0.18em] text-brass">
                           印刷済み謎
                         </p>
@@ -5009,6 +5046,7 @@ function BlackjackBattle({
                             </p>
                             <label className="grid gap-2 text-sm font-bold text-stone-100">
                               小謎①のイラストの呼称（10が生成できるイラストを探そう）
+                              <span className="text-xs text-stone-300">区切りは後から指定</span>
                               <input
                                 className={getCheckedInputClass(
                                   scanRiddleIllustrationOne,
@@ -5045,6 +5083,7 @@ function BlackjackBattle({
                             ) : null}
                             <label className="grid gap-2 text-sm font-bold text-stone-100">
                               小謎②のイラストの呼称（12が生成できるイラストを探そう）
+                              <span className="text-xs text-stone-300">区切りは後から指定</span>
                               <input
                                 className={getCheckedInputClass(
                                   scanRiddleIllustrationTwo,
@@ -5349,7 +5388,7 @@ function BlackjackBattle({
                           cards: fourthScanGeneratedExchangeCards,
                           interactionDisabled: !canSelectFourthRobotExchangeCards,
                           id: "fourth-preview-scan-generated-card",
-                          label: "スキャン生成カード",
+                          label: "所持カード",
                         },
                       ]}
                       selectedCardIds={fourthRobotExchangeCardIds}
@@ -5398,7 +5437,7 @@ function BlackjackBattle({
                         setIsScanSpecVisible((current) => !current)
                       }
                     />
-                    <details className="rounded border border-white/12 bg-black/25 p-3">
+                    <details open className="rounded border border-white/12 bg-black/25 p-3">
                       <summary className="cursor-pointer text-sm font-black leading-6 text-brass">
                         小謎の紙
                       </summary>
@@ -5885,7 +5924,7 @@ function BlackjackBattle({
                   />
                   <div className="mt-3 rounded border border-white/12 bg-white/8 p-3">
                     <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
-                      スキャン生成カード
+                      所持カード
                     </p>
                     <div className="mt-3 flex min-h-28 items-center justify-center rounded border border-dashed border-white/20 bg-black/25 p-3">
                       {shouldShowScanGeneratedCards ? (
@@ -6054,9 +6093,13 @@ function BlackjackBattle({
                         ゴールは5を含んでいますが、イラストではなく文字のため生成できません。
                         下部に信号機のようなものも見えますが、謎内で信号機と呼んでいないためスキャン対象にはできません。
                       </p>
-                      <p className="mt-3 text-sm leading-6 text-stone-100">
-                        <ScanRuleText />
-                      </p>
+                      {hasUnlockedScanSpec || areScanRiddleAnswersConfirmed || isScanExchangeConfirmed ? (
+                        <ScanSpecToggle
+                          isVisible={isScanSpecVisible}
+                          onToggle={() => setIsScanSpecVisible((current) => !current)}
+                          showPhysicalRules={hasUnlockedPhysicalScanSpec || (isScanExchangeConfirmed && isScanExchangeCorrect)}
+                        />
+                      ) : null}
                       <div className="mt-3 rounded border border-brass/45 bg-black/30 p-3">
                         <p className="text-sm font-black leading-6 text-brass">
                           それぞれの小謎でカード生成に使えるイラストを探そう
@@ -6172,6 +6215,7 @@ function BlackjackBattle({
                           </p>
                           <label className="grid gap-2 text-sm font-bold text-stone-100">
                             小謎①のイラストの呼称（10が生成できるイラストを探そう）
+                            <span className="text-xs text-stone-300">区切りは後から指定</span>
                             <input
                               className={getCheckedInputClass(
                                 scanRiddleIllustrationOne,
@@ -6208,6 +6252,7 @@ function BlackjackBattle({
                           ) : null}
                           <label className="grid gap-2 text-sm font-bold text-stone-100">
                             小謎②のイラストの呼称（12が生成できるイラストを探そう）
+                            <span className="text-xs text-stone-300">区切りは後から指定</span>
                             <input
                               className={getCheckedInputClass(
                                 scanRiddleIllustrationTwo,
@@ -6638,7 +6683,7 @@ function FinalCopyPasteWorkbench({ isApplied, onAppliedChange }: {
         }}
       />
       <CopyPasteGameSpecifications onOpenGuideImage={setExpandedImage} />
-      <details className="mt-3 rounded border border-white/15 bg-black/30 p-3">
+      <details open className="mt-3 rounded border border-white/15 bg-black/30 p-3">
         <summary className="cursor-pointer text-sm font-black text-brass">小謎の紙</summary>
         <div className="relative mt-3 overflow-hidden rounded bg-white">
           <Image alt="小謎の紙" className="h-auto w-full" height={900} src="/riddles/riddle_4.png" width={1600} />
@@ -6806,7 +6851,7 @@ function HighlightedBlackjackRuleText() {
         <SelectableBlueText id="blackjack-ace-value">11</SelectableBlueText>
         として扱い、それ以外は数字通り
       </span>
-      <span className="mt-3 block">①数字の大きい1枚目を置き、2枚目を重ねて置く</span>
+      <span className="mt-3 block">①数字の大きい1枚目を置き、2枚目を重ねて置く（21を超えても②へ進む）</span>
       <span className="block">
         ②
         <SelectableBlueText id="blackjack-declaration">ブラックジャック</SelectableBlueText>
@@ -7215,6 +7260,7 @@ function PokerBattle({
     useState<{ x: number; y: number } | null>(null);
   const [showPokerBlackjackDeclaration, setShowPokerBlackjackDeclaration] =
     useState(false);
+  const [showPokerBlackjackDrawDialog, setShowPokerBlackjackDrawDialog] = useState(false);
   const [showPokerRobotPunchDialog, setShowPokerRobotPunchDialog] =
     useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showPokerRobotPunchDialog`, false);
   const [targetSelectionAbility, setTargetSelectionAbility] =
@@ -7403,6 +7449,7 @@ function PokerBattle({
     riddleGame: pastedBlueTexts["riddle-four-game"],
     scanGame: pastedBlueTexts["scan-poker"],
     scanRole: pastedBlueTexts["scan-role-name"],
+    exchangePairs: confirmedPokerExchangePairs,
     playerRanks: getCardsById(applyExchangePairs([...(config?.initialPlayerHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
     fieldRanks: getCardsById(applyExchangePairs([...(config?.fieldCardIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
     robotRanks: getCardsById(applyExchangePairs([...(config?.initialRobotHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
@@ -7569,7 +7616,7 @@ function PokerBattle({
         {
           cards: scannedPokerCards,
           id: "scan-generated",
-          label: "スキャン生成カード",
+          label: "所持カード",
         },
       ]
     : [
@@ -7936,7 +7983,9 @@ function PokerBattle({
   }
 
   function confirmPokerBlackjackSecondPlacement() {
+    if (showPokerBlackjackDeclaration) return;
     setPokerBlackjackPlacementAnimation("gentle");
+    const isDraw = getBlackjackResult(playerHand, blackjackRobotHand, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11) === "draw";
 
     if (pokerPlayerHasBlackjack || pastedBlueTexts["blackjack-declaration"]) {
       setPokerBlackjackPlacementAnimationMode("hold");
@@ -7953,6 +8002,7 @@ function PokerBattle({
       window.setTimeout(() => {
         setPokerBlackjackPlacementAnimation(null);
         setPokerBlackjackPhase("result");
+        if (isDraw) setShowPokerBlackjackDrawDialog(true);
       }, 1760);
       return;
     }
@@ -7962,10 +8012,12 @@ function PokerBattle({
     window.setTimeout(() => {
       setPokerBlackjackPlacementAnimation(null);
       setPokerBlackjackPhase("result");
+      if (isDraw) setShowPokerBlackjackDrawDialog(true);
     }, 760);
   }
 
   function resetPokerBlackjackSecondPlacement() {
+    if (showPokerBlackjackDeclaration) return;
     setPokerBlackjackSecondPlacementPending(false);
     setPokerBlackjackDraggingCardId(null);
     setPokerBlackjackDragPreviewPoint(null);
@@ -8127,7 +8179,7 @@ function PokerBattle({
             : ""
       }`}
     >
-      {(pokerResult === "win" || pokerBattleLost) && !showPokerRobotPunchDialog && !pokerResultOverlayDismissed ? (
+      {(pokerResult === "win" || pokerBattleLost) && !showPokerRobotPunchDialog && !showPokerBlackjackDrawDialog && !pokerResultOverlayDismissed ? (
         <BattleResultOverlay
           result={pokerBattleLost ? "lose" : "win"}
           onDismiss={() => {
@@ -8189,6 +8241,13 @@ function PokerBattle({
           onDismiss={() => setShowPokerRobotPunchDialog(false)}
           text={isFinalHighLowExchange ? "ポーカーロボットに殴られた" : "ポーカーロボットに殴られ、意識を失った"}
           tone="hands"
+        />
+      ) : null}
+      {showPokerBlackjackDrawDialog ? (
+        <TutorialDialog
+          text="引き分けになったため、ブラックジャックロボットに倒された。"
+          tone="hands"
+          onDismiss={() => setShowPokerBlackjackDrawDialog(false)}
         />
       ) : null}
       {pokerHighLowDraggingCard && pokerHighLowDragPreviewPoint ? (
@@ -8431,6 +8490,7 @@ function PokerBattle({
                   <button
                     className="min-h-11 rounded bg-brass px-4 text-sm font-black text-stone-950 hover:bg-yellow-300"
                     onClick={pokerBlackjackFirstPlacementPending ? confirmPokerBlackjackFirstPlacement : confirmPokerBlackjackSecondPlacement}
+                    disabled={showPokerBlackjackDeclaration}
                     type="button"
                   >
                     確定
@@ -8438,6 +8498,7 @@ function PokerBattle({
                   <button
                     className="min-h-11 rounded border border-white/15 bg-white/8 px-4 text-sm font-black text-white hover:bg-white/14"
                     onClick={pokerBlackjackFirstPlacementPending ? resetPokerBlackjackFirstPlacement : resetPokerBlackjackSecondPlacement}
+                    disabled={showPokerBlackjackDeclaration}
                     type="button"
                   >
                     選び直し
@@ -8718,15 +8779,16 @@ function PokerBattle({
                   <ExchangeSpecToggle />
                   <ExchangeRuleList samePrintTimingLabel={samePrintTimingLabel} />
                   {isFinalAllGamesBattle ? <ExchangeModeToggleButton className="mt-3" isActive={targetSelectionAbility === "exchange"} isCompleted={remainingExchanges === 0} onClick={togglePokerExchangeMode} /> : null}
-                  <div className="my-3"><GameStartHandNotice timing={isFinalAllGamesBattle ? pastedBlueTexts["exchange-start-timing"] ?? "ゲームスタート" : "ゲームスタート"} /></div>
                   <ExchangeCardSectionPicker
+                    handNotice={<GameStartHandNotice timing={isFinalAllGamesBattle ? pastedBlueTexts["exchange-start-timing"] ?? "ゲームスタート" : "ゲームスタート"} />}
+                    monitoredSectionIds={["poker-robot-hand", "field"]}
                     onToggleCard={toggleExchangeCard}
                     sections={[
                       ...exchangeSections,
                       {
                         cards: scannedPokerCards,
                         id: "scan-generated",
-                        label: "スキャン生成カード",
+                        label: "所持カード",
                       },
                     ].map((section) => ({ ...section, disabled: isFinalAllGamesBattle ? false : section.disabled, interactionDisabled: !isFinalAllGamesBattle || targetSelectionAbility !== "exchange" || remainingExchanges === 0 }))}
                     selectedCardIds={isFinalAllGamesBattle ? exchangeCardIds : []}
@@ -8735,7 +8797,7 @@ function PokerBattle({
                   {isFinalAllGamesBattle ? (
                     <>
                       <button className="mt-3 min-h-11 w-full rounded bg-brass px-3 text-sm font-black text-stone-950 disabled:bg-stone-700 disabled:text-stone-400" disabled={remainingExchanges === 0 || targetSelectionAbility !== "exchange" || exchangeCardIds.length !== maxExchangeCardSelections} onClick={confirmPokerExchangeSelection} type="button">エクスチェンジ決定 ({exchangeCardIds.length}/{maxExchangeCardSelections})</button>
-                      {isExchangeApplied ? <ExchangeRedoButton onClick={() => resetPokerExchangeSelection({ reactivateExchangeMode: true })} /> : null}
+                      {confirmedPokerExchangePairs.length > 0 ? <ExchangeRedoButton onClick={() => resetPokerExchangeSelection({ reactivateExchangeMode: true })} /> : null}
                     </>
                   ) : null}
                   </>
@@ -8748,7 +8810,7 @@ function PokerBattle({
                   />
                   {(isFinalAllGamesBattle || isPokerThirdBattle) ? (
                     <>
-                      <details className="mt-3 rounded border border-white/12 bg-black/25 p-3">
+                      <details open className="mt-3 rounded border border-white/12 bg-black/25 p-3">
                         <summary className="cursor-pointer text-sm font-black text-brass">小謎の紙</summary>
                         <ScanRiddleImages images={pokerScanRiddles} onOpen={setExpandedPokerRiddle} />
                       </details>
@@ -8803,6 +8865,7 @@ function PokerBattle({
                     format={copyPasteFormat}
                     formatLabel={copyPasteFormatLabel[copyPasteFormat]}
                     isApplied={isCopyPasteApplied && (!isFinalAllGamesBattle || copyPasteUseCount >= maxCopyPastes)}
+                    canReset={copyPasteUseCount > 0}
                     maxCopyPastes={remainingCopyPastes}
                     onPaste={executeCopyPaste}
                     error={copyPasteError}
@@ -8868,7 +8931,6 @@ function PokerBattle({
             )}
             {!isPokerThirdBattle && !isFinalAllGamesBattle ? (
               <>
-                {pokerPreparationAbility === "exchange" ? <div className="my-3"><GameStartHandNotice /></div> : null}
                 {pokerPreparationAbility === "exchange" ? (
                   <ExchangeSpecToggle />
                 ) : null}
@@ -8895,6 +8957,7 @@ function PokerBattle({
                   <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
                     <ScanSpecToggle isVisible={pokerScanSpecVisible} onToggle={() => setPokerScanSpecVisible((current) => !current)} />
                     <details
+                      open
                       className="mt-3 rounded border border-white/12 bg-black/25 p-3"
                       onToggle={(event) => {
                         if (event.currentTarget.open && isPokerSecondBattle && !hasShownPokerRiddleHint.current) {
@@ -8954,6 +9017,8 @@ function PokerBattle({
                       </span>
                     </div>
                     <ExchangeCardSectionPicker
+                      handNotice={<GameStartHandNotice />}
+                      monitoredSectionIds={["poker-robot-hand", "field"]}
                       onToggleCard={toggleExchangeCard}
                       sections={exchangeSections.map((section) => ({
                         ...section,
@@ -8987,7 +9052,7 @@ function PokerBattle({
                         ? `交換済み: ${confirmedPokerExchangePairs.length}回`
                         : `エクスチェンジ決定 (${exchangeCardIds.length}/${maxExchangeCardSelections})`}
                     </button>
-                    {isExchangeApplied ? (
+                    {confirmedPokerExchangePairs.length > 0 ? (
                       <ExchangeRedoButton
                         onClick={() =>
                           resetPokerExchangeSelection({
@@ -9255,6 +9320,7 @@ function CopyPastePreparationPanel({
   format,
   formatLabel,
   isApplied,
+  canReset = isApplied,
   isSelecting,
   maxCopyPastes,
   onChooseFormat,
@@ -9270,6 +9336,7 @@ function CopyPastePreparationPanel({
   format: CopyPasteFormat;
   formatLabel: string;
   isApplied: boolean;
+  canReset?: boolean;
   isSelecting: boolean;
   maxCopyPastes: number;
   onChooseFormat: (format: CopyPasteFormat) => void;
@@ -9350,7 +9417,7 @@ function CopyPastePreparationPanel({
           {error}
         </p>
       ) : null}
-      {isApplied ? (
+      {canReset ? (
         <button
           className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded border border-white/20 px-4 text-sm font-black text-white hover:bg-white/10"
           onClick={onReset}
@@ -9492,6 +9559,8 @@ function ExchangeCardSectionPicker({
   sections,
   selectedCardIds,
   showEmptySections = false,
+  handNotice,
+  monitoredSectionIds = [],
 }: {
   confirmedCardColors?: Record<string, string>;
   longPressMode?: boolean;
@@ -9499,6 +9568,8 @@ function ExchangeCardSectionPicker({
   sections: ExchangeCardSection[];
   selectedCardIds: string[];
   showEmptySections?: boolean;
+  handNotice?: ReactNode;
+  monitoredSectionIds?: string[];
 }) {
   const visibleSections = sections.filter(
     (section) => showEmptySections || section.cards.length > 0,
@@ -9506,6 +9577,7 @@ function ExchangeCardSectionPicker({
 
   return (
     <div className="mt-4 grid gap-3">
+      {handNotice}
       {visibleSections.map((section) => (
         <section
           className={`rounded border p-3 ${
@@ -9518,6 +9590,11 @@ function ExchangeCardSectionPicker({
           <div className="flex items-center justify-between gap-3">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
               {section.label}
+              {monitoredSectionIds.includes(section.id) ? (
+                <span className="ml-2 inline-flex align-middle text-red-300" title="監視中" aria-label="監視中">
+                  <Eye aria-hidden="true" size={16} />
+                </span>
+              ) : null}
             </p>
             <p className="text-xs font-bold text-stone-400">
               {section.disabled ? "選択不可" : `${section.cards.length}枚`}
