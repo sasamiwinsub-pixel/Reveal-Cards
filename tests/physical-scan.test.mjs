@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit } from "../lib/physical-scan.ts";
+import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid } from "../lib/physical-scan.ts";
+
+test("physical scan accepts the gifted queen and the previously generated queen", () => {
+  const inventory = [
+    { id: "physical-queen-spade", rank: "Q" },
+    { id: "scan-12", rank: "Q" },
+  ];
+  assert.equal(isPhysicalScanSelectionValid(["physical-queen-spade", "scan-12"], inventory, "Q", 2), true);
+  assert.equal(isPhysicalScanSelectionValid(["physical-queen-spade", "physical-queen-crub"], inventory, "Q", 2), false);
+  assert.equal(isPhysicalScanSelectionValid(["scan-12", "scan-12"], inventory, "Q", 2), false);
+  assert.equal(isPhysicalScanSelectionValid(["scan-12"], inventory, "Q", 2), false);
+  assert.equal(isPhysicalScanSelectionValid(["physical-queen-spade", "scan-12"], [], "Q", 2), false);
+});
+
+test("physical scan still requires three available fives for the tutorial", () => {
+  const inventory = [1, 2, 3].map((index) => ({ id: `physical-5-spade-${index}`, rank: "5" }));
+  assert.equal(isPhysicalScanSelectionValid(inventory.map((card) => card.id), inventory, "5", 3), true);
+  assert.equal(isPhysicalScanSelectionValid(inventory.map((card) => card.id), inventory, "Q", 3), false);
+});
 
 test("final physical scan requires both rule changes and A plus J", () => {
   assert.equal(getFinalPhysicalScanReading(["A", "J"], "ブラックジャック", "じゅういち"), "にじゅういち");

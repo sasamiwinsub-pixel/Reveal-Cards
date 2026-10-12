@@ -20,7 +20,7 @@ import Image from "next/image";
 import FinalSituationReview from "./FinalSituationReview";
 import { resolvePaste } from "@/lib/copy-paste";
 import { normalizeScanIllustrationName } from "@/lib/scan-input";
-import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit } from "@/lib/physical-scan";
+import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid } from "@/lib/physical-scan";
 import { getGuaranteedWinOpening } from "@/lib/high-low-opening";
 import { shouldShowReservedExchange } from "@/lib/exchange-timing";
 import { getBlackjackOrderValue, isLargestBlackjackCard } from "@/lib/blackjack-order";
@@ -684,20 +684,9 @@ const physicalScanTripleFiveInventoryCards: PlayingCard[] = [
   })),
 ];
 
-const physicalScanQueenPairInventoryCards: PlayingCard[] = [
-  {
-    id: "physical-queen-spade",
-    imageSrc: "/cards/cropped/Q_spade.png",
-    rank: "Q",
-    suit: "spade",
-  },
-  {
-    id: "physical-queen-crub",
-    imageSrc: "/cards/cropped/Q_crub.png",
-    rank: "Q",
-    suit: "crub",
-  },
-];
+const physicalScanQueenPairInventoryCards = physicalScanTripleFiveInventoryCards.filter(
+  (card) => card.rank === "Q",
+);
 
 const physicalScanConfigs = {
   "blackjack-2-2": {
@@ -723,8 +712,7 @@ const physicalScanConfigs = {
       "現物スキャンするカードをもう一度確認してください。クイーンのカード2枚を指定しましょう。",
     generatedCardId: "scan-A",
     generatedLabel: "Aのカードを生成済み",
-    guideText:
-      "クイーンのカード2枚でワンペアを作ると、スペードのエースを生成できる",
+    guideText: "",
     inventoryCards: physicalScanQueenPairInventoryCards,
     prompt: "",
     readingPrompt:
@@ -3304,6 +3292,7 @@ function BlackjackBattle({
     ? [scannedOneCard, scannedTwelveCard]
     : [
         ...priorTutorialGeneratedCards,
+        ...(robotId === "blackjack-2-3" && scannedItems.includes("scan-9") ? [scannedNineCard] : []),
         ...(isPhysicalScanGenerated ? [scannedPhysicalScanCard] : []),
       ];
   const scanGeneratedDisplayCards = [
@@ -3341,7 +3330,13 @@ function BlackjackBattle({
       (scanRiddleIllustrationResults.one === true &&
         scanRiddleIllustrationResults.two === true)
     : scanGeneratedDisplayCards.length > 0;
-  const canSelectRiddlePrints = robotId === "blackjack-high-low-2-3";
+  const canSelectRiddlePrints = robotId === "blackjack-high-low-2-3" || robotId === "blackjack-2-3";
+  const remainingSecondStageExchanges = robotId === "blackjack-high-low-2-3"
+    ? 2 - Number(isRiddlePrintExchangeApplied) - Number(isFourthRobotExchangeConfirmed)
+    : 1 - Number(isScanExchangeConfirmed) - Number(isRiddlePrintExchangeApplied);
+  const remainingSecondStageScans = 1 - Number(
+    scannedItems.includes("scan-9") || scannedItems.includes("scan-A"),
+  );
   const highLowRobotExchangeCards =
     config && "highLowRobotHandIds" in config
       ? getCardsById([...config.highLowRobotHandIds])
@@ -3990,6 +3985,7 @@ function BlackjackBattle({
   }
 
   function toggleScanExchangeCard(cardId: string) {
+    if (robotId === "blackjack-2-3" && isRiddlePrintExchangeApplied) return;
     if (!isCardExchangeModeActive) {
       setScanTutorialMessage("先にエクスチェンジを起動してください。");
       return;
@@ -4182,6 +4178,11 @@ function BlackjackBattle({
   }
 
   function confirmScanExchangeSelection() {
+    if (robotId === "blackjack-2-3" && selectedRiddlePrintIds.length === 2) {
+      confirmRiddlePrintExchangeSelection();
+      return;
+    }
+    if (robotId === "blackjack-2-3" && remainingSecondStageExchanges === 0) return;
     const isCorrect = Boolean(isScanExchangeCorrect);
 
     setIsScanCardExchanged(isCorrect);
@@ -4194,6 +4195,17 @@ function BlackjackBattle({
     }
   }
 
+  function resetScanExchangeSelection() {
+    setScanExchangeCardIds([]);
+    setIsScanExchangeConfirmed(false);
+    setIsScanCardExchanged(false);
+    setScanExchangeChoice(null);
+    setSelectedRiddlePrintIds([]);
+    setIsCardExchangeModeActive(true);
+    setIsRiddleExchangeModeActive(robotId === "blackjack-2-3");
+    setScanTutorialMessage("エクスチェンジを解除しました。交換対象を選び直してください。");
+  }
+
   function scrollToPhysicalScanPanel() {
     window.setTimeout(() => {
       physicalScanPanelRef.current?.scrollIntoView({
@@ -4204,6 +4216,11 @@ function BlackjackBattle({
   }
 
   function activateCardExchangeMode() {
+    if (robotId === "blackjack-2-3" && isRiddlePrintExchangeApplied) return;
+    if (robotId === "blackjack-2-3") {
+      setIsRiddleExchangeModeActive(!isCardExchangeModeActive);
+      setSelectedRiddlePrintIds([]);
+    }
     if (isCardExchangeModeActive || isBlackjackExchangeConfirmed || isScanExchangeConfirmed) {
       setIsCardExchangeModeActive(false);
       setBlackjackExchangeCardIds([]);
@@ -4254,15 +4271,12 @@ function BlackjackBattle({
       return;
     }
 
-    const isCardSelectionCorrect =
-      physicalScanCardIds.length === physicalScanConfig.requiredSelectionCount &&
-      (robotId === "blackjack-2-3"
-        ? physicalScanCardIds.every((cardId) =>
-            cardId.startsWith("physical-queen-"),
-          )
-        : physicalScanCardIds.every((cardId) =>
-            cardId.startsWith("physical-5-"),
-          ));
+    const isCardSelectionCorrect = isPhysicalScanSelectionValid(
+      physicalScanCardIds,
+      visiblePhysicalScanInventoryCards,
+      robotId === "blackjack-2-3" ? "Q" : "5",
+      physicalScanConfig.requiredSelectionCount,
+    );
 
     setIsPhysicalScanGenerated(false);
     setPhysicalScanSplitIndexes([]);
@@ -4281,17 +4295,15 @@ function BlackjackBattle({
     if (!physicalScanConfig) {
       return;
     }
+    if (robotId === "blackjack-2-3" && remainingSecondStageScans === 0) return;
     if (physicalScanCardIds.some((id) => consumedPhysicalScanCardIds.includes(id))) return;
 
-    const isCardSelectionCorrect =
-      physicalScanCardIds.length === physicalScanConfig.requiredSelectionCount &&
-      (robotId === "blackjack-2-3"
-        ? physicalScanCardIds.every((cardId) =>
-            cardId.startsWith("physical-queen-"),
-          )
-        : physicalScanCardIds.every((cardId) =>
-            cardId.startsWith("physical-5-"),
-          ));
+    const isCardSelectionCorrect = isPhysicalScanSelectionValid(
+      physicalScanCardIds,
+      visiblePhysicalScanInventoryCards,
+      robotId === "blackjack-2-3" ? "Q" : "5",
+      physicalScanConfig.requiredSelectionCount,
+    );
     const isCorrect = isCardSelectionCorrect && isPhysicalScanReadingCorrect;
 
     if (!isCorrect) {
@@ -4342,6 +4354,7 @@ function BlackjackBattle({
 
     if (
       !canSelectRiddlePrints ||
+      remainingSecondStageExchanges === 0 ||
       !isRiddleExchangeModeActive ||
       selectedRiddlePrintIds.length !== 2
     ) {
@@ -4354,6 +4367,8 @@ function BlackjackBattle({
     }
 
     setIsRiddlePrintExchangeApplied(true);
+    setIsCardExchangeModeActive(false);
+    setScanExchangeCardIds([]);
     setIsRiddleExchangeModeActive(false);
     setPreparationAbility("scan");
     setScanTutorialMessage("エクスチェンジ発動しました。");
@@ -4361,7 +4376,8 @@ function BlackjackBattle({
     onRevealRiddleExchangeTiming();
   }
 
-  function runFourthBattleScan() {
+  function runFourthBattleScan(answer = fourthScanAnswer, illustration = fourthScanIllustration) {
+    if (remainingSecondStageScans === 0) return;
     if (!isRiddlePrintExchangeApplied) {
       setScanTutorialMessage(
         "先にエクスチェンジで小謎の紙を変化させてください。",
@@ -4370,14 +4386,20 @@ function BlackjackBattle({
       return;
     }
 
-    const normalizedAnswer = normalizeRiddleAnswer(fourthScanAnswer);
-    const normalizedIllustration = normalizeRiddleAnswer(fourthScanIllustration);
+    const normalizedAnswer = normalizeRiddleAnswer(answer);
+    const normalizedIllustration = normalizeRiddleAnswer(illustration);
 
     if (
       normalizedAnswer !== "ななめ" ||
       normalizedIllustration !== "きゅう/しょ"
     ) {
       setScanTutorialMessage("上手くいかないようだ...");
+      setIsFourthScanGenerated(false);
+      return;
+    }
+
+    if (robotId === "blackjack-2-3") {
+      setScanTutorialMessage("それをスキャンしても勝てなさそうだ");
       setIsFourthScanGenerated(false);
       return;
     }
@@ -4652,6 +4674,14 @@ function BlackjackBattle({
                   事前準備
                 </p>
 
+                {robotId === "blackjack-2-3" ? (
+                  <AbilityUsageTabs
+                    activeAbility={preparationAbility}
+                    abilities={["scan", "exchange"]}
+                    counts={{ scan: remainingSecondStageScans, exchange: remainingSecondStageExchanges, "copy-paste": 0 }}
+                    onSelect={setPreparationAbility}
+                  />
+                ) : (
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   {(["scan", "exchange"] as const).map((ability) => (
                     <button
@@ -4668,14 +4698,17 @@ function BlackjackBattle({
                     </button>
                   ))}
                 </div>
+                )}
 
                 {preparationAbility === "scan" ? (
                   <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
                     {!isPrintedScanBattle ? (
                       <>
-                        <p className="text-sm font-bold leading-6 text-stone-100">
-                          {physicalScanConfig?.guideText}
-                        </p>
+                        {physicalScanConfig?.guideText ? (
+                          <p className="text-sm font-bold leading-6 text-stone-100">
+                            {physicalScanConfig.guideText}
+                          </p>
+                        ) : null}
                         <p className="mt-3 text-[11px] font-black uppercase tracking-[0.18em] text-brass">
                           印刷済み謎
                         </p>
@@ -4684,6 +4717,16 @@ function BlackjackBattle({
                             <ZoomableRiddleImage alt="スキャン解放謎" badge="⓪" src="/riddles/riddle_0.png" onOpen={setExpandedRiddleImage} />
                             <div className="grid gap-0">
                               {scanRiddleImages.slice(0, 2).map((image, index) => (
+                                robotId === "blackjack-2-3" && index === 0 ? (
+                                  <RiddlePrintTargetPicker
+                                    key={image.src}
+                                    disabled={!isRiddleExchangeModeActive || remainingSecondStageExchanges === 0}
+                                    isExchanged={isRiddlePrintExchangeApplied}
+                                    onOpen={setExpandedRiddleImage}
+                                    onToggleTarget={toggleRiddlePrintTarget}
+                                    selectedIds={selectedRiddlePrintIds}
+                                  />
+                                ) : (
                                 <ZoomableRiddleImage
                                   alt={image.alt}
                                   badge={index === 0 ? "①" : undefined}
@@ -4696,6 +4739,7 @@ function BlackjackBattle({
                                   onOpen={setExpandedRiddleImage}
                                   src={image.src}
                                 />
+                                )
                               ))}
                             </div>
                             {scanRiddleImages.slice(2).map((image) => (
@@ -4709,7 +4753,15 @@ function BlackjackBattle({
                             ))}
                           </div>
                         </div>
-                        <ScanSolvedSummary />
+                        <ScanSolvedSummary hasFourthScanResult={scannedItems.includes("scan-9")} />
+                        {isRiddleExchangeModeActive ? (
+                          <button
+                            className="mt-3 min-h-11 w-full rounded bg-brass px-3 py-2 text-sm font-black text-stone-950 disabled:opacity-40"
+                            disabled={selectedRiddlePrintIds.length !== 2 || remainingSecondStageExchanges === 0}
+                            onClick={confirmRiddlePrintExchangeSelection}
+                            type="button"
+                          >エクスチェンジ決定</button>
+                        ) : null}
                         <div className="mt-3 grid gap-3 rounded border border-brass/45 bg-black/30 p-3">
                           <p className="text-sm font-black leading-6 text-brass">
                             スキャン回答
@@ -4747,11 +4799,19 @@ function BlackjackBattle({
                             selectedIndexes={postTutorialScanSplitIndexes}
                             value={postTutorialScanIllustrationName}
                           />
+                          <button
+                            className="min-h-11 rounded bg-brass px-3 py-2 text-sm font-black text-stone-950 disabled:opacity-40"
+                            disabled={remainingSecondStageScans === 0}
+                            onClick={() => runFourthBattleScan(postTutorialScanAnswer, postTutorialScanIllustrationName)}
+                            type="button"
+                          >スキャン発動</button>
+                          {isFourthScanGenerated ? <ScanTargetPreview alt="今回スキャンした対象: 急所" src={scanTargetImages.kyuusho} /> : null}
+                          {scanTutorialMessage ? <ScanFeedbackMessage message={scanTutorialMessage} /> : null}
                         </div>
                         <div ref={physicalScanPanelRef}>
                           <PhysicalScanPanel
                             canAnswerRoleName={isPhysicalScanCardCountReady}
-                            canRun={canRunPhysicalScan}
+                            canRun={canRunPhysicalScan && remainingSecondStageScans > 0}
                             cards={visiblePhysicalScanInventoryCards}
                             generatedCard={scannedPhysicalScanCard}
                             generatedLabel={
@@ -5116,7 +5176,7 @@ function BlackjackBattle({
                     <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
                       <ExchangeModeToggleButton
                         isActive={isCardExchangeModeActive}
-                        isCompleted={isScanExchangeConfirmed}
+                        isCompleted={isScanExchangeConfirmed || (robotId === "blackjack-2-3" && isRiddlePrintExchangeApplied)}
                         onClick={activateCardExchangeMode}
                       />
                       <div className="mt-3 flex items-center justify-between gap-3">
@@ -5214,7 +5274,8 @@ function BlackjackBattle({
                       }`}
                       disabled={
                         !isCardExchangeModeActive ||
-                        scanExchangeCardIds.length !== 2 ||
+                        (scanExchangeCardIds.length !== 2 && !(robotId === "blackjack-2-3" && selectedRiddlePrintIds.length === 2)) ||
+                        (robotId === "blackjack-2-3" && remainingSecondStageExchanges === 0) ||
                         (isScanExchangeConfirmed && isScanExchangeCorrect)
                       }
                       onClick={confirmScanExchangeSelection}
@@ -5222,12 +5283,15 @@ function BlackjackBattle({
                     >
                       決定
                     </button>
+                    {isScanExchangeConfirmed ? (
+                      <ExchangeRedoButton onClick={resetScanExchangeSelection} />
+                    ) : null}
                   </div>
                 )}
               </div>
             ) : null}
 
-            {canSelectRiddlePrints ? (
+            {robotId === "blackjack-high-low-2-3" ? (
               <div className="rounded border border-brass/50 bg-brass/10 p-3">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
                   4戦目の準備
@@ -5237,22 +5301,12 @@ function BlackjackBattle({
                   <ScanFeedbackMessage message={scanTutorialMessage} />
                 ) : null}
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  {(["scan", "exchange"] as const).map((ability) => (
-                    <button
-                      className={`min-h-10 rounded px-3 py-2 text-sm font-black ${
-                        preparationAbility === ability
-                          ? "bg-brass text-stone-950"
-                          : "bg-white/10 text-white hover:bg-white/15"
-                      }`}
-                      key={ability}
-                      onClick={() => setPreparationAbility(ability)}
-                      type="button"
-                    >
-                      {ability === "scan" ? "スキャン" : "エクスチェンジ"}
-                    </button>
-                  ))}
-                </div>
+                <AbilityUsageTabs
+                  activeAbility={preparationAbility}
+                  abilities={["scan", "exchange"]}
+                  counts={{ scan: remainingSecondStageScans, exchange: remainingSecondStageExchanges, "copy-paste": 0 }}
+                  onSelect={setPreparationAbility}
+                />
 
                 {preparationAbility === "exchange" ? (
                   <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
@@ -5395,7 +5449,7 @@ function BlackjackBattle({
                         setFourthScanIllustration(value);
                       }}
                       disabled={!isRiddlePrintExchangeApplied}
-                      onSubmit={runFourthBattleScan}
+                      onSubmit={() => runFourthBattleScan()}
                       message={scanTutorialMessage}
                     >
                       {isFourthScanGenerated ? (
@@ -5419,6 +5473,39 @@ function BlackjackBattle({
         </div>
       ) : (
       <div className="grid gap-3 p-4">
+        <div className="grid gap-3">
+          {phase === "idle" && activeBlackjackGame === "ready" ? (
+            <GameStartRow robotId={robotId}>
+              <button
+                className={`min-h-12 rounded px-4 py-3 text-sm font-black ${
+                  (isFinalBattle && !isFinalPreparationApplied) || isFourthBattlePreparationRequired
+                    ? "cursor-not-allowed bg-stone-700 text-stone-400"
+                    : "bg-brass text-stone-950 hover:bg-yellow-300"
+                }`}
+                disabled={(isFinalBattle && !isFinalPreparationApplied) || isFourthBattlePreparationRequired}
+                onClick={startRound}
+                type="button"
+              >
+                ゲームスタート
+              </button>
+            </GameStartRow>
+          ) : null}
+          {canOpenPreparation ? (
+            <div className="flex justify-end">
+              <button
+                className={`min-h-12 rounded border border-brass bg-black/35 px-4 py-3 text-sm font-black text-brass hover:bg-brass/10 ${shouldPulsePreparationButton ? "animate-pulse ring-4 ring-brass/45" : ""}`}
+                onClick={() => {
+                  setShowPreparation(true);
+                  if (canUseScan) setPreparationAbility("scan");
+                  setShouldHighlightScanPreparationButton(false);
+                }}
+                type="button"
+              >
+                車内で準備
+              </button>
+            </div>
+          ) : null}
+        </div>
         {blackjackDraggingCard && blackjackDragPreviewPoint ? (
           <DraggingCardPreview
             card={blackjackDraggingCard}
@@ -5648,47 +5735,7 @@ function BlackjackBattle({
           </div>
         </section>
 
-        <section className="flex flex-col gap-3 rounded border border-white/12 bg-black/28 p-3">
-          {canOpenPreparation ? (
-            <button
-              className={`min-h-12 rounded border border-brass bg-black/35 px-4 py-3 text-sm font-black text-brass hover:bg-brass/10 ${
-                shouldPulsePreparationButton
-                  ? "animate-pulse ring-4 ring-brass/45"
-                  : ""
-              }`}
-              onClick={() => {
-                setShowPreparation(true);
-                if (canUseScan) {
-                  setPreparationAbility("scan");
-                }
-                setShouldHighlightScanPreparationButton(false);
-              }}
-              type="button"
-            >
-              車内で準備
-            </button>
-          ) : null}
-          {phase === "idle" && activeBlackjackGame === "ready" ? (
-            <GameStartRow robotId={robotId}>
-            <button
-              className={`min-h-12 rounded px-4 py-3 text-sm font-black ${
-                (isFinalBattle && !isFinalPreparationApplied) ||
-                isFourthBattlePreparationRequired
-                  ? "cursor-not-allowed bg-stone-700 text-stone-400"
-                  : "bg-brass text-stone-950 hover:bg-yellow-300"
-              }`}
-              disabled={
-                (isFinalBattle && !isFinalPreparationApplied) ||
-                isFourthBattlePreparationRequired
-              }
-              onClick={startRound}
-              type="button"
-            >
-              ゲームスタート
-            </button>
-            </GameStartRow>
-          ) : null}
-
+        <section className={`${phase === "idle" && activeBlackjackGame === "ready" ? "hidden" : "flex"} flex-col gap-3 rounded border border-white/12 bg-black/28 p-3`}>
           {phase === "result" ? (
             <button
               className="min-h-12 rounded border border-white/20 bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white/15"
@@ -8170,9 +8217,37 @@ function PokerBattle({
           showPreparation ? "" : "sm:grid-cols-[1fr_220px]"
         }`}
       >
+        {!showPreparation && activePokerGame === "ready" ? (
+          <div className="grid gap-3 sm:col-span-2">
+            <GameStartRow robotId={robotId}>
+              <button
+                className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
+                onClick={startPokerSequence}
+                type="button"
+              >
+                ゲームスタート
+              </button>
+            </GameStartRow>
+            <div className="flex justify-end">
+              <button
+                className="min-h-12 rounded border border-brass bg-black/35 px-4 py-3 text-sm font-black text-brass hover:bg-brass/10"
+                onClick={() => {
+                  setShowPreparation(true);
+                  if (isFinalAllGamesBattle && !hasShownSituationReviewHint.current) {
+                    hasShownSituationReviewHint.current = true;
+                    setShowSituationReviewHint(true);
+                  }
+                }}
+                type="button"
+              >
+                車内で準備
+              </button>
+            </div>
+          </div>
+        ) : null}
         <section
           className={`rounded border border-white/12 bg-black/28 p-3 ${
-            showPreparation ? "hidden" : ""
+            showPreparation ? "hidden" : activePokerGame === "ready" ? "sm:col-span-2" : ""
           }`}
         >
           {activePokerGame === "high-low" ? (
@@ -8555,22 +8630,7 @@ function PokerBattle({
 
         </section>
 
-        <section className="flex flex-col gap-3 rounded border border-white/12 bg-black/28 p-3">
-          {!showPreparation && activePokerGame === "ready" ? (
-            <button
-              className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-              onClick={() => {
-                setShowPreparation(true);
-                if (isFinalAllGamesBattle && !hasShownSituationReviewHint.current) {
-                  hasShownSituationReviewHint.current = true;
-                  setShowSituationReviewHint(true);
-                }
-              }}
-              type="button"
-            >
-              事前準備
-            </button>
-          ) : null}
+        <section className={`${!showPreparation && activePokerGame === "ready" ? "hidden" : "flex"} flex-col gap-3 rounded border border-white/12 bg-black/28 p-3`}>
           <div
             className={`rounded border border-brass/45 bg-brass/10 p-3 ${
               showPreparation ? "" : "hidden"
@@ -8911,15 +8971,7 @@ function PokerBattle({
           ) : null}
           {!showPreparation ? (
             activePokerGame === "ready" ? (
-              <GameStartRow robotId={robotId}>
-              <button
-                className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
-                onClick={startPokerSequence}
-                type="button"
-              >
-                ゲームスタート
-              </button>
-              </GameStartRow>
+              null
             ) : activePokerGame === "high-low" ? (
               pokerHighLowResult === "win" ? (
                 <button
