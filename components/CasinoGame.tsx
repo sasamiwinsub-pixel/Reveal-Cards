@@ -7407,7 +7407,7 @@ function PokerBattle({
     robotRanks: getCardsById(applyExchangePairs([...(config?.initialRobotHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
   });
   const pokerBlackjackDisplayedPlacedCardIds =
-    shouldFinalRobotAllIn && hasFinalExchangeTriggered
+    isFinalBlackjackExchange && hasFinalExchangeTriggered
       ? applyExchangePairs(pokerBlackjackPlacedCardIds, confirmedPokerExchangePairs)
       : pokerBlackjackPlacedCardIds;
   const pokerBlackjackDisplayedPlacedCards = getCardsById(
