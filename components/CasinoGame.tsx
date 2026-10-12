@@ -9858,12 +9858,13 @@ function HighLowBattle({
   }
 
   function placePlayerCard(zone: "HIGH" | "LOW", cardId = draggingCardId ?? playerDefaultCard?.id) {
-    if (!canPlaceCard) {
+    if (!canPlaceCard || !cardId || !playerHand.some((card) => card.id === cardId)) {
       return;
     }
 
+    setDraggingCardId(null);
     setDragPreviewPoint(null);
-    setPlayerPlacedCardId(cardId ?? null);
+    setPlayerPlacedCardId(cardId);
     setPlayerZone(zone);
     setPlacementAnimation({
       mode: "hold",
