@@ -26,7 +26,7 @@ import { shouldShowReservedExchange } from "@/lib/exchange-timing";
 import { getBlackjackOrderValue, isLargestBlackjackCard } from "@/lib/blackjack-order";
 import { applyExchangePairs } from "@/lib/card-exchange";
 import { clearStageSession, useSessionState } from "@/lib/session-state";
-import { isFinalGameClear } from "@/lib/final-clear";
+import { isFinalGameClear, isFinalAllInPreparation } from "@/lib/final-clear";
 import {
   Fragment,
   createContext,
@@ -7164,7 +7164,7 @@ function PokerBattle({
     window.addEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
     return () => window.removeEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
   }, []);
-  const [finalRobotBet, setFinalRobotBet] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalRobotBet`, 0);
+  const [storedFinalRobotBet, setFinalRobotBet] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalRobotBet`, 0);
   const [hasOpenedSituationReview, setHasOpenedSituationReview] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:hasOpenedSituationReview`, false);
   const [showSituationReviewHint, setShowSituationReviewHint] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showSituationReviewHint`, false);
   const hasShownSituationReviewHint = useRef(false);
@@ -7483,6 +7483,17 @@ function PokerBattle({
           ? "draw"
           : "lose"
       : null;
+  const shouldFinalRobotAllIn = isFinalAllGamesBattle && Boolean(config) && isExchangeApplied && isFinalAllInPreparation({
+    exchangeTiming: pastedBlueTexts["exchange-start-timing"],
+    declaration: pastedBlueTexts["blackjack-declaration"] ?? "ブラックジャック",
+    riddleGame: pastedBlueTexts["riddle-four-game"],
+    scanGame: pastedBlueTexts["scan-poker"],
+    scanRole: pastedBlueTexts["scan-role-name"],
+    playerRanks: getCardsById(applyExchangePairs([...(config?.initialPlayerHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
+    fieldRanks: getCardsById(applyExchangePairs([...(config?.fieldCardIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
+    robotRanks: getCardsById(applyExchangePairs([...(config?.initialRobotHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
+  });
+  const finalRobotBet = shouldFinalRobotAllIn ? 100 : storedFinalRobotBet;
   const finalRobotChips = pokerResult === "win" ? 100 - finalRobotBet : 100;
   const finalGameCleared = isFinalGameClear({ highLow: pokerHighLowResult, blackjack: pokerBlackjackResult, poker: pokerResult, robotChips: finalRobotChips });
   const isPokerGameStarted = activePokerGame !== "ready";
@@ -7729,7 +7740,7 @@ function PokerBattle({
       const deferredExchange = pastedBlueTexts["exchange-start-timing"] === "ブラックジャック";
       const bettingRobotHand = deferredExchange ? getCardsById([...config.initialRobotHandIds], generatedScanCards) : robotHand;
       const bettingField = deferredExchange ? getCardsById([...config.fieldCardIds], generatedScanCards) : fieldCards;
-      setFinalRobotBet(Math.floor(100 * getPokerRobotWinRate(bettingRobotHand, bettingField)));
+      setFinalRobotBet(shouldFinalRobotAllIn ? 100 : Math.floor(100 * getPokerRobotWinRate(bettingRobotHand, bettingField)));
     }
     setPokerResultOverlayDismissed(false);
     setShowPreparation(false);
