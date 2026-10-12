@@ -32,7 +32,7 @@ export default async function Home({
   const initialBattle = battleGameType
     ? {
         gameType: battleGameType,
-        robotId: params?.robot ?? "",
+        robotId: initialStageId === 3 && params?.tutorial === "betting" ? "poker-3-3" : params?.robot ?? "",
       }
     : null;
   const gameKey = `${initialStageId}:${battleGameType ?? "select"}:${params?.robot ?? ""}:${params?.tutorial ?? ""}`;
@@ -43,10 +43,6 @@ export default async function Home({
       initialBattle={initialBattle}
       initialStageId={initialStageId}
       initialGameSelectTutorial={initialStageId === 1 && params?.tutorial === "venue"}
-      initialPokerBettingTutorial={
-        initialStageId === 3 && params?.robot === "poker-3-2" &&
-        params?.tutorial === "betting" && battleGameType === "poker"
-      }
     />
   );
 }

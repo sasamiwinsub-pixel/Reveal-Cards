@@ -15,18 +15,11 @@ const themes = [
       { text: "Kのフォーカードを作るには、自分の手札へのエクスチェンジが何回必要？", options: ["0回", "1回", "2回"], answers: [1] },
     ],
   },
-  {
-    title: "チップを0にする",
-    questions: [
-      { text: "ロボットのチップを0にするには？", options: ["ロボットの勝率を100％にする", "ロボットの勝率を0％にする"], answers: [0] },
-      { text: "ポーカーロボットが現状割り出した勝率はどのくらい？", options: ["約70%以上", "約50%", "約0%"], answers: [0] },
-      { text: "直前の3rdStage最終戦ではゲームスタート前で8%の勝率のところ、いざ対戦すると何％だった？", options: ["0%"], answers: [0] },
-    ],
-  },
 ];
 
 export default function FinalSituationReview({ onBack }: { onBack: () => void }) {
-  const [activeTheme, setActiveTheme] = useSessionState("stage-4:FinalSituationReview:activeTheme", 0);
+  const [storedActiveTheme, setActiveTheme] = useSessionState("stage-4:FinalSituationReview:activeTheme", 0);
+  const activeTheme = Math.min(storedActiveTheme, themes.length - 1);
   const [progress, setProgress] = useSessionState("stage-4:FinalSituationReview:progress", [0, 0]);
   const [selections, setSelections] = useSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections", {});
   const [errors, setErrors] = useSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors", {});
@@ -40,7 +33,7 @@ export default function FinalSituationReview({ onBack }: { onBack: () => void })
       <h2 className="text-2xl font-black">
         状況整理<span className="inline-block text-base">（全て埋めなくてもクリア可能）</span>
       </h2>
-      <div aria-label="状況整理のテーマ" className="my-5 grid grid-cols-2 gap-2" role="tablist">
+      <div aria-label="状況整理のテーマ" className="my-5 grid gap-2" role="tablist">
         {themes.map((item, index) => (
           <button aria-selected={activeTheme === index} className={`min-h-14 min-w-0 rounded border px-2 py-2 text-sm font-black ${activeTheme === index ? "border-brass bg-brass text-stone-950" : "border-white/20 hover:bg-white/10"}`} id={`situation-tab-${index}`} key={item.title} onClick={() => setActiveTheme(index)} role="tab" type="button">
             {item.title}<span className="mt-1 block text-xs">{progress[index]}/{item.questions.length}</span>

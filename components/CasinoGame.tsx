@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
-  Eye,
   Info,
   Lightbulb,
   Map as MapIcon,
@@ -24,11 +23,11 @@ import { resolvePaste } from "@/lib/copy-paste";
 import { normalizeScanIllustrationName } from "@/lib/scan-input";
 import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid } from "@/lib/physical-scan";
 import { getGuaranteedWinOpening } from "@/lib/high-low-opening";
-import { shouldShowReservedExchange } from "@/lib/exchange-timing";
+import { shouldShowReservedExchange, isBlackjackKingExchangeExposed } from "@/lib/exchange-timing";
 import { getBlackjackOrderValue, isLargestBlackjackCard } from "@/lib/blackjack-order";
 import { applyExchangePairs } from "@/lib/card-exchange";
 import { clearStageSession, useSessionState } from "@/lib/session-state";
-import { isFinalGameClear, isFinalAllInPreparation } from "@/lib/final-clear";
+import { isFinalGameClear } from "@/lib/final-clear";
 import {
   Fragment,
   createContext,
@@ -55,7 +54,6 @@ import {
   getRobotGameTypes,
   highLowRuleText,
   highLowSpecText,
-  pokerBettingSpecText,
   pokerRuleText,
   pokerSpecText,
   stages,
@@ -319,11 +317,12 @@ const pokerBattleConfigs = {
     maxExchanges: 0,
     maxScans: 0,
     successText:
-      "ブラックジャックロボットのAを0へ変更済み。ハイ＆ローはそのまま勝利、ブラックジャックは自分がK+Q=20でロボットが0+J=10、ポーカーはロボットの勝率が0%のため0chipを賭け、そのままプレイヤーの勝利です。",
+      "ブラックジャックロボットのAを0へ変更済み。ハイ＆ローはそのまま勝利、ブラックジャックは自分がK+Q=20でロボットが0+J=10、ポーカーもプレイヤーの勝利です。",
   },
   "all-games-last": {
     blackjackRobotHandIds: ["K-heart", "Q-daia"],
     exchangePairs: [],
+    highLowOpeningZone: "LOW",
     fieldCardIds: ["A-crub", "K-spade", "K-daia", "J-crub"],
     highLowRobotHandIds: ["Q-heart", "Q-crub"],
     initialPlayerHandIds: ["A-daia", "K-crub"],
@@ -348,7 +347,7 @@ const pokerBattleConfigs = {
       },
     ],
     successText:
-      "ブラックジャック宣言のタイミングでエクスチェンジが発動済み。ポーカーロボットもオールインし、プレイヤーはK2枚、フィールドにもK2枚があるため、Kフォーカードでポーカーロボットに勝利できます。",
+      "ブラックジャック宣言のタイミングでエクスチェンジが発動済み。プレイヤーはK2枚、フィールドにもK2枚があるため、Kフォーカードでポーカーロボットに勝利できます。",
   },
 } as const;
 
@@ -896,12 +895,10 @@ export default function CasinoGame(props: Parameters<typeof CasinoGameSession>[0
 function CasinoGameSession({
   initialBattle = null,
   initialStageId = 1,
-  initialPokerBettingTutorial = false,
   initialGameSelectTutorial = false,
 }: {
   initialBattle?: ActiveBattle | null;
   initialStageId?: number;
-  initialPokerBettingTutorial?: boolean;
   initialGameSelectTutorial?: boolean;
 }) {
   const initialStage = stages.find((item) => item.id === initialStageId) ?? stages[0];
@@ -910,10 +907,7 @@ function CasinoGameSession({
   const [, setChips] = useSessionState(`stage-${stageId}:CasinoGame:Chips`, initialStage.startingChips);
   const [, setPlayedRobotIds] = useSessionState<string[]>(`stage-${stageId}:CasinoGame:PlayedRobotIds`, []);
   const [pokerScanCount, setPokerScanCount] = useSessionState(`stage-${stageId}:CasinoGame:pokerScanCount`, 0);
-  const [showPokerBettingTutorial, setShowPokerBettingTutorial] = useSessionState(`stage-${stageId}:CasinoGame:showPokerBettingTutorial`, initialPokerBettingTutorial);
-  const [isPokerBettingRevealed, setIsPokerBettingRevealed] = useSessionState(
-    `stage-${stageId}:CasinoGame:isPokerBettingRevealed`, initialPokerBettingTutorial || initialBattle?.robotId === "poker-3-3",
-  );
+
   const [activeBattle, setActiveBattle] = useSessionState<ActiveBattle | null>(
     `stage-${stageId}:CasinoGame:activeBattle`, initialBattle ? { ...initialBattle, gameType: getStageTableGameType(initialStage.id) } : null,
   );
@@ -1022,8 +1016,6 @@ function CasinoGameSession({
     clearStageSession(destinationStage.id);
 
     setStageId(destinationStage.id);
-    setShowPokerBettingTutorial(false);
-    setIsPokerBettingRevealed(false);
     setChips(destinationStage.startingChips);
     setPlayedRobotIds([]);
     setActiveBattle(null);
@@ -1089,11 +1081,9 @@ function CasinoGameSession({
 
   function getCurrentObjective() {
     if (stage.id === 4 && !ENABLE_FINAL_DISCOVERY_PHASE) {
-      return "ロボットのチップを0にして完ぺきな全勝する";
+      return "全てのゲームで勝利する";
     }
-    if (showPokerBettingTutorial) {
-      return "勝率に応じたロボットの賭けと、オールインを確認しよう";
-    }
+
     if (activeBattle) {
       if (activeBattle.gameType === "blackjack" && stage.id === 2) {
         return "同じ手札でハイ＆ローとブラックジャックに2連勝しましょう。";
@@ -1237,21 +1227,6 @@ function CasinoGameSession({
                   }))
                 }
               />
-            ) : showPokerBettingTutorial && activeBattleRobot ? (
-              <PokerBettingTutorial
-                onComplete={() => {
-                  setShowPokerBettingTutorial(false);
-                  setPlayedRobotIds((current) => [...new Set([...current, "poker-3-2"])]);
-                  setFocusedOptionIndex(2);
-                  setActiveBattle({ gameType: "poker", robotId: "poker-3-3" });
-                  window.history.pushState(null, "", "/?stage=3&battle=poker&robot=poker-3-3");
-                  window.scrollTo(0, 0);
-                }}
-                onOpenModal={(kind, gameType) =>
-                  setModal({ gameType, kind, robot: activeBattleRobot })
-                }
-                robot={activeBattleRobot}
-              />
             ) : isPokerBattle ? (
               <PokerBattle
                 key={activeBattle.robotId}
@@ -1274,13 +1249,7 @@ function CasinoGameSession({
                     window.scrollTo(0, 0);
                     return;
                   }
-                  if (activeBattle.robotId === "poker-3-2") {
-                    setIsPokerBettingRevealed(true);
-                    setShowPokerBettingTutorial(true);
-                    window.history.pushState(null, "", "/?stage=3&battle=poker&robot=poker-3-2&tutorial=betting");
-                    window.scrollTo(0, 0);
-                    return;
-                  }
+
                   setPlayedRobotIds((current) =>
                     current.includes(activeBattle.robotId)
                       ? current
@@ -1455,12 +1424,10 @@ function CasinoGameSession({
                 <PokerRuleContent
                   onOpenGuideImage={setExpandedGuideImage}
                   ruleText={getModalText(modal)}
-                  showRobotWinRate={false}
                 />
               ) : modal.gameType === "poker" && modal.kind === "spec" ? (
                 <PokerRobotSpecContent
                   specText={getModalText(modal)}
-                  showBettingSpec={isPokerBettingRevealed || modal.robot.id === "poker-3-3"}
                 />
               ) : (
                 getModalText(modal)
@@ -1697,7 +1664,7 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
             {ENABLE_FINAL_DISCOVERY_PHASE
               ? "最後の1戦で使われる手札とフィールドが判明。このまま事前準備へ入る前に、未判明のスキャン生成2枚を特定しよう"
               : <>
-                  <span className="my-7 block text-xl font-black leading-8 text-red-300 sm:text-2xl">「ロボットのチップを0にして全勝する」</span>
+                  <span className="my-7 block text-xl font-black leading-8 text-red-300 sm:text-2xl">「全てのゲームで勝利する」</span>
                   <span className="mt-3 block">最後の1戦で使われる手札とフィールドが<span className="text-red-300">公開</span>。事前準備を整えて、ファイナルゲームに挑もう</span>
                 </>}
           </p>
@@ -2954,18 +2921,7 @@ function OpponentSelector({
 
         {focusedRobot ? (
           <>
-            {focusedRobot.chips ? (
-              <div className="absolute inset-x-0 top-[18%] z-20 flex justify-center px-4 sm:top-[20%]">
-                <div className="rounded border border-brass/80 bg-black/78 px-4 py-2 text-center shadow-[0_8px_20px_rgba(0,0,0,0.65)] backdrop-blur-sm sm:px-5 sm:py-3">
-                  <p className="text-[10px] font-black uppercase text-stone-200 sm:text-xs">
-                    ロボットチップ
-                  </p>
-                  <p className="text-2xl font-black leading-none text-brass sm:text-4xl">
-                    {focusedRobot.chips}
-                  </p>
-                </div>
-              </div>
-            ) : null}
+
 
             <div className="absolute inset-x-3 bottom-0 z-20 translate-y-[calc(100%+12px)] rounded border border-stone-200 bg-white p-3 text-stone-950 shadow-[0_12px_28px_rgba(0,0,0,0.45)] max-[424px]:inset-x-1.5 max-[424px]:p-2 max-[374px]:inset-x-0 sm:inset-x-6 sm:translate-y-[calc(100%+20px)] sm:p-4">
               <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 max-[424px]:grid-cols-[38px_minmax(0,1fr)_38px] max-[424px]:gap-1.5 max-[374px]:grid-cols-[34px_minmax(0,1fr)_34px]">
@@ -6563,17 +6519,6 @@ function FinalBattlePreparationPanel({
           </div>
         ))}
       </div>
-      <div className="mt-3 rounded border border-sky-300/40 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-sky-50">
-        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-200">
-          ポーカーロボット
-        </p>
-        <p className="mt-2">
-          事前準備時点のポーカーロボット目線の勝率：97.78%
-        </p>
-        <p className="mt-1">
-          最終的にプレイヤーが勝つための行動をとると、ポーカーロボット側もオールインします。
-        </p>
-      </div>
       <div className="mt-3 rounded border border-sky-300/35 bg-sky-950/25 p-3 text-sm font-bold leading-6 text-stone-100">
         <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-200">
           コピーペースト対象
@@ -6921,11 +6866,9 @@ function HighlightedHighLowSpecText() {
 function PokerRuleContent({
   onOpenGuideImage,
   ruleText,
-  showRobotWinRate = false,
 }: {
   onOpenGuideImage?: (image: { alt: string; src: string }) => void;
   ruleText: string;
-  showRobotWinRate?: boolean;
 }) {
   const highlightedKeyword = "役名";
   const ruleTextParts = ruleText.split(highlightedKeyword);
@@ -6944,11 +6887,7 @@ function PokerRuleContent({
           </Fragment>
         ))}
       </span>
-      {showRobotWinRate ? (
-        <span className="mt-3 block rounded border border-sky-300/40 bg-sky-950/35 p-3 text-base font-black text-sky-100">
-          現在算出した勝率：0% / ベット：0chip
-        </span>
-      ) : null}
+
       <button
         className="mt-3 block w-full overflow-hidden rounded border border-white/12 bg-white p-1 text-left"
         onClick={() => {
@@ -6973,17 +6912,14 @@ function PokerRuleContent({
 
 function PokerRobotSpecContent({
   specText,
-  showBettingSpec = false,
 }: {
   specText: string;
-  showBettingSpec?: boolean;
 }) {
   const highlightedSpecParts = new Set([
-    "自分の手札とフィールドを常に見ており",
+    "自分の手札とテーブルを常に見ており",
     "AKQJの16枚の山札1つで3つのゲームを行うことを知っており",
   ]);
-  const specParts = specText.split(/(自分の手札とフィールドを常に見ており|AKQJの16枚の山札1つで3つのゲームを行うことを知っており)/);
-  const bettingFormula = "ポーカーロボット勝率（引き分けを含む）×所持チップ";
+  const specParts = specText.split(/(自分の手札とテーブルを常に見ており|AKQJの16枚の山札1つで3つのゲームを行うことを知っており)/);
 
   return (
     <>
@@ -6993,12 +6929,7 @@ function PokerRobotSpecContent({
           <span className="font-black text-red-300">{part}</span>
         </Fragment>
       ) : <Fragment key={index}>{part}</Fragment>)}
-      {showBettingSpec ? (
-        <span className="mt-3 block">
-          <span className="font-black text-red-300">{bettingFormula}</span>
-          {pokerBettingSpecText.slice(bettingFormula.length)}
-        </span>
-      ) : null}
+
     </>
   );
 }
@@ -7025,123 +6956,6 @@ function PokerSelectedHandPanel({
           ? `あなたの役: ${evaluation.label}`
           : "手札2枚と組み合わせるカード2枚を、フィールド4枚から選択します。"}
       </p>
-    </div>
-  );
-}
-
-function PokerBettingTutorial({
-  onComplete,
-  onOpenModal,
-  robot,
-}: {
-  onComplete: () => void;
-  onOpenModal: (kind: ModalKind, gameType: GameType) => void;
-  robot: Robot;
-}) {
-  const [phase, setPhase] = useState<"betting" | "playing" | "result">("betting");
-  const [showIntroduction, setShowIntroduction] = useState(true);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [overlayDismissed, setOverlayDismissed] = useState(false);
-  const playerCards = getCardsById(["A-spade", "A-daia"]);
-  const robotCards = getCardsById(["K-crub", "K-heart"]);
-  const fieldCards = getCardsById(["K-daia", "A-heart", "Q-heart", "J-crub"]);
-  const robotSelection = getBestPokerSelection(robotCards, fieldCards);
-  const selectedCards = fieldCards.filter((card) => selectedIds.includes(card.id));
-  const playerSelection = [...playerCards, ...selectedCards];
-  const playerEvaluation = selectedIds.length === 2 ? evaluatePokerHand(playerSelection) : null;
-  const outcome = playerEvaluation && robotSelection
-    ? comparePokerHands(playerEvaluation, robotSelection.evaluation)
-    : 0;
-  const winRate = getPokerRobotWinRate(robotCards, fieldCards);
-  const chips = 100;
-  const robotBet = Math.floor(chips * winRate);
-  const result = outcome > 0 ? "win" : "lose";
-
-  return (
-    <div className="bg-[#071b12] text-white">
-      {showIntroduction ? (
-        <TutorialDialog
-          onDismiss={() => setShowIntroduction(false)}
-          text="ポーカー最後の要素、「チップの賭け」について説明しよう。ロボットは勝率×所持チップを賭け、プレイヤーはオールインする。まずはポーカーだけで練習してみよう。"
-          tone="hands"
-        />
-      ) : null}
-      {phase === "result" && !overlayDismissed ? (
-        <BattleResultOverlay result={result} onDismiss={() => setOverlayDismissed(true)} />
-      ) : null}
-      <header className="border-b border-white/10 bg-black/28 p-4">
-        <Image alt="ポーカー" className="h-12 w-36 rounded bg-white object-contain p-1" height={80} src="/game-logos/poker.png" width={240} />
-        <h2 className="mt-3 text-lg font-black text-brass">賭けチュートリアル</h2>
-      </header>
-      <div className="grid gap-3 p-4">
-        <details className="rounded border border-white/15 p-3" open>
-          <summary className="cursor-pointer text-sm font-black text-brass">ポーカーロボットの仕様</summary>
-          <div className="mt-3 text-sm font-bold leading-7">
-            <PokerRobotSpecContent specText={pokerSpecText} showBettingSpec />
-          </div>
-        </details>
-        <section className="border-y border-brass/40 py-4">
-          <p className="text-xs font-bold text-stone-300">練習用チップ</p>
-          <div className="mt-2 grid grid-cols-2 gap-3 text-sm font-bold leading-7">
-            <div>
-              <h3 className="text-brass">プレイヤー</h3>
-              <p>所持：{chips}chip</p>
-              <p>ベット：{phase === "betting" ? "未確定" : `${chips}chip（オールイン）`}</p>
-            </div>
-            <div>
-              <h3 className="text-brass">ロボット</h3>
-              <p>所持：{chips}chip</p>
-              <p>勝率：{(winRate * 100).toFixed(1)}%</p>
-              <p>ベット：{phase === "betting" ? "未確定" : `${robotBet}chip`}</p>
-            </div>
-          </div>
-          <p className="mt-3 text-sm font-bold leading-6 text-stone-200">
-            ロボットは自分の手札とフィールドから勝率を計算し、{chips}×勝率（{(winRate * 100).toFixed(1)}%）＝{robotBet}chipを賭けます（端数切り捨て）。
-          </p>
-        </section>
-        <PokerCardGroup cards={playerCards} label="プレイヤーの手札" />
-        {phase !== "betting" ? (
-          <PokerSelectedHandPanel cards={playerSelection} evaluation={playerEvaluation} />
-        ) : null}
-        <PokerCardGroup
-          actions={<GameInfoButtons gameType="poker" onOpenModal={onOpenModal} robot={robot} />}
-          cards={robotCards}
-          label="ポーカーロボットの手札"
-        />
-        <PokerSelectableGroup
-          cards={fieldCards}
-          disabled={phase !== "playing"}
-          label="フィールド"
-          onToggle={(id) => setSelectedIds((current) => current.includes(id)
-            ? current.filter((item) => item !== id)
-            : [...current, id].slice(-2))}
-          selectedCardIds={selectedIds}
-        />
-        {phase === "betting" ? (
-          <button className="min-h-12 rounded bg-brass px-4 font-black text-stone-950 hover:bg-yellow-300" onClick={() => setPhase("playing")} type="button">
-            オールインしてゲームスタート
-          </button>
-        ) : phase === "playing" ? (
-          <button
-            className="min-h-12 rounded bg-brass px-4 font-black text-stone-950 hover:bg-yellow-300 disabled:bg-stone-700 disabled:text-stone-400"
-            disabled={!playerEvaluation}
-            onClick={() => { setOverlayDismissed(false); setPhase("result"); }}
-            type="button"
-          >役を決定</button>
-        ) : (
-          <>
-            <PokerSelectableGroup cards={robotSelection?.cards ?? []} disabled label={`ロボットの役：${robotSelection?.evaluation.label ?? ""}`} onToggle={() => {}} selectedCardIds={[]} />
-            <section className="border-y border-white/20 py-4 text-sm font-bold leading-7">
-              <p className="text-3xl font-black text-brass">{result === "win" ? "YOU WIN" : "YOU LOSE"}</p>
-              <p className="mt-3">{result === "win" ? `ロボットが賭けた${robotBet}chipを獲得しました。` : `賭けた${chips}chipを失いました。`}</p>
-              <p>プレイヤー：{result === "win" ? chips + robotBet : 0}chip / ロボット：{result === "win" ? chips - robotBet : chips * 2}chip</p>
-              <p className="mt-3">ロボットのベットは勝率に応じて変化し、プレイヤーは所持チップを全て賭けます。</p>
-            </section>
-            <button className="min-h-12 rounded border border-white/20 px-4 font-black hover:bg-white/10" onClick={() => { setSelectedIds([]); setPhase("betting"); setOverlayDismissed(false); }} type="button">もう一度確認</button>
-            <button className="min-h-12 rounded bg-brass px-4 font-black text-stone-950 hover:bg-yellow-300" onClick={onComplete} type="button">チュートリアルを終えて3戦目へ</button>
-          </>
-        )}
-      </div>
     </div>
   );
 }
@@ -7216,7 +7030,6 @@ function PokerBattle({
     window.addEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
     return () => window.removeEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
   }, []);
-  const [storedFinalRobotBet, setFinalRobotBet] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalRobotBet`, 0);
   const [hasOpenedSituationReview, setHasOpenedSituationReview] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:hasOpenedSituationReview`, false);
   const [showSituationReviewHint, setShowSituationReviewHint] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showSituationReviewHint`, false);
   const hasShownSituationReviewHint = useRef(false);
@@ -7395,9 +7208,15 @@ function PokerBattle({
   const orderedPokerBlackjackRobotHand = [...blackjackRobotHand].sort((a, b) => getBlackjackOrderValue(b.rank, pastedBlueTexts["blackjack-ace-value"] === "0") - getBlackjackOrderValue(a.rank, pastedBlueTexts["blackjack-ace-value"] === "0"));
   const scannedPokerCards = getCardsById(scannedPokerCardIds.filter((id) => !consumedPokerScanCardIds.includes(id)), generatedScanCards);
   const pokerGuaranteedWinOpening = getGuaranteedWinOpening(playerHand.map(getHighLowCardValue), highLowRobotHand.map(getHighLowCardValue));
-  const pokerHighLowRobotZone: HighLowZoneName = pokerGuaranteedWinOpening !== null ? "LOW" : "HIGH";
+  const pokerHighLowRobotZone: HighLowZoneName = config && "highLowOpeningZone" in config
+    ? config.highLowOpeningZone
+    : pokerGuaranteedWinOpening !== null ? "LOW" : "HIGH";
   const pokerHighLowRobotPlacedCard =
-    activePokerGame === "high-low" ? highLowRobotHand[pokerGuaranteedWinOpening ?? 0] ?? null : null;
+    activePokerGame === "high-low"
+      ? (pokerHighLowRobotZone === "LOW"
+          ? [...highLowRobotHand].sort((a, b) => getHighLowCardValue(b) - getHighLowCardValue(a))[0]
+          : highLowRobotHand[0]) ?? null
+      : null;
   const pokerHighLowPlayerPlacedCard =
     playerHand.find((card) => card.id === pokerHighLowPlayerCardId) ?? null;
   const pokerHighLowVisiblePlayerHand =
@@ -7443,17 +7262,6 @@ function PokerBattle({
   const pokerBlackjackSecondCardPlaced =
     pokerBlackjackPhase === "second-card" ||
     pokerBlackjackPhase === "result";
-  const shouldFinalRobotAllIn = isFinalAllGamesBattle && Boolean(config) && isExchangeApplied && isFinalAllInPreparation({
-    exchangeTiming: pastedBlueTexts["exchange-start-timing"],
-    declaration: pastedBlueTexts["blackjack-declaration"] ?? "ブラックジャック",
-    riddleGame: pastedBlueTexts["riddle-four-game"],
-    scanGame: pastedBlueTexts["scan-poker"],
-    scanRole: pastedBlueTexts["scan-role-name"],
-    exchangePairs: confirmedPokerExchangePairs,
-    playerRanks: getCardsById(applyExchangePairs([...(config?.initialPlayerHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
-    fieldRanks: getCardsById(applyExchangePairs([...(config?.fieldCardIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
-    robotRanks: getCardsById(applyExchangePairs([...(config?.initialRobotHandIds ?? [])], confirmedPokerExchangePairs), generatedScanCards).map((card) => card.rank),
-  });
   const pokerBlackjackDisplayedPlacedCardIds =
     isFinalBlackjackExchange && hasFinalExchangeTriggered
       ? applyExchangePairs(pokerBlackjackPlacedCardIds, confirmedPokerExchangePairs)
@@ -7543,7 +7351,6 @@ function PokerBattle({
     : null;
   const robotPokerSelection = getBestPokerSelection(robotHand, fieldCards);
   const [pokerResultOverlayDismissed, setPokerResultOverlayDismissed] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pokerResultOverlayDismissed`, false);
-  const [showPokerZeroBetDialog, setShowPokerZeroBetDialog] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showPokerZeroBetDialog`, false);
   const pokerOutcome =
     playerPokerEvaluation && robotPokerSelection
       ? comparePokerHands(playerPokerEvaluation, robotPokerSelection.evaluation)
@@ -7556,9 +7363,7 @@ function PokerBattle({
           ? "draw"
           : "lose"
       : null;
-  const finalRobotBet = shouldFinalRobotAllIn ? 100 : storedFinalRobotBet;
-  const finalRobotChips = pokerResult === "win" ? 100 - finalRobotBet : 100;
-  const finalGameCleared = isFinalGameClear({ highLow: pokerHighLowResult, blackjack: pokerBlackjackResult, poker: pokerResult, robotChips: finalRobotChips });
+  const finalGameCleared = isFinalGameClear({ highLow: pokerHighLowResult, blackjack: pokerBlackjackResult, poker: pokerResult });
   const isPokerGameStarted = activePokerGame !== "ready";
   const pokerBattleLost =
     (activePokerGame === "high-low" && pokerHighLowResult !== null && pokerHighLowResult !== "win") ||
@@ -7799,12 +7604,7 @@ function PokerBattle({
     setHasFinalExchangeTriggered(false);
     setSettledFinalHighLowResult(null);
     setSettledFinalBlackjackResult(null);
-    if (isFinalAllGamesBattle && config) {
-      const deferredExchange = isFinalBlackjackExchange || isFinalHighLowExchange;
-      const bettingRobotHand = deferredExchange ? getCardsById([...config.initialRobotHandIds], generatedScanCards) : robotHand;
-      const bettingField = deferredExchange ? getCardsById([...config.fieldCardIds], generatedScanCards) : fieldCards;
-      setFinalRobotBet(shouldFinalRobotAllIn ? 100 : Math.floor(100 * getPokerRobotWinRate(bettingRobotHand, bettingField)));
-    }
+
     setPokerResultOverlayDismissed(false);
     setShowPreparation(false);
     resetPokerHighLowPlacement();
@@ -7988,6 +7788,23 @@ function PokerBattle({
     const isDraw = getBlackjackResult(playerHand, blackjackRobotHand, pastedBlueTexts["blackjack-ace-value"] === "0" ? 0 : 11) === "draw";
 
     if (pokerPlayerHasBlackjack || pastedBlueTexts["blackjack-declaration"]) {
+      if (isExchangeApplied && isBlackjackKingExchangeExposed({
+        finalStage: isFinalAllGamesBattle,
+        timing: pastedBlueTexts["exchange-start-timing"],
+        declaration: pastedBlueTexts["blackjack-declaration"] ?? "ブラックジャック",
+        pairs: confirmedPokerExchangePairs,
+        playerCardIds: config?.initialPlayerHandIds ?? [],
+        robotKingCardIds: getCardsById([...(config?.blackjackRobotHandIds ?? [])], generatedScanCards)
+          .filter((card) => card.rank === "K").map((card) => card.id),
+      })) {
+        setShowPokerBlackjackDeclaration(false);
+        setPokerBlackjackSecondPlacementPending(false);
+        setPokerBlackjackPlacementAnimation(null);
+        setActivePokerGame("lose");
+        setPokerResultOverlayDismissed(false);
+        setShowPokerRobotPunchDialog(true);
+        return;
+      }
       setPokerBlackjackPlacementAnimationMode("hold");
       setShowPokerBlackjackDeclaration(true);
       if (isFinalBlackjackExchange && (pastedBlueTexts["blackjack-declaration"] ?? "ブラックジャック") === "ブラックジャック") {
@@ -8184,9 +8001,6 @@ function PokerBattle({
           result={pokerBattleLost ? "lose" : "win"}
           onDismiss={() => {
             setPokerResultOverlayDismissed(true);
-            if (isPokerThirdBattle && pokerResult === "win") {
-              setShowPokerZeroBetDialog(true);
-            }
           }}
         />
       ) : null}
@@ -8221,12 +8035,7 @@ function PokerBattle({
           tone="hands"
         />
       ) : null}
-      {showPokerZeroBetDialog ? (
-        <PlayerCutInDialog
-          onDismiss={() => setShowPokerZeroBetDialog(false)}
-          text="なぜ賭けたチップが0なんだ...。ロボットの手札とフィールドから算出される勝率は8.9%だったはず...。"
-        />
-      ) : null}
+
       {showPokerHighLowDeclaration ? (
         <BlackjackDeclarationOverlay text={pastedBlueTexts["high-low-declaration"] ?? "ハイ＆ロー"} />
       ) : null}
@@ -8239,7 +8048,7 @@ function PokerBattle({
       {showPokerRobotPunchDialog ? (
         <TutorialDialog
           onDismiss={() => setShowPokerRobotPunchDialog(false)}
-          text={isFinalHighLowExchange ? "ポーカーロボットに殴られた" : "ポーカーロボットに殴られ、意識を失った"}
+          text={isFinalHighLowExchange || isFinalBlackjackExchange ? "ポーカーロボットに殴られた" : "ポーカーロボットに殴られ、意識を失った"}
           tone="hands"
         />
       ) : null}
@@ -8622,24 +8431,7 @@ function PokerBattle({
               ) : null}
               {showPokerSection ? (
                 <>
-                  {(isPokerThirdBattle || isFinalAllGamesBattle) && showPokerSelectedHand ? (
-                    <section className="border-y border-brass/40 py-3">
-                      <p className="text-[11px] font-black text-brass">チップの賭け</p>
-                      <div className="mt-2 grid grid-cols-2 gap-3 text-sm font-bold leading-7">
-                        <div>
-                          <h3 className="text-brass">プレイヤー</h3>
-                          <p>所持：100chip</p>
-                          <p>ベット：100chip（オールイン）</p>
-                        </div>
-                        <div>
-                          <h3 className="text-brass">ポーカーロボット</h3>
-                          <p>所持：100chip</p>
-                          <p>ベット：{isFinalAllGamesBattle ? finalRobotBet : 0}chip</p>
-                          {isFinalAllGamesBattle && pokerResult === "win" ? <p>対戦後：{finalRobotChips}chip</p> : null}
-                        </div>
-                      </div>
-                    </section>
-                  ) : null}
+
                   {showPokerSelectedHand ? (
                     <PokerSelectedHandPanel
                       cards={selectedPokerHand}
@@ -9152,9 +8944,8 @@ function PokerBattle({
                       }}
                       type="button"
                     >
-                      {isFinalAllGamesBattle ? finalGameCleared ? "クリア画面へ" : "事前準備へ" : isPokerSecondBattle ? "賭けチュートリアルへ" : nextPokerBattleLabel}
+                      {isFinalAllGamesBattle ? finalGameCleared ? "クリア画面へ" : "事前準備へ" : nextPokerBattleLabel}
                     </button>
-                    {isFinalAllGamesBattle && !finalGameCleared ? <p className="text-sm font-bold leading-6 text-red-300">全勝しましたが、ロボットに{finalRobotChips}chip残っています。チップを0にして、もう一度全勝しよう。</p> : null}
                 </>
               ) : (
                 <BattleDefeatNotice
@@ -9248,10 +9039,9 @@ function CopyPasteGameSpecifications({
         <PokerRuleContent
           onOpenGuideImage={onOpenGuideImage}
           ruleText={pokerRuleText}
-          showRobotWinRate
         />
       ),
-      spec: <PokerRobotSpecContent specText={pokerSpecText} showBettingSpec />,
+      spec: <PokerRobotSpecContent specText={pokerSpecText} />,
     },
   ];
 
@@ -9590,17 +9380,17 @@ function ExchangeCardSectionPicker({
           <div className="flex items-center justify-between gap-3">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brass">
               {section.label}
-              {monitoredSectionIds.includes(section.id) ? (
-                <span className="ml-2 inline-flex align-middle text-red-300" title="監視中" aria-label="監視中">
-                  <Eye aria-hidden="true" size={16} />
-                </span>
-              ) : null}
             </p>
             <p className="text-xs font-bold text-stone-400">
               {section.disabled ? "選択不可" : `${section.cards.length}枚`}
             </p>
           </div>
-          <div className="mt-3 flex flex-wrap justify-center gap-3">
+          <div className={`relative mt-3 flex flex-wrap justify-center gap-3 ${monitoredSectionIds.includes(section.id) ? "pt-7" : ""}`}>
+            {monitoredSectionIds.includes(section.id) ? (
+              <span className="absolute left-1 top-1 z-10 rounded border border-red-300/60 bg-red-950/85 px-1.5 py-0.5 text-[9px] font-black leading-3 text-red-100 shadow-lg">
+                常時監視中
+              </span>
+            ) : null}
             {section.cards.length === 0 ? (
               <p className="text-sm text-stone-400">カードなし</p>
             ) : null}
@@ -10848,29 +10638,6 @@ function getBestPokerSelection(handCards: PlayingCard[], fieldCards: PlayingCard
       return currentBest;
     }, best);
   }, null);
-}
-
-function getPokerRobotWinRate(robotCards: PlayingCard[], fieldCards: PlayingCard[]) {
-  const robotSelection = getBestPokerSelection(robotCards, fieldCards);
-  if (!robotSelection) return 0;
-  const visibleIds = new Set([...robotCards, ...fieldCards].map((card) => card.id));
-  const unseenCards = deck.filter((card) => !visibleIds.has(card.id));
-  let wins = 0;
-  let total = 0;
-  // The robot knows its own cards and the field, but not the player's hand.
-  for (let first = 0; first < unseenCards.length; first += 1) {
-    for (let second = first + 1; second < unseenCards.length; second += 1) {
-      const playerSelection = getBestPokerSelection(
-        [unseenCards[first], unseenCards[second]], fieldCards,
-      );
-      if (!playerSelection) continue;
-      total += 1;
-      if (comparePokerHands(robotSelection.evaluation, playerSelection.evaluation) >= 0) {
-        wins += 1;
-      }
-    }
-  }
-  return total === 0 ? 0 : wins / total;
 }
 
 function formatPokerRankList(cards: PlayingCard[]) {
