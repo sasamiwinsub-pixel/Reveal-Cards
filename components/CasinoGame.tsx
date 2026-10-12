@@ -2136,6 +2136,19 @@ function BattleResultOverlay({ result, onDismiss }: { result: "win" | "lose"; on
   );
 }
 
+function GameStartRow({ robotId, children }: { robotId: string; children: ReactNode }) {
+  const stage = stages.find((item) => item.robots.some((robot) => robot.id === robotId));
+  const gameNumber = stage ? stage.robots.findIndex((robot) => robot.id === robotId) + 1 : 0;
+  const stageLabel = stage?.id === 4 ? "FinalStage" : `${["", "1st", "2nd", "3rd"][stage?.id ?? 0]}Stage`;
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      {stage ? <p className="text-sm font-black text-brass sm:text-base">{stageLabel} 第{gameNumber}ゲーム</p> : null}
+      <div className="ml-auto shrink-0">{children}</div>
+    </div>
+  );
+}
+
 function GameStartHandNotice({ timing = "ゲームスタート" }: { timing?: string }) {
   return <p className="rounded border border-brass/45 bg-brass/10 px-3 py-2 text-sm font-black text-brass">{timing}宣言時の手札状況</p>;
 }
@@ -5654,6 +5667,7 @@ function BlackjackBattle({
             </button>
           ) : null}
           {phase === "idle" && activeBlackjackGame === "ready" ? (
+            <GameStartRow robotId={robotId}>
             <button
               className={`min-h-12 rounded px-4 py-3 text-sm font-black ${
                 (isFinalBattle && !isFinalPreparationApplied) ||
@@ -5670,6 +5684,7 @@ function BlackjackBattle({
             >
               ゲームスタート
             </button>
+            </GameStartRow>
           ) : null}
 
           {phase === "result" ? (
@@ -8894,6 +8909,7 @@ function PokerBattle({
           ) : null}
           {!showPreparation ? (
             activePokerGame === "ready" ? (
+              <GameStartRow robotId={robotId}>
               <button
                 className="min-h-12 rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
                 onClick={startPokerSequence}
@@ -8901,6 +8917,7 @@ function PokerBattle({
               >
                 ゲームスタート
               </button>
+              </GameStartRow>
             ) : activePokerGame === "high-low" ? (
               pokerHighLowResult === "win" ? (
                 <button
@@ -10209,7 +10226,8 @@ function HighLowBattle({
         ) : null}
 
         {!battleStarted ? (
-          <div className="mx-auto mb-4 flex max-w-4xl justify-end">
+          <div className="mx-auto mb-4 max-w-4xl">
+            <GameStartRow robotId={robotId}>
             <button
               className="min-h-11 rounded bg-casinoRed px-5 text-sm font-black text-white hover:bg-red-700"
               onClick={startBattle}
@@ -10217,6 +10235,7 @@ function HighLowBattle({
             >
               ゲームスタート
             </button>
+            </GameStartRow>
           </div>
         ) : null}
 
