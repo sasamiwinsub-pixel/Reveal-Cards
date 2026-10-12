@@ -3327,7 +3327,10 @@ function BlackjackBattle({
     ...priorTutorialGeneratedCards,
     ...getCardsById(scannedItems, generatedScanCards),
   ].map((card) => [card.id, card])).values()).filter(
-    (card) => !consumedPhysicalScanCardIds.includes(card.id),
+    (card) =>
+      // Older sessions granted a jack for solving the unlock riddle, without scanning it.
+      !(isPrintedScanBattle && card.id === "scan-J") &&
+      !consumedPhysicalScanCardIds.includes(card.id),
   );
   const areScanCardsGenerated = scannedGeneratedCards.every((card) =>
     scannedItems.includes(card.id),
@@ -4011,7 +4014,6 @@ function BlackjackBattle({
 
     setIsScanTutorialAnswerSolved(true);
     setIsScanTutorialComplete(true);
-    setScannedItems((current) => current.includes("scan-J") ? current : [...current, "scan-J"]);
     setScanTutorialMessage("");
     setShowScanPrintedItemsDialog(true);
   }
