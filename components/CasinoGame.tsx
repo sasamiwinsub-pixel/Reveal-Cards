@@ -7302,9 +7302,10 @@ function PokerBattle({
     number: "数字",
   };
   const isFinalBlackjackExchange = isFinalAllGamesBattle && pastedBlueTexts["exchange-start-timing"] === "ブラックジャック";
+  const isFinalHighLowExchange = isFinalAllGamesBattle && pastedBlueTexts["exchange-start-timing"] === "ハイ＆ロー";
   // Preparation previews the reservation; declaration-covered cards stay visually unchanged until poker.
   const visibleExchangePairs = shouldShowReservedExchange({
-    deferred: isFinalBlackjackExchange,
+    deferred: isFinalBlackjackExchange || isFinalHighLowExchange,
     preparation: showPreparation,
     triggered: hasFinalExchangeTriggered,
     game: activePokerGame,
@@ -7752,7 +7753,7 @@ function PokerBattle({
     setSettledFinalHighLowResult(null);
     setSettledFinalBlackjackResult(null);
     if (isFinalAllGamesBattle && config) {
-      const deferredExchange = pastedBlueTexts["exchange-start-timing"] === "ブラックジャック";
+      const deferredExchange = isFinalBlackjackExchange || isFinalHighLowExchange;
       const bettingRobotHand = deferredExchange ? getCardsById([...config.initialRobotHandIds], generatedScanCards) : robotHand;
       const bettingField = deferredExchange ? getCardsById([...config.fieldCardIds], generatedScanCards) : fieldCards;
       setFinalRobotBet(shouldFinalRobotAllIn ? 100 : Math.floor(100 * getPokerRobotWinRate(bettingRobotHand, bettingField)));
@@ -7761,7 +7762,7 @@ function PokerBattle({
     setShowPreparation(false);
     resetPokerHighLowPlacement();
     resetPokerBlackjackPlacement();
-    if (isInstantPokerLoseExchangeSelected) {
+    if (isInstantPokerLoseExchangeSelected && !isFinalHighLowExchange) {
       setActivePokerGame("lose");
       setShowPokerRobotPunchDialog(true);
       return;
@@ -7842,6 +7843,22 @@ function PokerBattle({
       setPokerHighLowPlacementAnimation((current) =>
         current?.zone === zone ? null : current,
       );
+      if (
+        isFinalHighLowExchange &&
+        isExchangeApplied &&
+        (pastedBlueTexts["high-low-declaration"] ?? "ハイ＆ロー") === "ハイ＆ロー" &&
+        [pokerHighLowPlayerPlacedCard, pokerHighLowRobotPlacedCard].some(
+          (card) => card && confirmedPokerExchangePairs.some(
+            (pair) => pair.firstCardId === card.id || pair.secondCardId === card.id,
+          ),
+        )
+      ) {
+        setShowPokerHighLowDeclaration(false);
+        setActivePokerGame("lose");
+        setPokerResultOverlayDismissed(false);
+        setShowPokerRobotPunchDialog(true);
+        return;
+      }
       setShowPokerHighLowDeclaration(true);
       window.setTimeout(() => {
         setShowPokerHighLowDeclaration(false);
@@ -8170,7 +8187,7 @@ function PokerBattle({
       {showPokerRobotPunchDialog ? (
         <TutorialDialog
           onDismiss={() => setShowPokerRobotPunchDialog(false)}
-          text="ポーカーロボットに殴られ、意識を失った"
+          text={isFinalHighLowExchange ? "ポーカーロボットに殴られた" : "ポーカーロボットに殴られ、意識を失った"}
           tone="hands"
         />
       ) : null}
