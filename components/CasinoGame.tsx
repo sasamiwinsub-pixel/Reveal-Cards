@@ -8603,7 +8603,7 @@ function PokerBattle({
               <>
                 <AbilityUsageTabs
                   activeAbility={pokerPreparationAbility}
-                  abilities={isFinalAllGamesBattle && finalPhase === 1 ? ["exchange", "copy-paste"] : ["exchange", "scan", "copy-paste"]}
+                  abilities={["exchange", "scan", "copy-paste"]}
                   counts={{
                     "copy-paste": remainingCopyPastes,
                     exchange: remainingExchanges,
@@ -8623,6 +8623,7 @@ function PokerBattle({
                   <ExchangeRuleList samePrintTimingLabel={samePrintTimingLabel} />
                   {isFinalAllGamesBattle ? <ExchangeModeToggleButton className="mt-3" isActive={targetSelectionAbility === "exchange"} isCompleted={remainingExchanges === 0} onClick={togglePokerExchangeMode} /> : null}
                   <ExchangeCardSectionPicker
+                    confirmedCardColors={confirmedPokerExchangeColors}
                     handNotice={<GameStartHandNotice timing={isFinalAllGamesBattle ? pastedBlueTexts["exchange-start-timing"] ?? "ゲームスタート" : "ゲームスタート"} />}
                     monitoredSectionIds={["poker-robot-hand", "field"]}
                     onToggleCard={toggleExchangeCard}
