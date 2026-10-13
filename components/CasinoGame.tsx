@@ -7295,11 +7295,15 @@ function PokerBattle({
             : []),
         ]
       : [];
+  // The declaration settles the score before the deferred exchange changes the cards.
+  const pokerBlackjackScoringCards = isFinalBlackjackExchange
+    ? getCardsById(pokerBlackjackPlacedCardIds, generatedScanCards)
+    : pokerBlackjackPlayerFieldCards;
   const pokerBlackjackPlayerValueCards =
-    pokerBlackjackPlayerFieldCards.length > 0
-      ? pokerBlackjackSecondPlacementPending
-        ? pokerBlackjackPlayerFieldCards.slice(0, 1)
-        : pokerBlackjackPlayerFieldCards
+    pokerBlackjackScoringCards.length > 0
+      ? pokerBlackjackSecondPlacementPending && !(isFinalBlackjackExchange && showPokerBlackjackDeclaration)
+        ? pokerBlackjackScoringCards.slice(0, 1)
+        : pokerBlackjackScoringCards
       : [];
   const pokerBlackjackPlayerFieldValue =
     pokerBlackjackPlayerValueCards.length > 0
