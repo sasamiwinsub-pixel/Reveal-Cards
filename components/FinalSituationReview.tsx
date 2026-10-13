@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, Check } from "lucide-react";
+import { useEffect } from "react";
 import { useSessionState } from "@/lib/session-state";
 
 const themes = [
@@ -12,18 +13,35 @@ const themes = [
       { text: "ゲームスタート宣言時にエクスチェンジできる対象は？", options: ["自分の手札", "ハイ＆ローロボットの手札", "ブラックジャックロボットの手札", "ポーカーロボットの手札", "フィールド"], answers: [0, 1, 2] },
       { text: "ポーカーロボットに勝利するには？", options: ["コピーペースト機能でポーカーのルールを変更する", "自分がフォーカードを出す"], answers: [1] },
       { text: "自分がフォーカードを出せる数字は？", options: ["A", "K", "Q", "J"], answers: [1] },
-      { text: "Kのフォーカードを作るには、自分の手札へのエクスチェンジが何回必要？", options: ["0回", "1回", "2回"], answers: [1] },
+      { text: "Kのフォーカードを作るには、自分の手札へのエクスチェンジが何回必要？", options: ["0回", "1回", "2回"], answers: [2] },
     ],
   },
 ];
 
-export default function FinalSituationReview({ onBack }: { onBack: () => void }) {
+const monitoringTheme = {
+  title: "監視の理由",
+  questions: [{
+    text: "なぜポーカーロボットがブラックジャックのＫが変わる瞬間を見たのか",
+    options: ["イカサマの発生を検知する機能があるから", "テーブルを目で常に見ているから", "エクスチェンジの処理速度が甘かったから"],
+    answers: [1],
+  }],
+};
+
+export default function FinalSituationReview({ onBack, showMonitoringQuestion = false, focusMonitoringQuestion = false }: {
+  onBack: () => void;
+  showMonitoringQuestion?: boolean;
+  focusMonitoringQuestion?: boolean;
+}) {
+  const visibleThemes = showMonitoringQuestion ? [...themes, monitoringTheme] : themes;
   const [storedActiveTheme, setActiveTheme] = useSessionState("stage-4:FinalSituationReview:activeTheme", 0);
-  const activeTheme = Math.min(storedActiveTheme, themes.length - 1);
+  const activeTheme = Math.min(storedActiveTheme, visibleThemes.length - 1);
+  useEffect(() => {
+    if (showMonitoringQuestion && focusMonitoringQuestion) setActiveTheme(1);
+  }, [showMonitoringQuestion, focusMonitoringQuestion, setActiveTheme]);
   const [progress, setProgress] = useSessionState("stage-4:FinalSituationReview:progress", [0, 0]);
   const [selections, setSelections] = useSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections", {});
   const [errors, setErrors] = useSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors", {});
-  const theme = themes[activeTheme];
+  const theme = visibleThemes[activeTheme];
 
   return (
     <section className="min-w-0 p-4 text-white">
@@ -34,9 +52,9 @@ export default function FinalSituationReview({ onBack }: { onBack: () => void })
         状況整理<span className="inline-block text-base">（全て埋めなくてもクリア可能）</span>
       </h2>
       <div aria-label="状況整理のテーマ" className="my-5 grid gap-2" role="tablist">
-        {themes.map((item, index) => (
+        {visibleThemes.map((item, index) => (
           <button aria-selected={activeTheme === index} className={`min-h-14 min-w-0 rounded border px-2 py-2 text-sm font-black ${activeTheme === index ? "border-brass bg-brass text-stone-950" : "border-white/20 hover:bg-white/10"}`} id={`situation-tab-${index}`} key={item.title} onClick={() => setActiveTheme(index)} role="tab" type="button">
-            {item.title}<span className="mt-1 block text-xs">{progress[index]}/{item.questions.length}</span>
+            {item.title}<span className="mt-1 block text-xs">{progress[index] ?? 0}/{item.questions.length}</span>
           </button>
         ))}
       </div>

@@ -24,9 +24,10 @@ import { normalizeScanIllustrationName } from "@/lib/scan-input";
 import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid } from "@/lib/physical-scan";
 import { getGuaranteedWinOpening } from "@/lib/high-low-opening";
 import { shouldShowReservedExchange, isBlackjackKingExchangeExposed } from "@/lib/exchange-timing";
+import { isFinalFirstPhaseComplete } from "@/lib/final-phase";
 import { getBlackjackOrderValue, isLargestBlackjackCard } from "@/lib/blackjack-order";
 import { applyExchangePairs } from "@/lib/card-exchange";
-import { clearStageSession, useSessionState } from "@/lib/session-state";
+import { clearStageSession, readSessionState, useSessionState } from "@/lib/session-state";
 import { isFinalGameClear } from "@/lib/final-clear";
 import {
   Fragment,
@@ -200,8 +201,8 @@ const highLowBattleConfigs = {
   },
   "all-games-last": {
     correctExchangePairs: [],
-    initialPlayerHandIds: ["A-daia", "K-crub"],
-    initialRobotHandIds: ["Q-heart", "Q-crub"],
+    initialPlayerHandIds: ["A-daia", "J-heart"],
+    initialRobotHandIds: ["Q-heart", "K-crub"],
     robotHighCardAfterExchangeId: "Q-crub",
   },
 } as const;
@@ -234,8 +235,8 @@ const blackjackBattleConfigs = {
     initialRobotHandIds: ["Q-daia", "scan-10"],
   },
   "all-games-last": {
-    highLowRobotHandIds: ["Q-heart", "Q-crub"],
-    initialPlayerHandIds: ["A-daia", "K-crub"],
+    highLowRobotHandIds: ["Q-heart", "K-crub"],
+    initialPlayerHandIds: ["A-daia", "J-heart"],
     initialRobotHandIds: ["K-heart", "Q-daia"],
   },
 } as const;
@@ -322,13 +323,12 @@ const pokerBattleConfigs = {
   "all-games-last": {
     blackjackRobotHandIds: ["K-heart", "Q-daia"],
     exchangePairs: [],
-    highLowOpeningZone: "LOW",
     fieldCardIds: ["A-crub", "K-spade", "K-daia", "J-crub"],
-    highLowRobotHandIds: ["Q-heart", "Q-crub"],
-    initialPlayerHandIds: ["A-daia", "K-crub"],
+    highLowRobotHandIds: ["Q-heart", "K-crub"],
+    initialPlayerHandIds: ["A-daia", "J-heart"],
     initialRobotHandIds: ["A-spade", "A-heart"],
     maxCopyPastes: 4,
-    maxExchanges: 1,
+    maxExchanges: 2,
     maxScans: 3,
     scanRequirements: [
       {
@@ -860,12 +860,12 @@ const ENABLE_FINAL_DISCOVERY_PHASE = false;
 
 const finalBattleDisclosureSections: ExchangeCardSection[] = [
   {
-    cards: getCardsById(["A-daia", "K-crub"]),
+    cards: getCardsById(["A-daia", "J-heart"]),
     id: "final-player-hand",
     label: "自分の手札",
   },
   {
-    cards: getCardsById(["Q-heart", "Q-crub"]),
+    cards: getCardsById(["Q-heart", "K-crub"]),
     id: "final-high-low-robot-hand",
     label: "ハイ＆ローのロボット手札",
   },
@@ -6507,7 +6507,7 @@ function FinalBattlePreparationPanel({
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
         {[
-          ["エクスチェンジ", "1回"],
+          ["エクスチェンジ", "2回"],
           ["スキャン", "3回"],
           ["コピーペースト", "5回"],
         ].map(([label, value]) => (
@@ -6986,6 +6986,9 @@ function PokerBattle({
       ? pokerBattleConfigs[robotId as keyof typeof pokerBattleConfigs]
       : null;
   const [selectedCardIds, setSelectedCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:selectedCardIds`, []);
+  const [finalPhase, setFinalPhase] = useSessionState<1 | 2>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhase`, 1);
+  const [finalFirstPhaseComplete, setFinalFirstPhaseComplete] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalFirstPhaseComplete`, false);
+  const [finalPhaseDialog, setFinalPhaseDialog] = useSessionState<"hint" | "report" | "abilities" | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhaseDialog`, null);
   const [exchangeCardIds, setExchangeCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:exchangeCardIds`, []);
   const [confirmedPokerExchangePairs, setConfirmedPokerExchangePairs] = useSessionState<Array<{ firstCardId: string; secondCardId: string }>>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:confirmedPokerExchangePairs`, []);
   const [isExchangeApplied, setIsExchangeApplied] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:isExchangeApplied`, false);
@@ -7031,6 +7034,8 @@ function PokerBattle({
     return () => window.removeEventListener(GLOBAL_NAV_EVENT, handleGlobalNav);
   }, []);
   const [hasOpenedSituationReview, setHasOpenedSituationReview] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:hasOpenedSituationReview`, false);
+  const [hasSeenMonitoringReview, setHasSeenMonitoringReview] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:hasSeenMonitoringReview`, false);
+  const [focusMonitoringReview, setFocusMonitoringReview] = useState(false);
   const [showSituationReviewHint, setShowSituationReviewHint] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showSituationReviewHint`, false);
   const hasShownSituationReviewHint = useRef(false);
   const [activePokerGame, setActivePokerGame] = useSessionState<
@@ -7088,7 +7093,10 @@ function PokerBattle({
     useSessionState<CopyPasteFormat>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteFormat`, "hiragana");
   const [isCopyPasteApplied, setIsCopyPasteApplied] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:isCopyPasteApplied`, false);
   const [copyPasteUseCount, setCopyPasteUseCount] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteUseCount`, 0);
-  const [isCopyPasteRiddleSolved, setIsCopyPasteRiddleSolved] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:isCopyPasteRiddleSolved`, robotId === "all-games-last");
+  const [isCopyPasteRiddleSolved, setIsCopyPasteRiddleSolved] = useSessionState<boolean>(
+    `stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:${robotId === "all-games-last" ? "copyPasteUnlockConfirmed" : "isCopyPasteRiddleSolved"}`,
+    () => robotId === "all-games-last" && readSessionState("stage-3:PokerBattle:poker-3-3:isCopyPasteRiddleSolved", false),
+  );
   const [pastedBlueTexts, setPastedBlueTexts] = useSessionState<Record<string, string>>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pastedBlueTexts`, {});
   const [copyPasteError, setCopyPasteError] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteError`, "");
   const [copyPasteSuccessMessage, setCopyPasteSuccessMessage] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteSuccessMessage`, "");
@@ -7103,7 +7111,7 @@ function PokerBattle({
   const scanRequirements =
     config && "scanRequirements" in config ? [...config.scanRequirements] : [];
   const maxScans =
-    config && "maxScans" in config ? config.maxScans : scanRequirements.length;
+    robotId === "all-games-last" && finalPhase === 1 ? 0 : config && "maxScans" in config ? config.maxScans : scanRequirements.length;
   const remainingScans = Math.max(0, maxScans - scannedPokerCardIds.length);
   const remainingExchanges = Math.max(
     0,
@@ -7142,7 +7150,7 @@ function PokerBattle({
     ? "小謎の紙"
     : "対象が同じ紙面上の場合";
   const maxCopyPastes =
-    config && "maxCopyPastes" in config ? config.maxCopyPastes : 0;
+    isFinalAllGamesBattle ? (finalPhase === 1 ? 1 : 3) : config && "maxCopyPastes" in config ? config.maxCopyPastes : 0;
   const remainingCopyPastes = Math.max(0, maxCopyPastes - copyPasteUseCount);
   const copyPasteTargets = [
     ...(config && "copyPasteTargets" in config ? [...config.copyPasteTargets] : []),
@@ -7208,9 +7216,7 @@ function PokerBattle({
   const orderedPokerBlackjackRobotHand = [...blackjackRobotHand].sort((a, b) => getBlackjackOrderValue(b.rank, pastedBlueTexts["blackjack-ace-value"] === "0") - getBlackjackOrderValue(a.rank, pastedBlueTexts["blackjack-ace-value"] === "0"));
   const scannedPokerCards = getCardsById(scannedPokerCardIds.filter((id) => !consumedPokerScanCardIds.includes(id)), generatedScanCards);
   const pokerGuaranteedWinOpening = getGuaranteedWinOpening(playerHand.map(getHighLowCardValue), highLowRobotHand.map(getHighLowCardValue));
-  const pokerHighLowRobotZone: HighLowZoneName = config && "highLowOpeningZone" in config
-    ? config.highLowOpeningZone
-    : pokerGuaranteedWinOpening !== null ? "LOW" : "HIGH";
+  const pokerHighLowRobotZone: HighLowZoneName = pokerGuaranteedWinOpening !== null ? "LOW" : "HIGH";
   const pokerHighLowRobotPlacedCard =
     activePokerGame === "high-low"
       ? (pokerHighLowRobotZone === "LOW"
@@ -7363,7 +7369,7 @@ function PokerBattle({
           ? "draw"
           : "lose"
       : null;
-  const finalGameCleared = isFinalGameClear({ highLow: pokerHighLowResult, blackjack: pokerBlackjackResult, poker: pokerResult });
+  const finalGameCleared = finalPhase === 2 && isFinalGameClear({ highLow: pokerHighLowResult, blackjack: pokerBlackjackResult, poker: pokerResult });
   const isPokerGameStarted = activePokerGame !== "ready";
   const pokerBattleLost =
     (activePokerGame === "high-low" && pokerHighLowResult !== null && pokerHighLowResult !== "win") ||
@@ -7797,6 +7803,9 @@ function PokerBattle({
         robotKingCardIds: getCardsById([...(config?.blackjackRobotHandIds ?? [])], generatedScanCards)
           .filter((card) => card.rank === "K").map((card) => card.id),
       })) {
+        if (isFinalAllGamesBattle && finalPhase === 1 && isFinalFirstPhaseComplete(confirmedPokerExchangePairs, pastedBlueTexts["exchange-start-timing"])) {
+          setFinalFirstPhaseComplete(true);
+        }
         setShowPokerBlackjackDeclaration(false);
         setPokerBlackjackSecondPlacementPending(false);
         setPokerBlackjackPlacementAnimation(null);
@@ -7968,6 +7977,32 @@ function PokerBattle({
   }
 
   function resetPokerInstantLose() {
+    if (isFinalAllGamesBattle && finalPhase === 1 && finalFirstPhaseComplete) {
+      setFinalPhase(2);
+      setFinalFirstPhaseComplete(false);
+      setFinalPhaseDialog("report");
+      setPastedBlueTexts({ "exchange-start-timing": "ブラックジャック" });
+      setCopyPasteUseCount(0);
+      setIsCopyPasteApplied(false);
+      setCopiedTargetId(null);
+      setPasteTargetId(null);
+      setCopyPasteStep("source");
+      setSelectedBlueTexts({});
+      setScannedPokerCardIds([]);
+      setConsumedPokerScanCardIds([]);
+      setFinalPhysicalScanIds([]);
+      setFinalPhysicalScanReading("");
+      setFinalPhysicalScanSplitIndexes([]);
+      setPokerScanAnswer("");
+      setPokerScanIllustration("");
+      setPokerScanSplitIndexes([]);
+      setPokerScanMessage("");
+      setPokerScanPreviewSrc(null);
+      setCopyPasteError("");
+      setCopyPasteSuccessMessage("");
+      setShowSituationReview(false);
+      setPokerPreparationAbility("exchange");
+    }
     setPokerResultOverlayDismissed(false);
     setSelectedCardIds([]);
     resetPokerExchangeSelection();
@@ -7980,7 +8015,7 @@ function PokerBattle({
 
   return (
     <BlueTextSelectionContext.Provider value={{
-      active: (isPokerThirdBattle || isFinalAllGamesBattle) && targetSelectionAbility === "copy-paste",
+      active: isCopyPasteRiddleSolved && (isPokerThirdBattle || isFinalAllGamesBattle) && targetSelectionAbility === "copy-paste",
       selectedId: copiedTargetId,
       replacements: pastedBlueTexts,
       allowRiddleCopy: isFinalAllGamesBattle,
@@ -8001,7 +8036,21 @@ function PokerBattle({
           result={pokerBattleLost ? "lose" : "win"}
           onDismiss={() => {
             setPokerResultOverlayDismissed(true);
+            if (isFinalAllGamesBattle && finalPhase === 1 && finalFirstPhaseComplete) setFinalPhaseDialog("hint");
           }}
+        />
+      ) : null}
+      {finalPhaseDialog ? (
+        <TutorialDialog
+          key={finalPhaseDialog}
+          dismissOnlyOnButton
+          text={finalPhaseDialog === "hint"
+            ? "chips：やることを5回連続でタップすると、開発秘話が見れるぞ"
+            : finalPhaseDialog === "report"
+              ? "ポーカーロボットのイカサマ監視に引っかかったようだね。ブラックジャックロボットの置いたKが変わった瞬間を目で捉えた報告のみ来ているぞ"
+              : "能力使用回数を追加する。もう一度だけ挑戦すると良い"}
+          onDismiss={() => setFinalPhaseDialog(finalPhaseDialog === "report" ? "abilities" : null)}
+          tone="hands"
         />
       ) : null}
       {expandedPokerRiddle ? (
@@ -8112,8 +8161,9 @@ function PokerBattle({
 
       {isFinalAllGamesBattle ? (
         <div hidden={!showSituationReview}>
-          <FinalSituationReview onBack={() => {
+          <FinalSituationReview showMonitoringQuestion={finalPhase === 2} focusMonitoringQuestion={focusMonitoringReview} onBack={() => {
             setShowSituationReview(false);
+            setFocusMonitoringReview(false);
             window.scrollTo({ top: 0, behavior: "instant" });
           }} />
         </div>
@@ -8533,9 +8583,12 @@ function PokerBattle({
               <div className="mb-4 flex flex-wrap items-stretch gap-3">
                 <GameTableReturnButton onClick={() => setShowPreparation(false)} />
                 {isFinalAllGamesBattle ? (
+                  <div className="min-w-0 flex-1">
                   <button
-                    className={`min-h-14 flex-1 rounded border-2 border-red-200 bg-casinoRed px-5 py-3 text-lg font-black text-white transition-colors hover:bg-red-600 ${hasOpenedSituationReview ? "" : "ring-4 ring-yellow-300 ring-offset-2 ring-offset-[#071b12] shadow-[0_0_24px_rgba(250,204,21,0.55)]"}`}
+                    className={`min-h-14 w-full rounded border-2 border-red-200 bg-casinoRed px-5 py-3 text-lg font-black text-white transition-colors hover:bg-red-600 ${hasOpenedSituationReview && !(finalPhase === 2 && !hasSeenMonitoringReview) ? "" : "ring-4 ring-yellow-300 ring-offset-2 ring-offset-[#071b12] shadow-[0_0_24px_rgba(250,204,21,0.55)]"}`}
                     onClick={() => {
+                      setFocusMonitoringReview(finalPhase === 2 && !hasSeenMonitoringReview);
+                      if (finalPhase === 2) setHasSeenMonitoringReview(true);
                       setHasOpenedSituationReview(true);
                       setShowSituationReview(true);
                       setShowSituationReviewHint(false);
@@ -8543,6 +8596,10 @@ function PokerBattle({
                     }}
                     type="button"
                   >状況整理</button>
+                  {finalPhase === 2 && !hasSeenMonitoringReview ? (
+                    <TutorialBubble className="mt-3">状況整理に新しい問題が追加されたぞ</TutorialBubble>
+                  ) : null}
+                  </div>
                 ) : null}
               </div>
             ) : null}
@@ -8553,6 +8610,7 @@ function PokerBattle({
               <>
                 <AbilityUsageTabs
                   activeAbility={pokerPreparationAbility}
+                  abilities={isFinalAllGamesBattle && finalPhase === 1 ? ["exchange", "copy-paste"] : ["exchange", "scan", "copy-paste"]}
                   counts={{
                     "copy-paste": remainingCopyPastes,
                     exchange: remainingExchanges,
@@ -8651,7 +8709,8 @@ function PokerBattle({
                       onUnlock={() => setIsCopyPasteRiddleSolved(true)}
                       onOpen={setExpandedPokerRiddle}
                     />
-                  ) : null}
+                  ) : (
+                  <>
                   <CopyPastePreparationPanel
                     copiedTarget={copiedTarget}
                     format={copyPasteFormat}
@@ -8678,6 +8737,7 @@ function PokerBattle({
                     onChooseFormat={setCopyPasteFormat}
                     isSelecting={targetSelectionAbility === "copy-paste"}
                     onStart={() => {
+                      if (!isCopyPasteRiddleSolved) return;
                       const wasSelecting = targetSelectionAbility === "copy-paste";
                       setCopyPasteError("");
                       setCopyPasteSuccessMessage("");
@@ -8692,6 +8752,8 @@ function PokerBattle({
                   <CopyPasteGameSpecifications
                     onOpenGuideImage={setExpandedPokerRiddle}
                   />
+                  </>
+                  )}
                   </>
                 ) : null}
               </>
