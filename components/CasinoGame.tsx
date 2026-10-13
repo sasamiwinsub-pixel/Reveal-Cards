@@ -1669,7 +1669,7 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
                 </>}
           </p>
           <p className="mt-3 text-sm font-bold leading-7 text-red-300">
-            ファイナルゲームでは、これまでのコピーペーストによる変更とエクスチェンジをすべてリセットします。各能力の使用回数もリセットされます。
+            ファイナルゲームでは、これまでのコピーペーストによる変更とエクスチェンジをすべてリセットします。
           </p>
           <div className="mt-5 grid gap-3">
             {finalBattleDisclosureSections.map((section) => (
@@ -1679,13 +1679,6 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
                 label={section.label}
               />
             ))}
-          </div>
-          <h3 className="mt-5 text-lg font-black">小ネタも<span className="text-red-300">公開</span>！</h3>
-          <div className="relative ml-2 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-stone-950 sm:p-5">
-            <span aria-hidden="true" className="absolute -left-[9px] top-6 h-4 w-4 rotate-45 border-b border-l border-emerald-200 bg-emerald-50" />
-            <p className="relative text-sm font-bold leading-7">
-            画面上部の”やること”を5回連続でタップすると開発秘話が見れるぞ
-            </p>
           </div>
           <button
             className="mt-5 min-h-12 w-full rounded bg-brass px-4 py-3 text-sm font-black text-stone-950 hover:bg-yellow-300"
