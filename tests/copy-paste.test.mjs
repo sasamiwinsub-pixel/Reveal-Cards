@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolvePaste, getCopyFormatPreview } from "../lib/copy-paste.ts";
+import { resolvePaste, getCopyFormatPreview, getCorrectCopyPasteChanges } from "../lib/copy-paste.ts";
+
+test("copy-paste redo preserves correct final changes and removes only mistakes", () => {
+  const correct = {
+    "exchange-start-timing": "ブラックジャック",
+    "riddle-four-game": "ハイ＆ロー",
+    "scan-poker": "ブラックジャック",
+    "scan-role-name": "じゅういち",
+  };
+  assert.deepEqual(getCorrectCopyPasteChanges(correct, true), correct);
+  for (const wrongRole of ["11", "ジュウイチ", "十一"]) {
+    assert.deepEqual(getCorrectCopyPasteChanges({ ...correct, "scan-role-name": wrongRole, "blackjack-ace-value": "0" }, true), {
+      "exchange-start-timing": "ブラックジャック",
+      "riddle-four-game": "ハイ＆ロー",
+      "scan-poker": "ブラックジャック",
+    });
+  }
+  assert.deepEqual(getCorrectCopyPasteChanges({ "paste-blackjack-ace": "0", "high-low-declaration": "11" }, false), { "paste-blackjack-ace": "0" });
+});
 
 test("copy source previews distinguish conversion from paste eligibility", () => {
   assert.equal(getCopyFormatPreview("ハイ＆ロー", "hiragana"), "はい＆ろー");

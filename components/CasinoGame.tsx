@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import FinalSituationReview from "./FinalSituationReview";
-import { resolvePaste, getCopyFormatPreview } from "@/lib/copy-paste";
+import { resolvePaste, getCopyFormatPreview, getCorrectCopyPasteChanges } from "@/lib/copy-paste";
 import { normalizeScanIllustrationName } from "@/lib/scan-input";
 import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid, getFinalSingleCardScan, getAvailablePhysicalScanCards } from "@/lib/physical-scan";
 import { getGuaranteedWinOpening } from "@/lib/high-low-opening";
@@ -7156,6 +7156,12 @@ function PokerBattle({
       || readSessionState("stage-4:PokerBattle:all-games-last:copyPasteUnlockConfirmed", false),
   );
   const [pastedBlueTexts, setPastedBlueTexts] = useSessionState<Record<string, string>>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:pastedBlueTexts`, {});
+  const [correctCopyPasteState, setCorrectCopyPasteState] = useSessionState<{ texts: Record<string, string>; useCount: number }>(
+    `stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:correctCopyPasteState`, () => {
+      const texts = getCorrectCopyPasteChanges(pastedBlueTexts, robotId === "all-games-last");
+      const inheritedTiming = robotId === "all-games-last" && finalPhase === 2 && texts["exchange-start-timing"] === "ブラックジャック" ? 1 : 0;
+      return { texts, useCount: Math.min(copyPasteUseCount, Math.max(0, Object.keys(texts).length - inheritedTiming)) };
+    });
   const [copyPasteError, setCopyPasteError] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteError`, "");
   const [copyPasteSuccessMessage, setCopyPasteSuccessMessage] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:copyPasteSuccessMessage`, "");
   const [showPokerHighLowDeclaration, setShowPokerHighLowDeclaration] = useState(false);
@@ -7708,6 +7714,9 @@ function PokerBattle({
     setCopyPasteError("");
     setCopyPasteSuccessMessage(`ペースト実行しました。${pasteTarget.label} を「${text}」に上書きしました。`);
     setPastedBlueTexts((current) => ({ ...current, [pasteTarget.id]: text }));
+    if (getCorrectCopyPasteChanges({ [pasteTarget.id]: text }, isFinalAllGamesBattle)[pasteTarget.id] === text) {
+      setCorrectCopyPasteState((current) => ({ texts: { ...current.texts, [pasteTarget.id]: text }, useCount: current.useCount + 1 }));
+    }
     setTargetSelectionAbility(null);
     setIsCopyPasteApplied(true);
     setCopyPasteUseCount((count) => count + 1);
@@ -8089,6 +8098,7 @@ function PokerBattle({
       setFinalFirstPhaseComplete(false);
       setFinalPhaseDialog("report");
       setPastedBlueTexts({ "exchange-start-timing": "ブラックジャック" });
+      setCorrectCopyPasteState({ texts: { "exchange-start-timing": "ブラックジャック" }, useCount: 0 });
       setCopyPasteUseCount(0);
       setIsCopyPasteApplied(false);
       setCopiedTargetId(null);
@@ -8828,23 +8838,25 @@ function PokerBattle({
                     format={copyPasteFormat}
                     formatLabel={copyPasteFormatLabel[copyPasteFormat]}
                     isApplied={isCopyPasteApplied && (!isFinalAllGamesBattle || copyPasteUseCount >= maxCopyPastes)}
-                    canReset={copyPasteUseCount > 0}
+                    canReset={Object.keys(pastedBlueTexts).length > Object.keys(getCorrectCopyPasteChanges(pastedBlueTexts, isFinalAllGamesBattle)).length}
                     maxCopyPastes={remainingCopyPastes}
                     onPaste={executeCopyPaste}
                     error={copyPasteError}
                     successMessage={copyPasteSuccessMessage}
                     appliedText={pasteTarget ? pastedBlueTexts[pasteTarget.id] : undefined}
                     onReset={() => {
-                      setPastedBlueTexts(isFinalAllGamesBattle && finalPhase === 2
-                        ? { "exchange-start-timing": "ブラックジャック" }
-                        : {});
+                      if (targetSelectionAbility !== null || Object.keys(pastedBlueTexts).length === Object.keys(getCorrectCopyPasteChanges(pastedBlueTexts, isFinalAllGamesBattle)).length) return;
+                      setPastedBlueTexts({
+                        ...correctCopyPasteState.texts,
+                        ...(isFinalAllGamesBattle && finalPhase === 2 ? { "exchange-start-timing": "ブラックジャック" } : {}),
+                      });
                       setCopyPasteError("");
                       setCopyPasteSuccessMessage("");
                       setSelectedBlueTexts({});
                       setCopiedTargetId(null);
                       setPasteTargetId(null);
-                      setIsCopyPasteApplied(false);
-                      setCopyPasteUseCount(0);
+                      setIsCopyPasteApplied(correctCopyPasteState.useCount > 0);
+                      setCopyPasteUseCount(correctCopyPasteState.useCount);
                       setCopyPasteStep("source");
                       setTargetSelectionAbility(null);
                     }}

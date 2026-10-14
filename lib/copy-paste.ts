@@ -1,5 +1,15 @@
 export type PasteFormat = "hiragana" | "katakana" | "kanji" | "number";
 
+export function getCorrectCopyPasteChanges(changes: Record<string, string>, finalStage: boolean): Record<string, string> {
+  const expected: Record<string, string> = finalStage ? {
+    "exchange-start-timing": "ブラックジャック",
+    "riddle-four-game": "ハイ＆ロー",
+    "scan-poker": "ブラックジャック",
+    "scan-role-name": "じゅういち",
+  } : { "paste-blackjack-ace": "0" };
+  return Object.fromEntries(Object.entries(changes).filter(([id, text]) => expected[id] === text));
+}
+
 const readings: Record<string, string> = {
   "例": "れい", "役名": "やくめい", "11": "じゅういち",
   "ゲームスタート": "げーむすたーと", "ポーカー": "ぽーかー",
