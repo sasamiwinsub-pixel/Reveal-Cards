@@ -497,13 +497,15 @@ function GlobalGameHeader({
                 >
                   <MapIcon aria-hidden="true" size={16} />会場MAP
                 </button>
-                <button
+                <a
                   className="flex min-h-10 items-center justify-center gap-2 rounded border border-brass/50 bg-brass/10 px-3 text-sm font-black text-brass hover:bg-brass/20"
-                  type="button"
+                  href="/hints"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   <Lightbulb aria-hidden="true" size={16} />
                   ヒント
-                </button>
+                </a>
                 <button
                   className="mt-1 flex min-h-10 items-center justify-center gap-2 rounded border border-white/14 bg-white/8 px-3 text-sm font-black text-stone-100 hover:bg-white/14"
                   onClick={onResetStage}

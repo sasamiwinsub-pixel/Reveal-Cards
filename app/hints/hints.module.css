@@ -1,0 +1,40 @@
+.page {
+  min-height: 100vh;
+  background: #071b12;
+  padding: 32px 16px 64px;
+  color: #f4f4f5;
+}
+
+.header, .stages {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.header { padding-bottom: 24px; }
+.brand { color: #d9ad4a; font-size: 14px; font-weight: 700; }
+.header h1 { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 28px; font-weight: 900; }
+.accordion { min-width: 0; border-bottom: 1px solid #ffffff25; }
+.accordion summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 12px 8px; cursor: pointer; list-style: none; overflow-wrap: anywhere; }
+.accordion summary::-webkit-details-marker { display: none; }
+.accordion summary:hover { background: #ffffff08; }
+.accordion summary:focus-visible { outline: 2px solid #7dd3fc; outline-offset: -2px; }
+.accordion h2, .accordion h3, .accordion h4 { margin: 0; font-weight: 800; }
+.stage > summary { min-height: 64px; color: #d9ad4a; font-size: 22px; }
+.battle > summary { color: #f4f4f5; font-size: 18px; }
+.group > summary { color: #bae6fd; font-size: 16px; }
+.line > summary { color: #cbd5e1; font-size: 14px; font-weight: 700; }
+.chevron { flex-shrink: 0; transition: transform 150ms ease; }
+.accordion[open] > summary .chevron { transform: rotate(90deg); }
+.nested { min-width: 0; margin-left: 16px; padding-left: 12px; border-left: 1px solid #ffffff20; }
+.answer { margin: 0; padding: 8px 8px 20px 34px; font-size: 16px; line-height: 1.8; overflow-wrap: anywhere; }
+
+@media (max-width: 480px) {
+  .page { padding: 24px 12px 48px; }
+  .nested { margin-left: 6px; padding-left: 6px; }
+  .answer { padding-left: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron { transition: none; }
+}
