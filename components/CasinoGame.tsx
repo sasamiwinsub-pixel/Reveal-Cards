@@ -3265,8 +3265,8 @@ function BlackjackBattle({
   const scannedTwelveCard = generatedScanCards["scan-12"];
   const scannedNineCard = generatedScanCards["scan-9"];
   const fourthScanGeneratedExchangeCards = getAvailablePhysicalScanCards(isFourthScanGenerated
-    ? [scannedTwelveCard, scannedNineCard]
-    : [scannedTwelveCard], consumedPhysicalScanCardIds);
+    ? [scannedNineCard]
+    : [], consumedPhysicalScanCardIds);
   const canSelectFourthRobotExchangeCards =
     isRiddleExchangeModeActive && !isFourthRobotExchangeConfirmed;
   const canConfirmFourthRobotExchange =
