@@ -1872,10 +1872,12 @@ function ScanRuleText({ showPhysicalRules = true }: { showPhysicalRules?: boolea
         イラストの呼称の入力<SelectableBlueText id="scan-example">例</SelectableBlueText>
       </span>
       <span className="block">イチ　ゴ→6</span>
+      <span className="block">いち　もく　さん→4</span>
       <span className="block">フォー　カード→4</span>
       <span className="block">レース　クイーン→12</span>
       <span className="block">レイ　チョウルイ→0</span>
       <span className="block">ひ　ふ　み→和名のためNG</span>
+      <span className="block">し　く　はっ　く→日本語読み数字は「いち・に・さん・よん・ご・ろく・なな・はち・きゅう」を正式とするためNG</span>
       <span className="block">
         レイチ　ョウルイ→0でも1でもないためNG
       </span>
@@ -3255,6 +3257,7 @@ function BlackjackBattle({
     setShowRiddlePrintChangedDialog,
   ] = useSessionState(`stage-2:BlackjackBattle:${robotId}:showRiddlePrintChangedDialog`, false);
   const physicalScanPanelRef = useRef<HTMLDivElement | null>(null);
+  const scanSpecRef = useRef<HTMLDivElement | null>(null);
   const [selectedRiddlePrintIds, setSelectedRiddlePrintIds] = useSessionState<string[]>(
     `stage-2:BlackjackBattle:${robotId}:selectedRiddlePrintIds`, [],
   );
@@ -4526,8 +4529,13 @@ function BlackjackBattle({
 
       {showTrafficLightScanHint ? (
         <TutorialDialog
-          onDismiss={() => setShowTrafficLightScanHint(false)}
-          text="小謎内のトランプのイラストはスキャン対象にできないので注意すること"
+          onDismiss={() => {
+            setShowTrafficLightScanHint(false);
+            setPreparationAbility("scan");
+            setIsScanSpecVisible(true);
+            window.requestAnimationFrame(() => scanSpecRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+          }}
+          text="スキャン機能の仕様が開示されました。小謎内のトランプはスキャンできないので注意すること。"
           tone="hands"
         />
       ) : null}
@@ -4720,11 +4728,13 @@ function BlackjackBattle({
                 )}
 
                 {preparationAbility === "scan" && (!isPrintedScanBattle || hasUnlockedScanSpec || areScanRiddleAnswersConfirmed || isScanExchangeConfirmed) ? (
+                  <div ref={scanSpecRef} className="scroll-mt-32">
                   <ScanSpecToggle
                     isVisible={isScanSpecVisible}
                     onToggle={() => setIsScanSpecVisible((current) => !current)}
                     showPhysicalRules={!isPrintedScanBattle || hasUnlockedPhysicalScanSpec || (isScanExchangeConfirmed && isScanExchangeCorrect)}
                   />
+                  </div>
                 ) : null}
                 {preparationAbility === "exchange" ? <ExchangeSpecToggle /> : null}
                 {preparationAbility === "scan" ? (
@@ -6948,10 +6958,11 @@ function PokerRobotSpecContent({
   specText: string;
 }) {
   const highlightedSpecParts = new Set([
+    "半殺し",
     "自分の手札とテーブルを常に見ており",
     "AKQJの16枚の山札1つで3つのゲームを行うことを知っており",
   ]);
-  const specParts = specText.split(/(自分の手札とテーブルを常に見ており|AKQJの16枚の山札1つで3つのゲームを行うことを知っており)/);
+  const specParts = specText.split(/(自分の手札とテーブルを常に見ており|AKQJの16枚の山札1つで3つのゲームを行うことを知っており|半殺し)/);
 
   return (
     <>
@@ -8154,7 +8165,9 @@ function PokerBattle({
       {showPokerRobotPunchDialog ? (
         <TutorialDialog
           onDismiss={() => setShowPokerRobotPunchDialog(false)}
-          text={isFinalHighLowExchange || isFinalBlackjackExchange ? "ポーカーロボットに殴られた" : "ポーカーロボットに殴られ、意識を失った"}
+          text={isFinalAllGamesBattle && finalPhase === 1 && finalFirstPhaseComplete
+            ? <>”ポーカーロボット”に<span className="font-black text-red-300">半殺し</span>にされた。</>
+            : isFinalHighLowExchange || isFinalBlackjackExchange ? "ポーカーロボットに殴られた" : "ポーカーロボットに殴られ、意識を失った"}
           tone="hands"
         />
       ) : null}
