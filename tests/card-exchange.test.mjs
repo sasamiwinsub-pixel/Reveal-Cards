@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyExchangePairs } from "../lib/card-exchange.ts";
 
+test("third stage fourth battle accepts exchanging either ace for the generated jack", () => {
+  for (const ace of ["A-daia", "A-heart"]) {
+    const hand = applyExchangePairs(["A-daia", "A-heart"], [{ firstCardId: ace, secondCardId: "scan-J" }]);
+    assert.equal(hand.filter((id) => id.startsWith("A-")).length, 1);
+    assert.equal(hand.filter((id) => id === "scan-J").length, 1);
+  }
+});
+
 test("declaration exchange preserves the positions of placed blackjack cards", () => {
   for (const [aceKing, jackKing] of [["scan-K", "K-crub"], ["K-crub", "scan-K"]]) {
     const pairs = [

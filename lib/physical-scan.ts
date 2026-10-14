@@ -18,3 +18,8 @@ export function getFinalPhysicalScanReading(ranks: string[], game: string | unde
 export function resolveFinalPhysicalScanSplit(reading: string): string | null {
   return reading === "に じゅういち" ? "scan-K" : null;
 }
+
+export function getFinalSingleCardScan(ranks: string[], game: string | undefined, role: string | undefined): "A" | "J" | null {
+  if (game !== "ブラックジャック" || !["11", "ジュウイチ", "十一"].includes(role ?? "") || ranks.length !== 1) return null;
+  return ranks[0] === "A" || ranks[0] === "J" ? ranks[0] : null;
+}

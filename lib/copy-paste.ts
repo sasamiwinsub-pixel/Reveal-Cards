@@ -6,12 +6,32 @@ const readings: Record<string, string> = {
   "ブラックジャック": "ぶらっくじゃっく", "ハイ＆ロー": "はい＆ろー",
 };
 
+export function getCopyFormatPreview(text: string, format: PasteFormat): string | null {
+  const normalized = text.normalize("NFKC").replace(/&/g, "＆");
+  const previewReadings: Record<string, string> = { ...readings, "0": "れい", "十一": "じゅういち", "零": "れい" };
+  const reading = previewReadings[normalized] ?? normalized;
+  const hiragana = reading.replace(/[ァ-ヶ]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0x60));
+  if (format === "hiragana" || format === "katakana") {
+    if (!/^[ぁ-ゖー＆&\s]+$/.test(hiragana)) return null;
+    return format === "hiragana" ? hiragana : hiragana.replace(/[ぁ-ゖ]/g, (char) => String.fromCharCode(char.charCodeAt(0) + 0x60));
+  }
+  const number = hiragana === "れい" ? "0" : hiragana === "じゅういち" ? "11" : /^\d+$/.test(normalized) ? normalized : null;
+  if (format === "number") return number;
+  if (/^[一-龯々]+$/.test(normalized)) return normalized;
+  if (number === "11") return "十一";
+  if (number === "0") return "零";
+  return null;
+}
+
 const allowedPastes = [
   { source: "scan-example", target: "blackjack-ace-value", format: "number", text: "0" },
   { source: "copy-red-unlock-zero", target: "paste-blackjack-ace", format: "number", text: "0" },
   { source: "blackjack-declaration", target: "exchange-start-timing", format: "katakana", text: "ブラックジャック" },
   { source: "high-low-declaration", target: "riddle-four-game", format: "katakana", text: "ハイ＆ロー" },
   { source: "blackjack-ace-value", target: "scan-role-name", format: "hiragana", text: "じゅういち" },
+  { source: "blackjack-ace-value", target: "scan-role-name", format: "number", text: "11" },
+  { source: "blackjack-ace-value", target: "scan-role-name", format: "katakana", text: "ジュウイチ" },
+  { source: "blackjack-ace-value", target: "scan-role-name", format: "kanji", text: "十一" },
   { source: "blackjack-declaration", target: "scan-poker", format: "katakana", text: "ブラックジャック" },
 ] as const;
 

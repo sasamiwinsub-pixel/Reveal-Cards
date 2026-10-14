@@ -161,7 +161,7 @@ export const stages: Stage[] = [
     label: "3rd",
     title: "Poker",
     startingChips: 0,
-    clearText: "ポーカーを3戦します。",
+    clearText: "ポーカーを4戦します。",
     robots: [
       {
         id: "poker-3-1",
@@ -182,6 +182,14 @@ export const stages: Stage[] = [
       {
         id: "poker-3-3",
         name: "PK-03",
+        gameType: "poker",
+        seat: "left",
+        ruleText: pokerRuleText,
+        specText: pokerSpecText,
+      },
+      {
+        id: "poker-3-4",
+        name: "PK-04",
         gameType: "poker",
         seat: "left",
         ruleText: pokerRuleText,

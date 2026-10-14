@@ -84,9 +84,9 @@
       <text class="rank" x="138" y="48">K</text>
     </g>
     <text class="label" x="238" y="54">ツーペア</text>
-    <use href="#knife" x="386" y="11" width="108" height="27" />
-    <use href="#knife" x="386" y="43" width="108" height="27" />
-    <use href="#cherries" x="501" y="12" width="60" height="60" />
+    <use href="#cherries" x="386" y="12" width="60" height="60" />
+    <use href="#knife" x="453" y="11" width="108" height="27" />
+    <use href="#knife" x="453" y="43" width="108" height="27" />
     <text class="note" x="240" y="88">同じ数字の組が2つ</text>
   </g>
 

@@ -19,9 +19,12 @@ test("versioned session state restores progress and discards older versions", ()
     assert.equal(sessionStorage.getItem("reveal-cards:obsolete:stage-4:test"), null);
     assert.equal(sessionStorage.getItem("other-app:key"), "keep");
     sessionStorage.setItem(`${prefix}stage-3:test`, "true");
+    sessionStorage.setItem(`${prefix}ability:copy-paste:unlocked`, "true");
     clearStageSession(4);
     assert.equal(sessionStorage.getItem(`${prefix}stage-4:test`), null);
     assert.equal(sessionStorage.getItem(`${prefix}stage-3:test`), "true");
+    clearStageSession(3);
+    assert.equal(readSessionState("ability:copy-paste:unlocked", false), true);
     sessionStorage.setItem(`${prefix}bad`, "not json");
     assert.equal(readSessionState("bad", 2), 2);
     sessionStorage.setItem(`${prefix}bad`, '"wrong type"');

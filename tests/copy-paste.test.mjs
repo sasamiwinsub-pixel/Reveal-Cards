@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolvePaste } from "../lib/copy-paste.ts";
+import { resolvePaste, getCopyFormatPreview } from "../lib/copy-paste.ts";
+
+test("copy source previews distinguish conversion from paste eligibility", () => {
+  assert.equal(getCopyFormatPreview("ハイ＆ロー", "hiragana"), "はい＆ろー");
+  assert.equal(getCopyFormatPreview("ハイ＆ロー", "katakana"), "ハイ＆ロー");
+  assert.equal(getCopyFormatPreview("ハイ＆ロー", "kanji"), null);
+  assert.equal(getCopyFormatPreview("ハイ＆ロー", "number"), null);
+  assert.equal(getCopyFormatPreview("11", "hiragana"), "じゅういち");
+  assert.equal(getCopyFormatPreview("11", "katakana"), "ジュウイチ");
+  assert.equal(getCopyFormatPreview("11", "kanji"), "十一");
+  assert.equal(getCopyFormatPreview("11", "number"), "11");
+  assert.equal(getCopyFormatPreview("例", "number"), "0");
+  assert.equal(getCopyFormatPreview("例", "kanji"), "例");
+  assert.equal(getCopyFormatPreview("例", "hiragana"), "れい");
+  assert.equal(getCopyFormatPreview("例", "katakana"), "レイ");
+  assert.equal(getCopyFormatPreview("役名", "kanji"), "役名");
+});
 
 test("blackjack can replace the physical scan game", () => {
   const source = { id: "blackjack-declaration", text: "ブラックジャック" };
@@ -54,10 +70,11 @@ test("high-low can replace the game on riddle four", () => {
   assert.equal(resolvePaste({ ...source, text: "ポーカー" }, "riddle-four-game", "katakana"), null);
 });
 
-test("eleven can replace the scan role name in hiragana", () => {
+test("eleven can replace the scan role name in every format", () => {
   const source = { id: "blackjack-ace-value", text: "11" };
   assert.equal(resolvePaste(source, "scan-role-name", "hiragana"), "じゅういち");
-  assert.equal(resolvePaste(source, "scan-role-name", "katakana"), null);
-  assert.equal(resolvePaste(source, "scan-role-name", "number"), null);
+  assert.equal(resolvePaste(source, "scan-role-name", "katakana"), "ジュウイチ");
+  assert.equal(resolvePaste(source, "scan-role-name", "kanji"), "十一");
+  assert.equal(resolvePaste(source, "scan-role-name", "number"), "11");
   assert.equal(resolvePaste({ ...source, text: "0" }, "scan-role-name", "hiragana"), null);
 });

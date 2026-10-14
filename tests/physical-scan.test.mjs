@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid } from "../lib/physical-scan.ts";
+import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid, getFinalSingleCardScan } from "../lib/physical-scan.ts";
+
+test("numeric eleven permits a single ace or jack but not the normal two-card scan", () => {
+  for (const rank of ["A", "J"]) {
+    for (const role of ["11", "ジュウイチ", "十一"]) {
+      assert.equal(getFinalSingleCardScan([rank], "ブラックジャック", role), rank);
+      assert.equal(getFinalSingleCardScan([rank], "ポーカー", role), null);
+      assert.equal(getFinalSingleCardScan(["A", "J"], "ブラックジャック", role), null);
+    }
+    assert.equal(getFinalSingleCardScan([rank], "ブラックジャック", "11"), rank);
+    assert.equal(getFinalSingleCardScan([rank], "ポーカー", "11"), null);
+    assert.equal(getFinalSingleCardScan([rank], "ブラックジャック", "じゅういち"), null);
+  }
+  assert.equal(getFinalSingleCardScan(["A", "J"], "ブラックジャック", "11"), null);
+  assert.equal(getFinalSingleCardScan(["K"], "ブラックジャック", "11"), null);
+});
 
 test("physical scan accepts the gifted queen and the previously generated queen", () => {
   const inventory = [
