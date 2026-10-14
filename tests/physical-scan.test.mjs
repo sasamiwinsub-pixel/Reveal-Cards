@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid, getFinalSingleCardScan } from "../lib/physical-scan.ts";
+import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid, getFinalSingleCardScan, getAvailablePhysicalScanCards } from "../lib/physical-scan.ts";
+
+test("consumed queens are removed from both physical inventory and exchange candidates", () => {
+  const queen = { id: "scan-12", rank: "Q" };
+  const gift = { id: "physical-queen-spade", rank: "Q" };
+  const ace = { id: "scan-A", rank: "A" };
+  const consumed = [queen.id, gift.id];
+  assert.deepEqual(getAvailablePhysicalScanCards([gift, queen, ace], consumed), [ace]);
+  assert.deepEqual(getAvailablePhysicalScanCards([queen, ace], consumed), [ace]);
+  assert.deepEqual(getAvailablePhysicalScanCards([queen, ace], []), [queen, ace]);
+});
 
 test("numeric eleven permits a single ace or jack but not the normal two-card scan", () => {
   for (const rank of ["A", "J"]) {

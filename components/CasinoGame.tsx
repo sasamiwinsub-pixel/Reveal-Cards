@@ -21,7 +21,7 @@ import Image from "next/image";
 import FinalSituationReview from "./FinalSituationReview";
 import { resolvePaste, getCopyFormatPreview } from "@/lib/copy-paste";
 import { normalizeScanIllustrationName } from "@/lib/scan-input";
-import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid, getFinalSingleCardScan } from "@/lib/physical-scan";
+import { getFinalPhysicalScanReading, resolveFinalPhysicalScanSplit, isPhysicalScanSelectionValid, getFinalSingleCardScan, getAvailablePhysicalScanCards } from "@/lib/physical-scan";
 import { getGuaranteedWinOpening } from "@/lib/high-low-opening";
 import { shouldShowReservedExchange, isBlackjackKingExchangeExposed } from "@/lib/exchange-timing";
 import { isFinalFirstPhaseComplete } from "@/lib/final-phase";
@@ -2285,13 +2285,13 @@ function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, o
   physicalScanDisabled?: boolean;
 }) {
   return (
-    <div className="mt-3 grid gap-3 rounded border border-brass/45 bg-black/30 p-3">
+    <div className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 rounded border border-brass/45 bg-black/30 p-3">
       <p className="text-sm font-black leading-6 text-brass">スキャン回答</p>
-      <label className="grid gap-2 text-sm font-bold text-stone-100">
+      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 text-sm font-bold text-stone-100">
         謎の答え
         <input className="min-h-11 min-w-0 w-full rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20" onChange={(event) => onAnswerChange(event.target.value)} placeholder="謎の答えを入力" value={answer} />
       </label>
-      <label className="grid gap-2 text-sm font-bold text-stone-100">
+      <label className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 text-sm font-bold text-stone-100">
         イラスト読み方
         <span className="text-xs text-stone-300">区切りは後から指定</span>
         <input className="min-h-11 min-w-0 w-full rounded border border-brass bg-white px-3 py-2 text-base font-bold text-stone-950 outline-none ring-4 ring-brass/20" onChange={(event) => onIllustrationChange(event.target.value)} placeholder="イラスト読み方を入力" value={illustration} />
@@ -2441,7 +2441,7 @@ function IllustrationSplitSelector({
   }
 
   return (
-    <div className="rounded border border-sky-300/35 bg-sky-950/25 p-3">
+    <div className="min-w-0 max-w-full rounded border border-sky-300/35 bg-sky-950/25 p-3">
       <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-100">
         区切り位置
       </p>
@@ -2473,7 +2473,7 @@ function IllustrationSplitSelector({
               </Fragment>
             ))}
           </div>
-          <p className="mt-3 rounded border border-white/10 bg-black/35 p-3 text-lg font-black leading-7 text-sky-100">
+          <p className="mt-3 break-all rounded border border-white/10 bg-black/35 p-3 text-lg font-black leading-7 text-sky-100">
             {dividedText}
           </p>
         </>
@@ -3264,9 +3264,9 @@ function BlackjackBattle({
   const scannedOneCard = generatedScanCards["scan-10"];
   const scannedTwelveCard = generatedScanCards["scan-12"];
   const scannedNineCard = generatedScanCards["scan-9"];
-  const fourthScanGeneratedExchangeCards = isFourthScanGenerated
+  const fourthScanGeneratedExchangeCards = getAvailablePhysicalScanCards(isFourthScanGenerated
     ? [scannedTwelveCard, scannedNineCard]
-    : [scannedTwelveCard];
+    : [scannedTwelveCard], consumedPhysicalScanCardIds);
   const canSelectFourthRobotExchangeCards =
     isRiddleExchangeModeActive && !isFourthRobotExchangeConfirmed;
   const canConfirmFourthRobotExchange =
@@ -3285,12 +3285,12 @@ function BlackjackBattle({
         ...(robotId === "blackjack-2-3" && scannedItems.includes("scan-9") ? [scannedNineCard] : []),
         ...(isPhysicalScanGenerated ? [scannedPhysicalScanCard] : []),
       ];
-  const scanGeneratedDisplayCards = [
+  const scanGeneratedDisplayCards = getAvailablePhysicalScanCards([
     ...scannedGeneratedCards,
     ...(isPrintedScanBattle && isPhysicalScanGenerated
       ? [scannedPhysicalScanCard]
       : []),
-  ];
+  ], consumedPhysicalScanCardIds);
   const physicalScanInventoryCards = physicalScanConfig?.inventoryCards ?? [];
   const isPhysicalScanReadingCorrect =
     !physicalScanConfig ||
@@ -3301,16 +3301,15 @@ function BlackjackBattle({
     (physicalScanConfig?.requiredSelectionCount ?? 0);
   const canRunPhysicalScan =
     isPhysicalScanCardCountReady && physicalScanReading.trim().length > 0;
-  const visiblePhysicalScanInventoryCards = Array.from(new Map([
+  const visiblePhysicalScanInventoryCards = getAvailablePhysicalScanCards(Array.from(new Map([
     ...physicalScanInventoryCards,
     ...priorTutorialGeneratedCards,
     ...getCardsById(scannedItems, generatedScanCards),
   ].map((card) => [card.id, card])).values()).filter(
     (card) =>
       // Older sessions granted a jack for solving the unlock riddle, without scanning it.
-      !(isPrintedScanBattle && card.id === "scan-J") &&
-      !consumedPhysicalScanCardIds.includes(card.id),
-  );
+      !(isPrintedScanBattle && card.id === "scan-J"),
+  ), consumedPhysicalScanCardIds);
   const areScanCardsGenerated = scannedGeneratedCards.every((card) =>
     scannedItems.includes(card.id),
   );
@@ -3981,6 +3980,7 @@ function BlackjackBattle({
   }
 
   function toggleScanExchangeCard(cardId: string) {
+    if (consumedPhysicalScanCardIds.includes(cardId)) return;
     if (robotId === "blackjack-2-3" && isRiddlePrintExchangeApplied) return;
     if (!isCardExchangeModeActive) {
       setScanTutorialMessage("先にエクスチェンジを起動してください。");

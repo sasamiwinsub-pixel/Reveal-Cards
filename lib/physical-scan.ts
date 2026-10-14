@@ -1,3 +1,8 @@
+export function getAvailablePhysicalScanCards<T extends { id: string }>(cards: readonly T[], consumedIds: readonly string[]): T[] {
+  const consumed = new Set(consumedIds);
+  return cards.filter((card) => !consumed.has(card.id));
+}
+
 export function isPhysicalScanSelectionValid(
   selectedIds: string[],
   inventory: { id: string; rank: string }[],
