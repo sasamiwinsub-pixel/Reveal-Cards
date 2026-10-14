@@ -2,7 +2,7 @@
 
 import { ArrowLeft, Check } from "lucide-react";
 import { useEffect } from "react";
-import { useSessionState } from "@/lib/session-state";
+import { readSessionState, useSessionState } from "@/lib/session-state";
 
 const themes = [
   {
@@ -25,7 +25,11 @@ const monitoringTheme = {
     options: ["イカサマの発生を検知する機能があるから", "テーブルを目で常に見ているから", "エクスチェンジの処理速度が甘かったから"],
     answers: [1],
   }, {
-    text: "ブラックジャックロボットのキングはエクスチェンジ可能ですか？",
+    text: "ポーカーロボットがハイ＆ローロボットのKとプレイヤーの手札の変化を見なかったのはなぜ？",
+    options: ["複数は目で追えないから", "最初に見つけたのだけ検知したから", "テーブル上にないか、プレイヤーがカードを手で覆っていた瞬間に変化していたから"],
+    answers: [2],
+  }, {
+    text: "ブラックジャック宣言時に、ブラックジャックロボットのキングはエクスチェンジ可能ですか？",
     options: ["はい", "いいえ"],
     answers: [1],
   }, {
@@ -46,9 +50,9 @@ export default function FinalSituationReview({ onBack, showMonitoringQuestion = 
   useEffect(() => {
     if (showMonitoringQuestion && focusMonitoringQuestion) setActiveTheme(1);
   }, [showMonitoringQuestion, focusMonitoringQuestion, setActiveTheme]);
-  const [progress, setProgress] = useSessionState("stage-4:FinalSituationReview:progress", [0, 0]);
-  const [selections, setSelections] = useSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections", {});
-  const [errors, setErrors] = useSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors", {});
+  const [progress, setProgress] = useSessionState("stage-4:FinalSituationReview:progress-v2", () => [readSessionState("stage-4:FinalSituationReview:progress", [0, 0])[0], 0]);
+  const [selections, setSelections] = useSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections-v2", () => Object.fromEntries(Object.entries(readSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections", {})).filter(([key]) => key.startsWith("0-"))));
+  const [errors, setErrors] = useSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors-v2", () => Object.fromEntries(Object.entries(readSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors", {})).filter(([key]) => key.startsWith("0-"))));
   const theme = visibleThemes[activeTheme];
 
   return (
