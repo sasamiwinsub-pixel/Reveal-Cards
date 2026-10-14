@@ -37,6 +37,10 @@ const monitoringTheme = {
     options: ["はい", "いいえ"],
     answers: [0],
   }, {
+    text: "エクスチェンジを自分の手札にKを集める以外に使える？",
+    options: ["使える", "使えない"],
+    answers: [1],
+  }, {
     text: "やることを5回タップした際に出てきた情報は？",
     options: ["ゲームに登場する全ての車が”ハイエース”", "ロボットを5回タップすると破壊できる", "このゲームはクリア不可能"],
     answers: [0],
@@ -54,9 +58,19 @@ export default function FinalSituationReview({ onBack, showMonitoringQuestion = 
   useEffect(() => {
     if (showMonitoringQuestion && focusMonitoringQuestion) setActiveTheme(1);
   }, [showMonitoringQuestion, focusMonitoringQuestion, setActiveTheme]);
-  const [progress, setProgress] = useSessionState("stage-4:FinalSituationReview:progress-v2", () => [readSessionState("stage-4:FinalSituationReview:progress", [0, 0])[0], 0]);
-  const [selections, setSelections] = useSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections-v2", () => Object.fromEntries(Object.entries(readSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections", {})).filter(([key]) => key.startsWith("0-"))));
-  const [errors, setErrors] = useSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors-v2", () => Object.fromEntries(Object.entries(readSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors", {})).filter(([key]) => key.startsWith("0-"))));
+  const [progress, setProgress] = useSessionState("stage-4:FinalSituationReview:progress-v3", () => {
+    const previous = readSessionState("stage-4:FinalSituationReview:progress-v2", [readSessionState("stage-4:FinalSituationReview:progress", [0, 0])[0], 0]);
+    return [previous[0], Math.min(previous[1] ?? 0, 4)];
+  });
+  const [selections, setSelections] = useSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections-v3", () => {
+    const previous = readSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections-v2",
+      Object.fromEntries(Object.entries(readSessionState<Record<string, number[]>>("stage-4:FinalSituationReview:selections", {})).filter(([key]) => key.startsWith("0-"))));
+    return Object.fromEntries(Object.entries(previous).filter(([key]) => /^(0-|1-[0-3]$)/.test(key)));
+  });
+  const [errors, setErrors] = useSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors-v3", () => {
+    const previous = readSessionState<Record<string, boolean>>("stage-4:FinalSituationReview:errors-v2", {});
+    return Object.fromEntries(Object.entries(previous).filter(([key]) => /^(0-|1-[0-3]$)/.test(key)));
+  });
   const theme = visibleThemes[activeTheme];
 
   return (

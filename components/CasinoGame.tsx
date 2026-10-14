@@ -7041,7 +7041,20 @@ function PokerBattle({
   const [scannedPokerCardIds, setScannedPokerCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:scannedPokerCardIds`, []);
   const [consumedPokerScanCardIds, setConsumedPokerScanCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:consumedPokerScanCardIds`, []);
   const [finalPhysicalScanIds, setFinalPhysicalScanIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhysicalScanIds`, []);
-  const [finalSingleCardScanDialog, setFinalSingleCardScanDialog] = useState<string | null>(null);
+  const [hasScannedSugoroku, setHasScannedSugoroku] = useSessionState("ability:scan:sugoroku-answered", () =>
+    readSessionState<string[]>("stage-3:PokerBattle:poker-3-4:scannedPokerCardIds", []).includes("scan-J"));
+  const [finalSingleCardScanDialog, setFinalSingleCardScanDialog] = useSessionState<{
+    text: string;
+    before: {
+      scannedIds: string[];
+      consumedIds: string[];
+      physicalIds: string[];
+      reading: string;
+      splitIndexes: number[];
+      previewSrc: string | null;
+      message: string;
+    };
+  } | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:singleCardScanUndo`, null);
   const [finalPhysicalScanReading, setFinalPhysicalScanReading] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhysicalScanReading`, "");
   const [finalPhysicalScanSplitIndexes, setFinalPhysicalScanSplitIndexes] = useSessionState<number[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhysicalScanSplitIndexes`, []);
   useEffect(() => {
@@ -7525,6 +7538,20 @@ function PokerBattle({
     const cards = scannedPokerCards.filter((card) => cardIds.includes(card.id));
     const singleRank = getFinalSingleCardScan(cards.map((card) => card.rank), pastedBlueTexts["scan-poker"], pastedBlueTexts["scan-role-name"]);
     if (isFinalAllGamesBattle && remainingScans > 0 && cards.length === cardIds.length && singleRank) {
+      setFinalSingleCardScanDialog({
+        text: singleRank === "A"
+          ? "生成できたが、AがJに変化しても意味なさそうだ...やり直そう"
+          : "JからJになったが、スキャンを消費しただけだ...やり直そう",
+        before: {
+          scannedIds: [...scannedPokerCardIds],
+          consumedIds: [...consumedPokerScanCardIds],
+          physicalIds: [...finalPhysicalScanIds],
+          reading: finalPhysicalScanReading,
+          splitIndexes: [...finalPhysicalScanSplitIndexes],
+          previewSrc: pokerScanPreviewSrc,
+          message: pokerScanMessage,
+        },
+      });
       const generatedId = `scan-J-physical-${scannedPokerCardIds.length + 1}`;
       setConsumedPokerScanCardIds((current) => [...new Set([...current, ...cardIds])]);
       setScannedPokerCardIds((current) => [...current, generatedId]);
@@ -7533,9 +7560,6 @@ function PokerBattle({
       setFinalPhysicalScanSplitIndexes([]);
       setPokerScanPreviewSrc(null);
       setPokerScanMessage("現物スキャンでJのカードを生成しました。");
-      setFinalSingleCardScanDialog(singleRank === "A"
-        ? "生成できたが、AがJに変化しても意味なさそうだ...やり直そう"
-        : "JからJになったが、スキャンを消費しただけだ...やり直そう");
       return;
     }
     const reading = getFinalPhysicalScanReading(cards.map((card) => card.rank), pastedBlueTexts["scan-poker"], pastedBlueTexts["scan-role-name"]);
@@ -7563,6 +7587,19 @@ function PokerBattle({
     setFinalPhysicalScanReading("");
     setPokerScanPreviewSrc(null);
     setPokerScanMessage("現物スキャン成功。2 + 11 = 13でKのカードを生成しました。使用したAとJは消費されます。");
+  }
+
+  function dismissFinalSingleCardScanDialog() {
+    if (!finalSingleCardScanDialog) return;
+    const { before } = finalSingleCardScanDialog;
+    setScannedPokerCardIds(before.scannedIds);
+    setConsumedPokerScanCardIds(before.consumedIds);
+    setFinalPhysicalScanIds(before.physicalIds);
+    setFinalPhysicalScanReading(before.reading);
+    setFinalPhysicalScanSplitIndexes(before.splitIndexes);
+    setPokerScanPreviewSrc(before.previewSrc);
+    setPokerScanMessage(before.message);
+    setFinalSingleCardScanDialog(null);
   }
 
   function resolvePokerScan() {
@@ -7600,6 +7637,9 @@ function PokerBattle({
     }
 
     setScannedPokerCardIds((current) => [...current, requirement.cardId]);
+    if (isPokerFourthBattle && requirement.riddleSrc === "/riddles/riddle_5.png") {
+      setHasScannedSugoroku(true);
+    }
     setPokerScanPreviewSrc(requirement.targetImageSrc);
     setPokerScanAnswer("");
     setPokerScanIllustration("");
@@ -8123,7 +8163,7 @@ function PokerBattle({
       {expandedPokerRiddle ? (
         <RiddleImageModal alt={expandedPokerRiddle.alt} src={expandedPokerRiddle.src} onClose={() => setExpandedPokerRiddle(null)} />
       ) : null}
-      {finalSingleCardScanDialog ? <PlayerCutInDialog text={finalSingleCardScanDialog} onDismiss={() => setFinalSingleCardScanDialog(null)} /> : null}
+      {finalSingleCardScanDialog ? <PlayerCutInDialog text={finalSingleCardScanDialog.text} onDismiss={dismissFinalSingleCardScanDialog} /> : null}
       {showPokerScanRiddlesDialog ? (
         <TutorialDialog
           onDismiss={() => setShowPokerScanRiddlesDialog(false)}
@@ -8738,6 +8778,7 @@ function PokerBattle({
                       <ScanSolvedSummary hasFourthScanResult additionalRows={[
                         { question: "③", answer: "フエ", illustrationName: "れい/ん", generatedNumber: "0", imageSrc: scanTargetImages.rain },
                         { question: "④", answer: "ツーペア", illustrationName: "わん/ぺあ", generatedNumber: "1", imageSrc: scanTargetImages.onepair },
+                        ...(isFinalAllGamesBattle && hasScannedSugoroku ? [{ question: "⑤", answer: "りすく", illustrationName: "す/ご/ろく", generatedNumber: "11", imageSrc: scanTargetImages.sugoroku }] : []),
                       ]} />
                       <ScanAnswerPanel
                         answer={pokerScanAnswer} illustration={pokerScanIllustration} splitIndexes={pokerScanSplitIndexes}
@@ -8901,7 +8942,7 @@ function PokerBattle({
                       .map((requirement) => ({
                         answer: requirement.answer,
                         imageSrc: requirement.targetImageSrc,
-                        generatedNumber: String(generatedScanCards[requirement.cardId].rank),
+                        generatedNumber: requirement.cardId === "scan-J" ? "11" : String(generatedScanCards[requirement.cardId].rank),
                         illustrationName: requirement.illustration.replace(/[\s\u3000]+/g, "/"),
                         question: pokerScanRiddles.find((riddle) => riddle.src === requirement.riddleSrc)?.label ?? "",
                       }))}
