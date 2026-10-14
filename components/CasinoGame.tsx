@@ -3349,7 +3349,7 @@ function BlackjackBattle({
               ]
             : []),
           {
-            cards: getCardsById([...config.initialRobotHandIds]),
+            cards: getCardsById([...config.initialRobotHandIds], generatedScanCards),
             disabled: areRobotHandsExchangeDisabled,
             id: "scan-robot-hand",
             label: "ブラックジャックのロボット手札",
@@ -3357,7 +3357,7 @@ function BlackjackBattle({
           ...(shouldShowScanGeneratedCards
             ? [
                 {
-                  cards: scanGeneratedDisplayCards,
+                  cards: robotId === "blackjack-2-3" ? visiblePhysicalScanInventoryCards : scanGeneratedDisplayCards,
                   id: "scan-generated-card",
                   label: "所持カード",
                 },
@@ -3416,7 +3416,7 @@ function BlackjackBattle({
               ]
             : []),
           {
-            cards: getCardsById([...config.initialRobotHandIds]),
+            cards: getCardsById([...config.initialRobotHandIds], generatedScanCards),
             disabled: areRobotHandsExchangeDisabled,
             id: "blackjack-robot-hand",
             label: "ブラックジャックのロボット手札",
