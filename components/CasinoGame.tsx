@@ -623,6 +623,7 @@ function SelectableBlueText({ id, children }: { id: string; children: string }) 
   const text = selection?.replacements[id] ?? children;
   return selection?.active ? (
     <button
+      data-blue-text-id={id}
       className={`rounded px-1 font-black text-sky-300 underline underline-offset-4 hover:bg-sky-400/20 ${selection.selectedId === id ? "ring-2 ring-sky-300" : ""}`}
       onClick={() => selection.onSelect(id, text)}
       type="button"
@@ -2012,6 +2013,8 @@ function PhysicalScanPanel({
 
           return (
             <button
+              aria-label={`${card.rank}のカードを現物スキャン対象に選択`}
+              aria-pressed={selected}
               className={`rounded border p-1 ${
                 selected
                   ? "border-emerald-300 bg-emerald-400/20 ring-4 ring-emerald-300/30"
@@ -8211,7 +8214,7 @@ function PokerBattle({
       {showPokerRiddleHint ? (
         <PlayerCutInDialog
           onDismiss={() => setShowPokerRiddleHint(false)}
-          text="ポーカーの役一覧を見ると、④で1(ワン)は生成できそうだな"
+          text="ポーカーの役一覧を見ると、④の小謎には見覚えのあるイラストがある。ナイフがワンペアのイラストとしてスキャンできそうだな"
         />
       ) : null}
       {showPokerRobotPunchDialog ? (
@@ -9653,6 +9656,7 @@ function ExchangeCardButton({
     <button
       aria-disabled={disabled}
       aria-pressed={selected}
+      data-card-id={card.id}
       className={`rounded border p-1 transition ${
         confirmedColor
           ? confirmedColor === "green"
@@ -9754,7 +9758,7 @@ function HighLowBattle({
     `stage-${stageId}:HighLowBattle:${robotId}:exchangeConfirmed`, exchangePreparation?.confirmed ?? false,
   );
   const [isHighLowExchangeModeActive, setIsHighLowExchangeModeActive] = useSessionState(`stage-${stageId}:HighLowBattle:${robotId}:isHighLowExchangeModeActive`, false);
-  const [exchangeApplied, setExchangeApplied] = useSessionState(
+  const [, setExchangeApplied] = useSessionState(
     `stage-${stageId}:HighLowBattle:${robotId}:exchangeApplied`, exchangePreparation?.applied ?? false,
   );
   const [placementAnimation, setPlacementAnimation] = useState<{
@@ -9770,7 +9774,7 @@ function HighLowBattle({
       pair.every((cardId) => exchangeCardIds.includes(cardId)),
     ) === true;
   const isExchangeCorrect = exchangeConfirmed && isSelectedExchangeCorrect;
-  const isExchangeApplied = isExchangeCorrect && exchangeApplied;
+  const isExchangeApplied = exchangeConfirmed && exchangeCardIds.length === 2;
   const canPlaceCard = battleStarted;
   const requiresExchangeBeforeStart =
     Boolean(highLowConfig) &&
@@ -9798,7 +9802,7 @@ function HighLowBattle({
     cardId.startsWith("A-"),
   );
   const configuredRobotHighCard =
-    highLowConfig && isExchangeApplied
+    highLowConfig && isExchangeApplied && isExchangeCorrect
       ? robotHand.find(
           (card) => card.id === highLowConfig.robotHighCardAfterExchangeId,
         ) ??
@@ -9863,7 +9867,7 @@ function HighLowBattle({
     playerZone,
   });
   const tutorialStepText =
-    isTutorial && isExchangeApplied && tutorialStep.target === "player-card"
+    isTutorial && isExchangeApplied && isExchangeCorrect && tutorialStep.target === "player-card"
       ? `エクスチェンジ発動後、ロボットが先にAを${robotZone}ゾーンへ置きました。手札の${robotZone === "LOW" ? "A" : "K"}を${robotZone === "LOW" ? "HIGH" : "LOW"}ゾーンへドラッグして置いて勝利しましょう。`
       : tutorialStep.text;
   const draggableCardIds =
@@ -9895,8 +9899,13 @@ function HighLowBattle({
       : playerZone === "LOW"
         ? playerPlacedCard
         : null;
+  // Older sessions may have reloaded after confirming but before the animation timer completed.
+  const hasSettledPlacement =
+    !placementPendingConfirm &&
+    placementAnimation?.mode !== "release" &&
+    (placementConfirmed || Boolean(playerZone && playerPlacedCard));
   const highLowResult =
-    placementConfirmed && highZoneCard && lowZoneCard
+    hasSettledPlacement && highZoneCard && lowZoneCard
       ? getHighLowResult(highZoneCard, lowZoneCard)
       : null;
   const exchangeSections: ExchangeCardSection[] = [
@@ -9965,12 +9974,13 @@ function HighLowBattle({
   }
 
   function confirmPlayerPlacement() {
-    if (!placementAnimation) {
+    if (!placementPendingConfirm || !playerZone || !playerPlacedCard) {
       return;
     }
 
-    const zone = placementAnimation.zone;
+    const zone = playerZone;
     setPlacementPendingConfirm(false);
+    setPlacementConfirmed(true);
     setPlacementAnimation({
       mode: "release",
       styleType: "gentle",
@@ -9980,7 +9990,6 @@ function HighLowBattle({
       setPlacementAnimation((current) =>
         current?.zone === zone ? null : current,
       );
-      setPlacementConfirmed(true);
     }, 760);
   }
 
@@ -10275,13 +10284,13 @@ function HighLowBattle({
                 disabled={!isHighLowExchangeModeActive || exchangeCardIds.length !== 2 || exchangeConfirmed}
                 onClick={() => {
                   const nextPreparation = {
-                    applied: isSelectedExchangeCorrect,
+                    applied: true,
                     cardIds: exchangeCardIds,
                     confirmed: true,
                   };
                   setExchangeConfirmed(true);
                   setIsHighLowExchangeModeActive(false);
-                  setExchangeApplied(isSelectedExchangeCorrect);
+                  setExchangeApplied(true);
                   onSaveExchangePreparation(nextPreparation);
                 }}
                 type="button"
@@ -10393,7 +10402,7 @@ function HighLowBattle({
           </div>
         ) : null}
 
-        {requiresExchangeBeforeStart && !exchangeApplied ? (
+        {requiresExchangeBeforeStart && (!isExchangeApplied || !isExchangeCorrect) ? (
           <div className="mx-auto mb-4 flex max-w-4xl justify-end">
             <button
               className={`grid min-h-11 place-items-center rounded border border-brass bg-black/35 px-4 text-sm font-black text-brass ${
@@ -10620,7 +10629,11 @@ function getCardsById(
   extraCards: Record<string, PlayingCard> = {},
 ) {
   return cardIds
-    .map((cardId) => deck.find((card) => card.id === cardId) ?? extraCards[cardId])
+    .map((cardId) =>
+      deck.find((card) => card.id === cardId) ??
+      extraCards[cardId] ??
+      physicalScanTripleFiveInventoryCards.find((card) => card.id === cardId),
+    )
     .filter((card): card is PlayingCard => Boolean(card));
 }
 
@@ -11138,6 +11151,7 @@ function RiddlePrintTargetLayer({
           return (
             <button
               aria-pressed={selected}
+              aria-label={`小謎の交換対象: ${target.label}`}
               className={`absolute z-20 ${target.style} rounded border-2 transition ${
                 disabled
                   ? "cursor-not-allowed border-transparent bg-transparent"
