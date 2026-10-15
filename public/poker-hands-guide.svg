@@ -66,8 +66,7 @@
       <text class="rank" x="138" y="48">Q</text>
     </g>
     <text class="label" x="238" y="54">ワンペア</text>
-    <use href="#knife" x="408" y="8" width="128" height="30" />
-    <use href="#knife" x="408" y="42" width="128" height="30" />
+    <image href="poker-guide-assets/one-pair-airplanes.png" x="406" y="12" width="166" height="83" preserveAspectRatio="xMidYMid meet" />
     <text class="note" x="240" y="88">同じ数字が2枚</text>
   </g>
 
@@ -84,9 +83,7 @@
       <text class="rank" x="138" y="48">K</text>
     </g>
     <text class="label" x="238" y="54">ツーペア</text>
-    <use href="#cherries" x="386" y="12" width="60" height="60" />
-    <use href="#knife" x="453" y="11" width="108" height="27" />
-    <use href="#knife" x="453" y="43" width="108" height="27" />
+    <image href="poker-guide-assets/two-pair-sleds-yachts.png" x="420" y="12" width="155" height="83" preserveAspectRatio="xMidYMid meet" />
     <text class="note" x="240" y="88">同じ数字の組が2つ</text>
   </g>
 
@@ -147,7 +144,7 @@
   <g transform="translate(74 744)">
     <rect width="1252" height="82" rx="10" fill="#fff8dc" fill-opacity="0.08" stroke="#fff8dc" stroke-opacity="0.2" />
     <text class="subtitle" x="30" y="36">役の強さ</text>
-    <use href="#airplane" x="1000" y="8" width="180" height="66" />
+    <image href="poker-guide-assets/strength-motorcycle.png" x="1000" y="5" width="180" height="72" preserveAspectRatio="xMidYMid meet" />
     <text class="note" x="30" y="66">ワンペア &lt; ツーペア &lt; スリーカード &lt; フォーカード</text>
   </g>
 </svg>
