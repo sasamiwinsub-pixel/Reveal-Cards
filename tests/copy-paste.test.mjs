@@ -88,6 +88,17 @@ test("high-low can replace the game on riddle four", () => {
   assert.equal(resolvePaste({ ...source, text: "ポーカー" }, "riddle-four-game", "katakana"), null);
 });
 
+test("high-low exchange timing is allowed but remains an incorrect change that can be reset", () => {
+  const source = { id: "high-low-declaration", text: "ハイ＆ロー" };
+  assert.equal(resolvePaste(source, "exchange-start-timing", "katakana"), "ハイ＆ロー");
+  for (const format of ["hiragana", "kanji", "number"]) {
+    assert.equal(resolvePaste(source, "exchange-start-timing", format), null);
+  }
+  assert.equal(resolvePaste({ ...source, text: "ポーカー" }, "exchange-start-timing", "katakana"), null);
+  assert.equal(resolvePaste({ id: "unknown", text: "ハイ＆ロー" }, "exchange-start-timing", "katakana"), null);
+  assert.deepEqual(getCorrectCopyPasteChanges({ "exchange-start-timing": "ハイ＆ロー" }, true), {});
+});
+
 test("eleven can replace the scan role name in every format", () => {
   const source = { id: "blackjack-ace-value", text: "11" };
   assert.equal(resolvePaste(source, "scan-role-name", "hiragana"), "じゅういち");

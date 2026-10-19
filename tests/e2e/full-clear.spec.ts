@@ -113,7 +113,8 @@ async function copyCommit(page: Page) {
   await expect(page.getByText(/ペースト実行しました。/)).toBeVisible();
 }
 
-test("opening to final clear through every battle and both final phases", async ({ page }, testInfo) => {
+for (const scanOrder of ["A-first", "J-first"] as const) {
+test(`opening to final clear through every battle and both final phases (${scanOrder})`, async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   // Only dismiss ordinary story/tutorial dialogs; no saved-state injection or route skipping.
@@ -121,7 +122,9 @@ test("opening to final clear through every battle and both final phases", async 
     await dialog.locator("p").first().click();
     if (await dialog.isVisible()) await dialog.locator("[data-tutorial-dismiss]").click();
   }, { noWaitAfter: true });
-  await page.addLocatorHandler(button(page, /^プレイヤー[\s\S]*閉じる$/).first(), async (dialog) => { await dialog.click(); }, { noWaitAfter: true });
+  const playerDialog = button(page, /^プレイヤー[\s\S]*閉じる$/).first();
+  const dismissPlayerDialog = async (dialog: ReturnType<typeof button>) => { await dialog.click(); };
+  await page.addLocatorHandler(playerDialog, dismissPlayerDialog, { noWaitAfter: true });
 
   await test.step("Opening and venue tutorial", async () => {
     await page.goto("/");
@@ -276,6 +279,33 @@ test("opening to final clear through every battle and both final phases", async 
     await click(page, "ファイナルゲームへ");
   });
 
+  await test.step("Final: high-low timing paste warns, loses and allows retry", async () => {
+    await enterPreparation(page);
+    await copyStart(page, "カタカナ");
+    await openSpecification(page, "ハイ＆ローの仕様");
+    await blue(page, "high-low-declaration").click();
+    await ability(page, "エクスチェンジ");
+    await blue(page, "exchange-start-timing").click();
+    await copyCommit(page);
+    await returnToTable(page);
+    await page.removeLocatorHandler(playerDialog);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await click(page, "ゲームスタート");
+      await expect(page.getByRole("dialog")).toContainText("ハイ＆ロー宣言のタイミングでのエクスチェンジしても、ブラックジャックに勝てない気がする。もう一度考えなそう...");
+      await expect(page.getByRole("button", { name: "結果表示を閉じる" })).toHaveCount(0);
+      await playerDialog.click();
+      await closeResult(page);
+      await expect(page.getByText("YOU LOSE", { exact: true })).toBeVisible();
+      await click(page, "もう一度確認");
+    }
+    await page.addLocatorHandler(playerDialog, dismissPlayerDialog, { noWaitAfter: true });
+    await enterPreparation(page);
+    await ability(page, "コピーペースト");
+    await click(page, "やり直し");
+    await expect(button(page, "コピーペースト 残1")).toBeVisible();
+    await returnToTable(page);
+  });
+
   await test.step("Final phase1: declared exchange, intentional defeat and phase2 retry", async () => {
     await enterPreparation(page);
     await copyStart(page, "カタカナ");
@@ -321,8 +351,18 @@ test("opening to final clear through every battle and both final phases", async 
     await blue(page, "scan-role-name").click();
     await copyCommit(page);
     await ability(page, "スキャン");
-    await scan(page, "ハイキング", "ハイエース", [2]);
-    await scan(page, "ハイキング", "ハイジャック", [2]);
+    const targets = [
+      { reading: "ハイエース", image: /hiace\.png/, name: "hiace" },
+      { reading: "ハイジャック", image: /hijack\.png/, name: "hijack" },
+    ];
+    if (scanOrder === "J-first") targets.reverse();
+    for (const target of targets) {
+      await scan(page, "ハイキング", target.reading, [2]);
+      const preview = page.getByRole("img", { name: "今回スキャンした対象", exact: true });
+      await expect(preview).toHaveAttribute("src", target.image);
+      await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+      await page.getByRole("button", { name: "今回スキャンした対象を拡大表示", exact: true }).screenshot({ path: testInfo.outputPath(`final-${target.name}-scan.png`) });
+    }
     await click(page, "Aのカードを現物スキャン対象に選択");
     await click(page, "Jのカードを現物スキャン対象に選択");
     await click(page, "現物スキャン");
@@ -341,3 +381,4 @@ test("opening to final clear through every battle and both final phases", async 
   });
   expect(errors, "No uncaught client-side errors during the entire playthrough").toEqual([]);
 });
+}

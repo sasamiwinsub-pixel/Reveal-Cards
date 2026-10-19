@@ -102,7 +102,7 @@ export default function FinalSituationReview({ onBack, showMonitoringQuestion = 
               if (correct) setProgress((current) => current.map((value, index) => index === activeTheme ? Math.max(value, questionIndex + 1) : value));
             }}>
               <fieldset disabled={solved}>
-                <legend className="mb-3 text-base font-black leading-7">{questionIndex + 1}. {question.text}</legend>
+                <legend className="mb-3 text-base font-black leading-7">{questionIndex + 1}. {question.text}{multiple ? "（複数選択）" : ""}</legend>
                 <div className="grid gap-2">
                   {question.options.map((option, optionIndex) => (
                     <label className={`flex min-h-12 items-center gap-3 rounded border px-3 py-2 text-sm font-bold leading-6 ${selected.includes(optionIndex) ? "border-brass bg-brass/15" : "border-white/20"} ${solved ? "" : "cursor-pointer hover:bg-white/10"}`} key={option}>

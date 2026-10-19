@@ -21,6 +21,7 @@ export function OpeningScreen() {
             <li>ヒントは画面右上のメニューボタンからいつでも閲覧可能です</li>
             <li>URLの変更やソースコードの閲覧は不要です</li>
             <li>配信での使用もご自由にどうぞ（連絡不要）</li>
+            <li>LINEやXなどのアプリ内ブラウザでは動作しない可能性がございます</li>
           </ul>
           <Link className={`${startLinkClass} mx-auto mt-8`} href="/?screen=introduction">始める<ArrowRight aria-hidden="true" size={22} /></Link>
         </div>
@@ -36,7 +37,7 @@ export function IntroductionScreen() {
         <h1 className="mb-8 text-3xl font-black text-brass sm:text-4xl">Reveal Cards</h1>
         <div className="grid gap-6 text-base font-bold leading-8 sm:text-lg sm:leading-9">
           <p>これからテレビゲーム「Reveal Cards」をプレイしていただきます。</p>
-          <p>このゲームに特段ストーリーはなく、ファイナルステージの勝利条件を満たすことでクリアすることができます。</p>
+          <p>このゲームに特段ストーリーはなく、ゲームの運営を行う天の声に従いながら進行します。ファイナルステージに勝利することが唯一の目標です。</p>
           <p className="text-red-300">ファイナルステージは3つのゲームと3つの能力を駆使する必要があり、そのゲームと能力は1stStage～3rdStageで段々と明かされていきます。</p>
           <p>クリアを目指して頑張ってください。</p>
         </div>

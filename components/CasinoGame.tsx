@@ -1955,7 +1955,7 @@ function PhysicalScanRuleText() {
     <div className="mb-3 text-sm font-bold leading-6 text-sky-100">
       <h3 className="font-black text-brass">現物スキャン</h3>
       <p>ルール:<SelectableBlueText id="scan-poker">ポーカー</SelectableBlueText></p>
-      <p>選択した時に<SelectableBlueText id="scan-role-name">役名</SelectableBlueText>ができる</p>
+      <p>条件：選択した時に<SelectableBlueText id="scan-role-name">役名</SelectableBlueText>であること</p>
     </div>
   );
 }
@@ -7141,6 +7141,9 @@ function PokerBattle({
   const [showPokerBlackjackDeclaration, setShowPokerBlackjackDeclaration] =
     useState(false);
   const [showPokerBlackjackDrawDialog, setShowPokerBlackjackDrawDialog] = useState(false);
+  const [showFinalHighLowTimingDialog, setShowFinalHighLowTimingDialog] = useSessionState(
+    `stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showFinalHighLowTimingDialog`, false,
+  );
   const [showPokerRobotPunchDialog, setShowPokerRobotPunchDialog] =
     useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:showPokerRobotPunchDialog`, false);
   const [targetSelectionAbility, setTargetSelectionAbility] =
@@ -7736,6 +7739,11 @@ function PokerBattle({
     setShowPreparation(false);
     resetPokerHighLowPlacement();
     resetPokerBlackjackPlacement();
+    if (isFinalHighLowExchange) {
+      setActivePokerGame("lose");
+      setShowFinalHighLowTimingDialog(true);
+      return;
+    }
     if (isInstantPokerLoseExchangeSelected && !isFinalHighLowExchange) {
       setActivePokerGame("lose");
       setShowPokerRobotPunchDialog(true);
@@ -8131,6 +8139,7 @@ function PokerBattle({
     setActivePokerGame("ready");
     setShowPreparation(false);
     setShowPokerRobotPunchDialog(false);
+    setShowFinalHighLowTimingDialog(false);
     resetPokerHighLowPlacement();
     resetPokerBlackjackPlacement();
   }
@@ -8153,7 +8162,7 @@ function PokerBattle({
             : ""
       }`}
     >
-      {(pokerResult === "win" || pokerBattleLost) && !showPokerRobotPunchDialog && !showPokerBlackjackDrawDialog && !pokerResultOverlayDismissed ? (
+      {(pokerResult === "win" || pokerBattleLost) && !showPokerRobotPunchDialog && !showPokerBlackjackDrawDialog && !showFinalHighLowTimingDialog && !pokerResultOverlayDismissed ? (
         <BattleResultOverlay
           result={pokerBattleLost ? "lose" : "win"}
           onDismiss={() => {
@@ -8179,10 +8188,16 @@ function PokerBattle({
         <RiddleImageModal alt={expandedPokerRiddle.alt} src={expandedPokerRiddle.src} onClose={() => setExpandedPokerRiddle(null)} />
       ) : null}
       {finalSingleCardScanDialog ? <PlayerCutInDialog text={finalSingleCardScanDialog.text} onDismiss={dismissFinalSingleCardScanDialog} /> : null}
+      {showFinalHighLowTimingDialog ? (
+        <PlayerCutInDialog
+          text="ハイ＆ロー宣言のタイミングでのエクスチェンジしても、ブラックジャックに勝てない気がする。もう一度考えなそう..."
+          onDismiss={() => setShowFinalHighLowTimingDialog(false)}
+        />
+      ) : null}
       {showPokerScanRiddlesDialog ? (
         <TutorialDialog
           onDismiss={() => setShowPokerScanRiddlesDialog(false)}
-          text={'スキャンで使える小謎を追加で渡そう。エクスチェンジ無しで"A"と"もう一枚"スキャンで生成すると良い'}
+          text={'おっと、1戦目で渡し忘れていたが、スキャンで使える小謎を追加で渡そう。まずはエクスチェンジ無しで"A"と"もう一枚"スキャンしてみると良い'}
           tone="hands"
         />
       ) : null}
@@ -8212,9 +8227,10 @@ function PokerBattle({
         <BlackjackDeclarationOverlay text={pastedBlueTexts["high-low-declaration"] ?? "ハイ＆ロー"} />
       ) : null}
       {showPokerRiddleHint ? (
-        <PlayerCutInDialog
+        <TutorialDialog
           onDismiss={() => setShowPokerRiddleHint(false)}
-          text="ポーカーの役一覧を見ると、④の小謎には見覚えのあるイラストがある。ナイフがワンペアのイラストとしてスキャンできそうだな"
+          text="元々見せるべきタイミングとズレたので補足しておく。④の小謎はポーカーの練習用の小謎だ。ポーカーの役一覧を見て、イラストを役名の呼称で読むことで成立する。"
+          tone="hands"
         />
       ) : null}
       {showPokerRobotPunchDialog ? (
@@ -9151,7 +9167,7 @@ function PokerBattle({
               )
             ) : (
               <BattleDefeatNotice
-                message="ポーカーロボットに殴られ、意識を失った"
+                message={isFinalHighLowExchange ? "ハイ＆ロー宣言時のエクスチェンジでは勝利できませんでした。" : "ポーカーロボットに殴られ、意識を失った"}
                 onRetry={resetPokerInstantLose}
               />
             )

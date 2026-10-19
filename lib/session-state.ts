@@ -4,11 +4,57 @@ import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } 
 
 // Increment this when saved game data is no longer compatible.
 export const GAME_SESSION_VERSION = "v1";
+export const GAME_SAVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const prefix = `reveal-cards:${GAME_SESSION_VERSION}:`;
+const lastPlayedKey = `${prefix}__last-played-at`;
 
-function storage(): Storage | null {
+function sessionStorage(): Storage | null {
   try {
     return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function removeGameKeys(target: Storage, matches: (key: string) => boolean) {
+  for (const key of Object.keys(target)) {
+    if (matches(key)) target.removeItem(key);
+  }
+}
+
+function storage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  const legacy = sessionStorage();
+  let target: Storage | null;
+  try {
+    target = window.localStorage;
+  } catch {
+    target = null;
+  }
+  target ??= legacy;
+  if (!target) return null;
+  try {
+    const savedTime = target.getItem(lastPlayedKey);
+    const lastPlayed = Number(savedTime);
+    const now = Date.now();
+    if (savedTime !== null && (!Number.isFinite(lastPlayed) || now - lastPlayed >= GAME_SAVE_RETENTION_MS)) {
+      removeGameKeys(target, (key) => key.startsWith(prefix));
+      // Do not resurrect expired progress from the old tab-scoped save.
+      if (legacy && legacy !== target) removeGameKeys(legacy, (key) => key.startsWith(prefix));
+    }
+    for (const store of new Set([target, legacy])) {
+      if (store) removeGameKeys(store, (key) => key.startsWith("reveal-cards:") && !key.startsWith(prefix));
+    }
+    if (legacy && legacy !== target) {
+      for (const key of Object.keys(legacy)) {
+        if (!key.startsWith(prefix)) continue;
+        const saved = legacy.getItem(key);
+        if (saved !== null && target.getItem(key) === null) target.setItem(key, saved);
+        legacy.removeItem(key);
+      }
+    }
+    target.setItem(lastPlayedKey, String(now));
+    return target;
   } catch {
     return null;
   }
@@ -28,9 +74,6 @@ export function readSessionState<S>(key: string, fallback: S): S {
   const target = storage();
   if (!target) return fallback;
   try {
-    for (const oldKey of Object.keys(target)) {
-      if (oldKey.startsWith("reveal-cards:") && !oldKey.startsWith(prefix)) target.removeItem(oldKey);
-    }
     const saved = target.getItem(prefix + key);
     if (saved === null) return fallback;
     const parsed = JSON.parse(saved) as S;
