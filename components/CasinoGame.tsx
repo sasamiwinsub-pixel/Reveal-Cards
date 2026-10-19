@@ -932,6 +932,9 @@ function CasinoGameSession({
   const [, setChips] = useSessionState(`stage-${stageId}:CasinoGame:Chips`, initialStage.startingChips);
   const [, setPlayedRobotIds] = useSessionState<string[]>(`stage-${stageId}:CasinoGame:PlayedRobotIds`, []);
   const [pokerScanCount, setPokerScanCount] = useSessionState(`stage-${stageId}:CasinoGame:pokerScanCount`, 0);
+  const [finalObjectivePhase, setFinalObjectivePhase] = useState<1 | 2>(() =>
+    readSessionState<1 | 2>("stage-4:PokerBattle:all-games-last:finalPhase", 1),
+  );
 
   const [activeBattle, setActiveBattle] = useSessionState<ActiveBattle | null>(
     `stage-${stageId}:CasinoGame:activeBattle`, initialBattle ? { ...initialBattle, gameType: getStageTableGameType(initialStage.id) } : null,
@@ -1106,6 +1109,9 @@ function CasinoGameSession({
 
   function getCurrentObjective() {
     if (stage.id === 4 && !ENABLE_FINAL_DISCOVERY_PHASE) {
+      if (finalObjectivePhase === 2 && pokerScanCount < 2) {
+        return "まずはスキャンでカードを2枚生成しよう";
+      }
       return "全てのゲームで勝利する";
     }
 
@@ -1256,6 +1262,7 @@ function CasinoGameSession({
               <PokerBattle
                 key={activeBattle.robotId}
                 onScanCountChange={setPokerScanCount}
+                onFinalPhaseChange={setFinalObjectivePhase}
                 backHref={`/?stage=${stage.id}`}
                 hand={hand}
                 isRiddleExchangeTimingRevealed={
@@ -7010,6 +7017,7 @@ function PokerSelectedHandPanel({
 
 function PokerBattle({
   onScanCountChange,
+  onFinalPhaseChange,
   backHref,
   hand,
   isRiddleExchangeTimingRevealed,
@@ -7020,6 +7028,7 @@ function PokerBattle({
   robotId,
 }: {
   onScanCountChange: (count: number) => void;
+  onFinalPhaseChange: (phase: 1 | 2) => void;
   backHref: string;
   hand: PlayingCard[];
   isRiddleExchangeTimingRevealed: boolean;
@@ -7035,8 +7044,14 @@ function PokerBattle({
       : null;
   const [selectedCardIds, setSelectedCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:selectedCardIds`, []);
   const [finalPhase, setFinalPhase] = useSessionState<1 | 2>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhase`, 1);
+  useEffect(() => {
+    if (robotId === "all-games-last") onFinalPhaseChange(finalPhase);
+  }, [robotId, finalPhase, onFinalPhaseChange]);
   const [finalFirstPhaseComplete, setFinalFirstPhaseComplete] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalFirstPhaseComplete`, false);
   const [finalPhaseDialog, setFinalPhaseDialog] = useSessionState<"hint" | "report" | "abilities" | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhaseDialog`, null);
+  const [finalScanHintDialog, setFinalScanHintDialog] = useSessionState<"cards" | "physical-rule" | null>(
+    `stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalScanHintDialog`, null,
+  );
   const [exchangeCardIds, setExchangeCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:exchangeCardIds`, []);
   const [confirmedPokerExchangePairs, setConfirmedPokerExchangePairs] = useSessionState<Array<{ firstCardId: string; secondCardId: string }>>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:confirmedPokerExchangePairs`, []);
   const [isExchangeApplied, setIsExchangeApplied] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:isExchangeApplied`, false);
@@ -7651,6 +7666,10 @@ function PokerBattle({
     }
 
     setScannedPokerCardIds((current) => [...current, requirement.cardId]);
+    if (isFinalAllGamesBattle && finalPhase === 2 &&
+        ["scan-A", "scan-J"].every((id) => id === requirement.cardId || scannedPokerCardIds.includes(id))) {
+      setFinalScanHintDialog("cards");
+    }
     if (isPokerFourthBattle && requirement.riddleSrc === "/riddles/riddle_5.png") {
       setHasScannedSugoroku(true);
     }
@@ -7722,6 +7741,10 @@ function PokerBattle({
     setCopyPasteError("");
     setCopyPasteSuccessMessage(`ペースト実行しました。${pasteTarget.label} を「${text}」に上書きしました。`);
     setPastedBlueTexts((current) => ({ ...current, [pasteTarget.id]: text }));
+    if (isFinalAllGamesBattle && finalPhase === 2 && pasteTarget.id === "scan-poker" &&
+        text === "ブラックジャック" && pastedBlueTexts["scan-poker"] !== text) {
+      setFinalScanHintDialog("physical-rule");
+    }
     if (getCorrectCopyPasteChanges({ [pasteTarget.id]: text }, isFinalAllGamesBattle)[pasteTarget.id] === text) {
       setCorrectCopyPasteState((current) => ({ texts: { ...current.texts, [pasteTarget.id]: text }, useCount: current.useCount + 1 }));
     }
@@ -8140,6 +8163,7 @@ function PokerBattle({
     setShowPreparation(false);
     setShowPokerRobotPunchDialog(false);
     setShowFinalHighLowTimingDialog(false);
+    setFinalScanHintDialog(null);
     resetPokerHighLowPlacement();
     resetPokerBlackjackPlacement();
   }
@@ -8179,8 +8203,17 @@ function PokerBattle({
             ? "chips：やることを5回連続でタップすると、開発秘話が見れるぞ"
             : finalPhaseDialog === "report"
               ? "ポーカーロボットのイカサマ監視に引っかかったようだね。ブラックジャックロボットの置いたKが変わった瞬間を目で捉えた報告のみ来ているぞ"
-              : "能力使用回数を追加する。もう一度だけ挑戦すると良い"}
+              : "能力使用回数を追加したので、もう一度だけ挑戦するが良い。まずはスキャンでカードを2枚生成することを目指すことをオススメする"}
           onDismiss={() => setFinalPhaseDialog(finalPhaseDialog === "report" ? "abilities" : null)}
+          tone="hands"
+        />
+      ) : null}
+      {finalScanHintDialog ? (
+        <TutorialDialog
+          text={finalScanHintDialog === "cards"
+            ? "2枚生成できたようだね。AとJ以外スキャン生成できないことは保証する"
+            : "現物スキャンに目を付けたのは良い着眼点だ。後は自力で頑張ると良い"}
+          onDismiss={() => setFinalScanHintDialog(null)}
           tone="hands"
         />
       ) : null}

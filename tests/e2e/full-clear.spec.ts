@@ -116,9 +116,11 @@ async function copyCommit(page: Page) {
 for (const scanOrder of ["A-first", "J-first"] as const) {
 test(`opening to final clear through every battle and both final phases (${scanOrder})`, async ({ page }, testInfo) => {
   const errors: string[] = [];
+  const tutorialMessages: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   // Only dismiss ordinary story/tutorial dialogs; no saved-state injection or route skipping.
   await page.addLocatorHandler(page.locator("[data-tutorial-card]").last(), async (dialog) => {
+    tutorialMessages.push(await dialog.locator("p").first().innerText());
     await dialog.locator("p").first().click();
     if (await dialog.isVisible()) await dialog.locator("[data-tutorial-dismiss]").click();
   }, { noWaitAfter: true });
@@ -332,6 +334,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
   });
 
   await test.step("Final phase2: three copy-pastes, A/J/K scans, hidden king exchange and clear", async () => {
+    await expect(button(page, "やること")).toContainText("まずはスキャンでカードを2枚生成しよう");
     await copyStart(page, "カタカナ");
     await openSpecification(page, "ハイ＆ローの仕様");
     await blue(page, "high-low-declaration").click();
@@ -363,6 +366,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
       await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
       await page.getByRole("button", { name: "今回スキャンした対象を拡大表示", exact: true }).screenshot({ path: testInfo.outputPath(`final-${target.name}-scan.png`) });
     }
+    await expect(button(page, "やること")).toContainText("全てのゲームで勝利する");
     await click(page, "Aのカードを現物スキャン対象に選択");
     await click(page, "Jのカードを現物スキャン対象に選択");
     await click(page, "現物スキャン");
@@ -380,5 +384,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await page.screenshot({ path: testInfo.outputPath("game-clear.png"), fullPage: true });
   });
   expect(errors, "No uncaught client-side errors during the entire playthrough").toEqual([]);
+  expect(tutorialMessages).toContain("2枚生成できたようだね。AとJ以外スキャン生成できないことは保証する");
+  expect(tutorialMessages).toContain("現物スキャンに目を付けたのは良い着眼点だ。後は自力で頑張ると良い");
 });
 }
