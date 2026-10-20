@@ -84,12 +84,38 @@ export function readSessionState<S>(key: string, fallback: S): S {
   }
 }
 
+export function writeSessionState<S>(key: string, value: S) {
+  try { storage()?.setItem(prefix + key, JSON.stringify(value)); } catch { /* Keep the game usable without storage. */ }
+}
+
+export function getSavedGameState(): Record<string, unknown> {
+  const target = storage();
+  if (!target) return {};
+  const entries: Record<string, unknown> = {};
+  try {
+    for (const key of Object.keys(target)) {
+      if (!key.startsWith(prefix)) continue;
+      try { entries[key.slice(prefix.length)] = JSON.parse(target.getItem(key) ?? "null"); } catch { /* Ignore corrupt entries. */ }
+    }
+  } catch { /* Storage may be unavailable. */ }
+  return entries;
+}
+
+export function clearGameProgress() {
+  for (const name of ["localStorage", "sessionStorage"] as const) {
+    try {
+      if (typeof window === "undefined") continue;
+      const target = window[name];
+      removeGameKeys(target, (key) => key.startsWith("reveal-cards:") || key === "cacacasino.gameSelectTutorialSeen" || key === "cacacasino.internalNavigation");
+    } catch { /* Storage may be disabled by the browser. */ }
+  }
+}
+
 export function useSessionState<S>(key: string, initial: S | (() => S)): [S, Dispatch<SetStateAction<S>>] {
-  const fullKey = prefix + key;
   const [value, setValue] = useState<S>(() => readSessionState(key, typeof initial === "function" ? (initial as () => S)() : initial));
   const save = useCallback((next: S) => {
-    try { storage()?.setItem(fullKey, JSON.stringify(next)); } catch { /* Keep the game usable without storage. */ }
-  }, [fullKey]);
+    writeSessionState(key, next);
+  }, [key]);
   const update = useCallback<Dispatch<SetStateAction<S>>>((next) => {
     setValue((current) => {
       const result = typeof next === "function" ? (next as (previous: S) => S)(current) : next;

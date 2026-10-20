@@ -30,6 +30,7 @@ import { applyExchangePairs } from "@/lib/card-exchange";
 import { clearStageSession, readSessionState, useSessionState } from "@/lib/session-state";
 import { isFinalGameClear } from "@/lib/final-clear";
 import { GAME_CLEAR_PATH } from "@/lib/routes";
+import { recordGameProgress, recordGameClear } from "@/lib/resume-progress";
 import {
   Fragment,
   createContext,
@@ -940,6 +941,9 @@ function CasinoGameSession({
   const [activeBattle, setActiveBattle] = useSessionState<ActiveBattle | null>(
     `stage-${stageId}:CasinoGame:activeBattle`, initialBattle ? { ...initialBattle, gameType: getStageTableGameType(initialStage.id) } : null,
   );
+  useEffect(() => {
+    recordGameProgress(stageId, activeBattle?.robotId ?? null);
+  }, [stageId, activeBattle]);
   const [isVenueVisible, setIsVenueVisible] = useSessionState(`stage-${stageId}:CasinoGame:isVenueVisible`, false);
   const [
     hasReachedHighLowTutorialLosePart,
@@ -1274,6 +1278,7 @@ function CasinoGameSession({
                 }}
                 onWin={() => {
                   if (activeBattle.robotId === "all-games-last") {
+                    recordGameClear();
                     window.location.assign(GAME_CLEAR_PATH);
                     return;
                   }
@@ -7046,7 +7051,10 @@ function PokerBattle({
   const [selectedCardIds, setSelectedCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:selectedCardIds`, []);
   const [finalPhase, setFinalPhase] = useSessionState<1 | 2>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhase`, 1);
   useEffect(() => {
-    if (robotId === "all-games-last") onFinalPhaseChange(finalPhase);
+    if (robotId === "all-games-last") {
+      onFinalPhaseChange(finalPhase);
+      recordGameProgress(4, robotId, finalPhase);
+    }
   }, [robotId, finalPhase, onFinalPhaseChange]);
   const [finalFirstPhaseComplete, setFinalFirstPhaseComplete] = useSessionState(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalFirstPhaseComplete`, false);
   const [finalPhaseDialog, setFinalPhaseDialog] = useSessionState<"hint" | "report" | "abilities" | null>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhaseDialog`, null);

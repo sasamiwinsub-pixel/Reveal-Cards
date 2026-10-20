@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import ResumeGate from "@/components/ResumeGate";
 
 const title = "Reveal Cards";
 const description = "ロボットとのカードゲームに、謎解きと特殊能力で挑むブラウザーゲーム。";
@@ -40,7 +41,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body>{children}</body>
+      <body><ResumeGate>{children}</ResumeGate></body>
     </html>
   );
 }
