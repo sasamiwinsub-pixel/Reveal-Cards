@@ -55,6 +55,10 @@ async function blackjack(page: Page, cards: [string, string]) {
 }
 
 async function closeResult(page: Page) {
+  const close = button(page, "結果表示を閉じる");
+  await expect(close).toBeVisible();
+  await page.mouse.click(2, 2);
+  await expect(close).toBeVisible();
   await click(page, "結果表示を閉じる");
 }
 
@@ -133,8 +137,8 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await dialog.locator("p").first().click();
     if (await dialog.isVisible()) await dialog.locator("[data-tutorial-dismiss]").click();
   }, { noWaitAfter: true });
-  const playerDialog = button(page, /^プレイヤー[\s\S]*閉じる$/).first();
-  const dismissPlayerDialog = async (dialog: ReturnType<typeof button>) => { await dialog.click(); };
+  const playerDialog = page.getByRole("dialog").filter({ hasText: "プレイヤー" }).first();
+  const dismissPlayerDialog = async (dialog: ReturnType<typeof button>) => { await dialog.getByRole("button", { name: "閉じる", exact: true }).click(); };
   await page.addLocatorHandler(playerDialog, dismissPlayerDialog, { noWaitAfter: true });
 
   await test.step("Opening and venue tutorial", async () => {
@@ -304,7 +308,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
       await click(page, "ゲームスタート");
       await expect(page.getByRole("dialog")).toContainText("ハイ＆ロー宣言のタイミングでのエクスチェンジしても、ブラックジャックに勝てない気がする。もう一度考えなそう...");
       await expect(page.getByRole("button", { name: "結果表示を閉じる" })).toHaveCount(0);
-      await playerDialog.click();
+      await dismissPlayerDialog(playerDialog);
       await closeResult(page);
       await expect(page.getByText("YOU LOSE", { exact: true })).toBeVisible();
       await click(page, "もう一度確認");

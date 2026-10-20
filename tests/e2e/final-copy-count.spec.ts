@@ -42,7 +42,7 @@ for (const scenario of [
     await expect.poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), prefix + battle + "copyPasteUseCount")).toBe(expectedCount);
     if (expectedCount < 3) await expect(hint).toContainText(`残り${3 - expectedCount}回`);
     else await expect(hint).not.toContainText("残り1回");
-    await hint.locator("p").first().click();
+    await hint.getByRole("button", { name: "閉じる", exact: true }).click();
     await expect(hint).toHaveCount(0);
     await expect(execute).toBeDisabled();
     await page.reload();

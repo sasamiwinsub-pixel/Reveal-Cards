@@ -1402,11 +1402,7 @@ function CasinoGameSession({
         />
       ) : null}
       {isVenueMapOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/86 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="会場MAP" onClick={() => {
-          setIsVenueMapOpen(false);
-          setIsVenueMapRequired(false);
-          setVenueMapCloseSignal((current) => current + 1);
-        }}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/86 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="会場MAP">
           <section className="w-full max-w-6xl overflow-auto rounded border border-white/20 bg-white p-2" onClick={(event) => event.stopPropagation()}>
             <div className="flex justify-end">
               <button aria-label="会場MAPを閉じる" className="grid h-10 w-10 place-items-center rounded text-stone-950 hover:bg-stone-100" type="button" onClick={() => {
@@ -2115,12 +2111,12 @@ function ScanFeedbackMessage({ message }: { message: string }) {
 
 function BattleResultOverlay({ result, onDismiss }: { result: "win" | "lose"; onDismiss: () => void }) {
   return (
-    <button
-      aria-label="結果表示を閉じる"
+    <div
+      role="dialog"
+      aria-modal="true"
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 text-center backdrop-blur-[2px]"
-      onClick={onDismiss}
-      type="button"
     >
+      <div className="grid justify-items-center gap-12">
       <span className="relative inline-grid place-items-center">
         <span className={`absolute h-44 w-44 rounded-full blur-3xl sm:h-64 sm:w-64 ${result === "win" ? "bg-emerald-400/25" : "bg-casinoRed/30"}`} />
         <span className={`absolute h-28 w-72 rounded-full border sm:h-40 sm:w-[34rem] ${result === "win" ? "border-brass/70 shadow-[0_0_48px_rgba(246,195,92,0.75)]" : "border-casinoRed/75 shadow-[0_0_48px_rgba(180,31,44,0.72)]"}`} />
@@ -2128,7 +2124,9 @@ function BattleResultOverlay({ result, onDismiss }: { result: "win" | "lose"; on
           {result === "win" ? "YOU WIN" : "YOU LOSE"}
         </span>
       </span>
-    </button>
+      <button aria-label="結果表示を閉じる" className="relative min-h-11 rounded bg-white px-8 font-black text-stone-950" onClick={onDismiss} type="button">閉じる</button>
+      </div>
+    </div>
   );
 }
 
@@ -2592,7 +2590,6 @@ function RiddleImageModal({
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/86 p-3 backdrop-blur-sm sm:p-6"
-      onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
@@ -2600,6 +2597,9 @@ function RiddleImageModal({
         className="relative max-h-full w-full max-w-6xl overflow-auto rounded border border-white/20 bg-white p-2 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
+        <div className="sticky top-0 z-10 flex justify-end bg-white pb-2">
+          <button className="min-h-10 rounded bg-stone-900 px-4 font-bold text-white" onClick={onClose} type="button">閉じる</button>
+        </div>
         <div className="relative">
           <Image
             alt={alt}
@@ -2630,7 +2630,7 @@ function TutorialDialog({
   onAction,
   text,
   tone,
-  dismissOnlyOnButton = false,
+  dismissOnlyOnButton = true,
 }: {
   actionLabel?: string;
   onDismiss: () => void;
@@ -2762,18 +2762,11 @@ function PlayerCutInDialog({
   return (
     <div
       className="fixed inset-0 z-40 grid cursor-default place-items-center overflow-hidden bg-black/74 p-0 text-left backdrop-blur-[4px]"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onDismiss();
-        }
-      }}
       role="dialog"
       aria-modal="true"
     >
-      <button
+      <div
         className="group relative w-full max-w-4xl -skew-y-3 overflow-hidden border-y-2 border-cyan-200 bg-gradient-to-r from-black via-sky-950 to-black px-5 py-7 text-left shadow-[0_0_48px_rgba(34,211,238,0.45)] sm:px-10 sm:py-9"
-        onClick={onDismiss}
-        type="button"
       >
         <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_0%,rgba(125,211,252,0.22)_18%,transparent_36%,transparent_100%)]" />
         <span className="pointer-events-none absolute -left-10 top-0 h-full w-32 bg-cyan-300/15 blur-xl" />
@@ -2784,11 +2777,11 @@ function PlayerCutInDialog({
           <span className="block text-xl font-black leading-9 text-white drop-shadow-[0_3px_0_rgba(0,0,0,0.85)] sm:text-3xl sm:leading-[1.65]">
             {text}
           </span>
-          <span className="mt-5 inline-flex min-h-10 items-center border border-white/45 bg-white px-5 text-sm font-black text-stone-950 shadow-[5px_5px_0_rgba(0,0,0,0.6)] transition group-hover:bg-cyan-100">
+          <button type="button" onClick={onDismiss} className="mt-5 inline-flex min-h-10 items-center border border-white/45 bg-white px-5 text-sm font-black text-stone-950 shadow-[5px_5px_0_rgba(0,0,0,0.6)] transition hover:bg-cyan-100">
             閉じる
-          </span>
+          </button>
         </span>
-      </button>
+      </div>
     </div>
   );
 }
@@ -8217,7 +8210,7 @@ function PokerBattle({
           text={finalPhaseDialog === "hint"
             ? "chips：やることを5回連続でタップすると、開発秘話が見れるぞ"
             : finalPhaseDialog === "report"
-              ? "ポーカーロボットのイカサマ監視に引っかかったようだね。ブラックジャックロボットの置いたKが変わった瞬間を目で捉えた報告のみ来ているぞ"
+              ? "ポーカーロボットのイカサマ監視に引っかかったようだね。ブラックジャックロボットの置いたKが変わったのを目で捉えた報告があったぞ"
               : "能力使用回数を追加したので、もう一度だけ挑戦するが良い。まずはスキャンでカードを2枚生成することを目指すことをオススメする"}
           onDismiss={() => setFinalPhaseDialog(finalPhaseDialog === "report" ? "abilities" : null)}
           tone="hands"
@@ -10419,36 +10412,7 @@ function HighLowBattle({
         ) : null}
 
         {showResultOverlay ? (
-          <button
-            className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 text-center backdrop-blur-[2px]"
-            onClick={() => setWinOverlayDismissed(true)}
-            type="button"
-            aria-label="結果表示を閉じる"
-          >
-            <span className="relative inline-grid place-items-center">
-              <span
-                className={`absolute h-44 w-44 rounded-full blur-3xl sm:h-64 sm:w-64 ${
-                  highLowResult === "win"
-                    ? "bg-emerald-400/25"
-                    : "bg-casinoRed/30"
-                }`}
-              />
-              <span
-                className={`absolute h-28 w-72 rounded-full border sm:h-40 sm:w-[34rem] ${
-                  highLowResult === "win"
-                    ? "border-brass/70 shadow-[0_0_48px_rgba(246,195,92,0.75)]"
-                    : "border-casinoRed/75 shadow-[0_0_48px_rgba(180,31,44,0.72)]"
-                }`}
-              />
-              <span
-                className={`relative scale-105 text-5xl font-black drop-shadow-[0_6px_0_rgba(0,0,0,0.8)] sm:text-8xl ${
-                  highLowResult === "win" ? "text-brass" : "text-casinoRed"
-                }`}
-              >
-                {highLowResult === "win" ? "YOU WIN" : "YOU LOSE"}
-              </span>
-            </span>
-          </button>
+          <BattleResultOverlay result={highLowResult === "win" ? "win" : "lose"} onDismiss={() => setWinOverlayDismissed(true)} />
         ) : null}
 
         {draggingCard && dragPreviewPoint ? (

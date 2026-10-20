@@ -27,7 +27,7 @@ export default function ClearScreen() {
         <div className="mt-6 divide-y divide-white/20 border-y border-white/20">
           <details className="group">
             <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 py-4 font-black text-brass [&::-webkit-details-marker]:hidden">
-              ファイナルゲーム
+              ファイナルゲーム解説
               <ChevronDown aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-180" size={20} />
             </summary>
             <div className="grid gap-3 pb-5 text-sm font-bold leading-7 text-stone-100">
@@ -37,12 +37,12 @@ export default function ClearScreen() {
           </details>
           <details className="group">
             <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 py-4 font-black text-brass [&::-webkit-details-marker]:hidden">
-              ファイナルゲームもう1戦
+              ファイナルゲームもう1戦解説
               <ChevronDown aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-180" size={20} />
             </summary>
             <div className="grid gap-3 pb-5 text-sm font-bold leading-7 text-stone-100">
               <p>小謎スキャンで生成できたのはAとJの2枚のみ。Kのフォーカード以外で勝ち目がなく、生成したKとエクスチェンジしないとイカサマがバレてしまいます。</p>
-              <p>そこで、コピーペースト機能を用いて現物スキャンの仕様を改変することでKを生成することができました。その際、平仮名でのみ文章の区切れを変えて「にじゅういち」と読むことができます</p>
+              <p>そこで、コピーペースト機能を用いて現物スキャンの仕様を改変することでKを生成することができました。その際、平仮名でのみ文章の区切れを変えることができ、「にじゅういち」と読むことができます。</p>
             </div>
           </details>
         </div>

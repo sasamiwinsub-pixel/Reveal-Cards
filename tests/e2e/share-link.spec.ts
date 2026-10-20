@@ -17,8 +17,8 @@ test("clear screen links to the supplied X post without publishing it", async ({
 
 test("final explanations expand independently above the X link", async ({ page }, testInfo) => {
   await page.goto(GAME_CLEAR_PATH);
-  const first = page.locator("details").filter({ has: page.locator("summary", { hasText: /^ファイナルゲーム$/ }) });
-  const second = page.locator("details").filter({ has: page.locator("summary", { hasText: /^ファイナルゲームもう1戦$/ }) });
+  const first = page.locator("details").filter({ has: page.locator("summary", { hasText: /^ファイナルゲーム解説$/ }) });
+  const second = page.locator("details").filter({ has: page.locator("summary", { hasText: /^ファイナルゲームもう1戦解説$/ }) });
   await expect(first.locator("p").first()).toBeHidden();
   await expect(second.locator("p").first()).toBeHidden();
   await first.locator("summary").click();
