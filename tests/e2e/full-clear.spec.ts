@@ -371,23 +371,30 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await copyCommit(page);
     await ability(page, "スキャン");
     const targets = [
-      { reading: "ハイエース", image: /hiace\.png/, name: "hiace" },
-      { reading: "ハイジャック", image: /hijack\.png/, name: "hijack" },
+      { reading: "ハイエース", image: /hiace\.png/, name: "hiace", summary: "ハイ/エース" },
+      { reading: "ハイジャック", image: /hijack\.png/, name: "hijack", summary: "ハイ/ジャック" },
     ];
     if (scanOrder === "J-first") targets.reverse();
+    const summary = page.getByText("スキャン回答済み", { exact: true }).locator("..");
+    for (const target of targets) await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(0);
     for (const target of targets) {
       await scan(page, "ハイキング", target.reading, [2]);
       const preview = page.getByRole("img", { name: "今回スキャンした対象", exact: true });
       await expect(preview).toHaveAttribute("src", target.image);
+      await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(1);
       await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
       await page.getByRole("button", { name: "今回スキャンした対象を拡大表示", exact: true }).screenshot({ path: testInfo.outputPath(`final-${target.name}-scan.png`) });
     }
+    await page.reload();
+    await page.getByRole("dialog", { name: "続きから再開しますか？" }).getByRole("button", { name: "はい", exact: true }).click();
+    for (const target of targets) await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(1);
     await expect(button(page, "やること")).toContainText("全てのゲームで勝利する");
     await click(page, "Aのカードを現物スキャン対象に選択");
     await click(page, "Jのカードを現物スキャン対象に選択");
     await click(page, "現物スキャン");
     await split(page, [1], -1);
     await click(page, "現物スキャン発動");
+    for (const target of targets) await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(1);
     await ability(page, "エクスチェンジ");
     await exchange(page, "A daia", "K crub");
     await exchange(page, "J heart", "scan-K");
@@ -400,7 +407,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await page.screenshot({ path: testInfo.outputPath("game-clear.png"), fullPage: true });
   });
   expect(errors, "No uncaught client-side errors during the entire playthrough").toEqual([]);
-  expect(tutorialMessages).toContain("2枚生成できたようだね。AとJ以外スキャン生成できないことは保証する");
+  expect(tutorialMessages).toContain("2枚生成できたようだね。AとJ以外を小謎からスキャン生成できないことは保証しよう");
   expect(tutorialMessages).toContain("現物スキャンに目を付けたのは良い着眼点だ。残り1回のコピーペーストも隠された青字や探索の必要はなく、今表示されているものしか使わないことは保証しよう。後は自力で頑張ると良い");
 });
 }

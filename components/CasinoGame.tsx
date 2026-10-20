@@ -8215,7 +8215,7 @@ function PokerBattle({
       {finalScanHintDialog ? (
         <TutorialDialog
           text={finalScanHintDialog === "cards"
-            ? "2枚生成できたようだね。AとJ以外スキャン生成できないことは保証する"
+            ? "2枚生成できたようだね。AとJ以外を小謎からスキャン生成できないことは保証しよう"
             : `現物スキャンに目を付けたのは良い着眼点だ。${remainingCopyPastes > 0 ? `残り${remainingCopyPastes}回のコピーペーストも` : "コピーペーストは"}隠された青字や探索の必要はなく、今表示されているものしか使わないことは保証しよう。後は自力で頑張ると良い`}
           onDismiss={() => setFinalScanHintDialog(null)}
           tone="hands"
@@ -8847,6 +8847,16 @@ function PokerBattle({
                         { question: "③", answer: "フエ", illustrationName: "れい/ん", generatedNumber: "0", imageSrc: scanTargetImages.rain },
                         { question: "④", answer: "ツーペア", illustrationName: "わん/ぺあ", generatedNumber: "1", imageSrc: scanTargetImages.onepair },
                         ...(isFinalAllGamesBattle && hasScannedSugoroku ? [{ question: "⑤", answer: "りすく", illustrationName: "す/ご/ろく", generatedNumber: "11", imageSrc: scanTargetImages.sugoroku }] : []),
+                        ...(isFinalAllGamesBattle ? scanRequirements
+                          .filter((requirement) => scannedPokerCardIds.includes(requirement.cardId))
+                          .map((requirement) => ({
+                            id: requirement.cardId,
+                            question: pokerScanRiddles.find((riddle) => riddle.src === requirement.riddleSrc)?.label ?? "",
+                            answer: requirement.answer,
+                            illustrationName: requirement.illustration.replace(/[\s\u3000]+/g, "/"),
+                            generatedNumber: requirement.cardId === "scan-A" ? "1" : "11",
+                            imageSrc: requirement.targetImageSrc,
+                          })) : []),
                       ]} />
                       <ScanAnswerPanel
                         answer={pokerScanAnswer} illustration={pokerScanIllustration} splitIndexes={pokerScanSplitIndexes}
