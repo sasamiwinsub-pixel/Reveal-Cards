@@ -1962,8 +1962,8 @@ function PhysicalScanRuleText() {
   return (
     <div className="mb-3 text-sm font-bold leading-6 text-sky-100">
       <h3 className="font-black text-brass">現物スキャン</h3>
-      <p>ルール:<SelectableBlueText id="scan-poker">ポーカー</SelectableBlueText></p>
-      <p>条件：選択した時に<SelectableBlueText id="scan-role-name">役名</SelectableBlueText>であること</p>
+      <p>ルール：<SelectableBlueText id="scan-poker">ポーカー</SelectableBlueText></p>
+      <p>条件：選択した時に<SelectableBlueText id="scan-role-name">役名</SelectableBlueText>であること。現物のトランプであること</p>
     </div>
   );
 }
