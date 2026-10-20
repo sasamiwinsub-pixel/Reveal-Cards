@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { GAME_CLEAR_PATH } from "../../lib/routes";
 
 const button = (page: Page, name: string | RegExp) => page.getByRole("button", { name, exact: typeof name === "string" }).filter({ visible: true });
 const blue = (page: Page, id: string) => page.locator(`[data-blue-text-id="${id}"]`).filter({ visible: true });
@@ -18,10 +19,18 @@ async function ability(page: Page, name: string) {
 
 async function exchange(page: Page, first: string, second: string, decision: string | RegExp = /^エクスチェンジ決定/) {
   await click(page, "エクスチェンジ起動");
+  if (decision === "エクスチェンジ決定") {
+    await expect(page.getByTestId("exchange-mode-frame")).toBeVisible();
+    await click(page, "対象選択を停止");
+    await expect(page.getByTestId("exchange-mode-frame")).toHaveCount(0);
+    await click(page, "エクスチェンジ起動");
+    await expect(page.getByTestId("exchange-mode-frame")).toBeVisible();
+  }
   await click(page, first);
   if (second.startsWith("scan-")) await page.locator(`[data-card-id="${second}"]`).filter({ visible: true }).click();
   else await click(page, second);
   await click(page, decision);
+  if (decision === "エクスチェンジ決定") await expect(page.getByTestId("exchange-mode-frame")).toHaveCount(0);
 }
 
 async function returnToTable(page: Page, stageOne = false) {
@@ -378,13 +387,13 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await returnToTable(page);
     await pokerRound(page, "A daia", "HIGH", ["A daia", "J heart"], ["K spade", "K daia"]);
     await click(page, "クリア画面へ");
-    await expect(page).toHaveURL(/screen=clear/);
+    await expect(page).toHaveURL(new RegExp(`${GAME_CLEAR_PATH}$`));
     await expect(page.getByRole("heading", { name: "ゲームクリア！", exact: true })).toBeVisible();
     await expect(page.getByText("全てのゲームで勝利しました。", { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("game-clear.png"), fullPage: true });
   });
   expect(errors, "No uncaught client-side errors during the entire playthrough").toEqual([]);
   expect(tutorialMessages).toContain("2枚生成できたようだね。AとJ以外スキャン生成できないことは保証する");
-  expect(tutorialMessages).toContain("現物スキャンに目を付けたのは良い着眼点だ。後は自力で頑張ると良い");
+  expect(tutorialMessages).toContain("現物スキャンに目を付けたのは良い着眼点だ。残り1回のコピーペーストも隠された青字や探索の必要はなく、今表示されているものしか使わないことは保証しよう。後は自力で頑張ると良い");
 });
 }

@@ -29,6 +29,7 @@ import { getBlackjackOrderValue, isLargestBlackjackCard } from "@/lib/blackjack-
 import { applyExchangePairs } from "@/lib/card-exchange";
 import { clearStageSession, readSessionState, useSessionState } from "@/lib/session-state";
 import { isFinalGameClear } from "@/lib/final-clear";
+import { GAME_CLEAR_PATH } from "@/lib/routes";
 import {
   Fragment,
   createContext,
@@ -1273,7 +1274,7 @@ function CasinoGameSession({
                 }}
                 onWin={() => {
                   if (activeBattle.robotId === "all-games-last") {
-                    window.location.assign("/?screen=clear");
+                    window.location.assign(GAME_CLEAR_PATH);
                     return;
                   }
                   if (activeBattle.robotId === "poker-3-4") {
@@ -8212,7 +8213,7 @@ function PokerBattle({
         <TutorialDialog
           text={finalScanHintDialog === "cards"
             ? "2枚生成できたようだね。AとJ以外スキャン生成できないことは保証する"
-            : "現物スキャンに目を付けたのは良い着眼点だ。後は自力で頑張ると良い"}
+            : "現物スキャンに目を付けたのは良い着眼点だ。残り1回のコピーペーストも隠された青字や探索の必要はなく、今表示されているものしか使わないことは保証しよう。後は自力で頑張ると良い"}
           onDismiss={() => setFinalScanHintDialog(null)}
           tone="hands"
         />
@@ -10233,6 +10234,9 @@ function HighLowBattle({
   if (showPreparation) {
     return (
       <div className="min-h-[680px] bg-[#111827] text-white">
+        {isHighLowExchangeModeActive && !exchangeConfirmed ? (
+          <div aria-hidden="true" data-testid="exchange-mode-frame" className="pointer-events-none fixed inset-0 z-[60] border-[10px] border-red-500/80 shadow-[inset_0_0_42px_rgba(239,68,68,0.75)]" />
+        ) : null}
         <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-black/45 p-3 sm:p-4">
           <button
             className="grid h-10 w-10 place-items-center rounded border border-white/14 bg-white/8 hover:bg-white/14"
