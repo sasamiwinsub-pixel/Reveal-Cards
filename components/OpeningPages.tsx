@@ -37,8 +37,9 @@ export function IntroductionScreen() {
         <h1 className="mb-8 text-3xl font-black text-brass sm:text-4xl">Reveal Cards</h1>
         <div className="grid gap-6 text-base font-bold leading-8 sm:text-lg sm:leading-9">
           <p>これからテレビゲーム「Reveal Cards」をプレイしていただきます。</p>
-          <p>このゲームに特段ストーリーはなく、ゲームの運営を行う天の声に従いながら進行します。ファイナルステージに勝利することが唯一の目標です。</p>
-          <p className="text-red-300">ファイナルステージは3つのゲームと3つの能力を駆使する必要があり、そのゲームと能力は1stStage～3rdStageで段々と明かされていきます。</p>
+          <p>このゲームはAKQJの4種4枚ずつの16枚の山札で行われ、3つのゲームと3つの能力を駆使する必要があります。</p>
+          <p>特段ストーリーはないため、ゲームの運営を行う天の声に従いながら進めてください。ファイナルステージに勝利することが唯一の目標です。</p>
+          <p className="text-red-300">ファイナルステージは、そのゲームと能力は1stStage～3rdStageで段々と明かされていきます。</p>
           <p>クリアを目指して頑張ってください。</p>
         </div>
         <Link className={`${startLinkClass} mt-10`} href="/?screen=title">タイトル画面へ<ArrowRight aria-hidden="true" size={22} /></Link>

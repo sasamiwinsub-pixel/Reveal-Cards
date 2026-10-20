@@ -6978,18 +6978,16 @@ function PokerRobotSpecContent({
   const highlightedSpecParts = new Set([
     "半殺し",
     "自分の手札とテーブルを常に見ており",
-    "AKQJの16枚の山札1つで3つのゲームを行うことを知っており",
   ]);
-  const specParts = specText.split(/(自分の手札とテーブルを常に見ており|AKQJの16枚の山札1つで3つのゲームを行うことを知っており|半殺し)/);
+  const specParts = specText.split(/(自分の手札とテーブルを常に見ており|半殺し|\n)/);
 
   return (
     <>
       {specParts.map((part, index) => highlightedSpecParts.has(part) ? (
         <Fragment key={index}>
-          {part === "AKQJの16枚の山札1つで3つのゲームを行うことを知っており" ? <br /> : null}
           <span className="font-black text-red-300">{part}</span>
         </Fragment>
-      ) : <Fragment key={index}>{part}</Fragment>)}
+      ) : part === "\n" ? <br key={index} /> : <Fragment key={index}>{part}</Fragment>)}
 
     </>
   );
@@ -8253,7 +8251,7 @@ function PokerBattle({
       {showCopyPasteUnlockDialog ? (
         <TutorialDialog
           onDismiss={() => setShowCopyPasteUnlockDialog(false)}
-          text={<>最後の機能「コピーペースト機能」を開示<br />小謎の紙も追加する</>}
+          text={<>最後の機能「コピーペースト機能」を開示</>}
           tone="hands"
         />
       ) : null}
