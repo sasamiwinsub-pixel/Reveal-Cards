@@ -2111,12 +2111,12 @@ function ScanFeedbackMessage({ message }: { message: string }) {
 
 function BattleResultOverlay({ result, onDismiss }: { result: "win" | "lose"; onDismiss: () => void }) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <button
+      aria-label="結果表示を閉じる"
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 text-center backdrop-blur-[2px]"
+      onClick={onDismiss}
+      type="button"
     >
-      <div className="grid justify-items-center gap-12">
       <span className="relative inline-grid place-items-center">
         <span className={`absolute h-44 w-44 rounded-full blur-3xl sm:h-64 sm:w-64 ${result === "win" ? "bg-emerald-400/25" : "bg-casinoRed/30"}`} />
         <span className={`absolute h-28 w-72 rounded-full border sm:h-40 sm:w-[34rem] ${result === "win" ? "border-brass/70 shadow-[0_0_48px_rgba(246,195,92,0.75)]" : "border-casinoRed/75 shadow-[0_0_48px_rgba(180,31,44,0.72)]"}`} />
@@ -2124,9 +2124,7 @@ function BattleResultOverlay({ result, onDismiss }: { result: "win" | "lose"; on
           {result === "win" ? "YOU WIN" : "YOU LOSE"}
         </span>
       </span>
-      <button aria-label="結果表示を閉じる" className="relative min-h-11 rounded bg-white px-8 font-black text-stone-950" onClick={onDismiss} type="button">閉じる</button>
-      </div>
-    </div>
+    </button>
   );
 }
 
@@ -2590,6 +2588,7 @@ function RiddleImageModal({
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/86 p-3 backdrop-blur-sm sm:p-6"
+      onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
@@ -2597,9 +2596,6 @@ function RiddleImageModal({
         className="relative max-h-full w-full max-w-6xl overflow-auto rounded border border-white/20 bg-white p-2 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex justify-end bg-white pb-2">
-          <button className="min-h-10 rounded bg-stone-900 px-4 font-bold text-white" onClick={onClose} type="button">閉じる</button>
-        </div>
         <div className="relative">
           <Image
             alt={alt}
@@ -5005,7 +5001,7 @@ function BlackjackBattle({
                                 });
                                 setScanExchangeChoice(null);
                               }}
-                              placeholder="小謎①の答えを入力"
+                              placeholder="数字で回答"
                               value={scanRiddleAnswerOne}
                             />
                             <CheckResultText result={scanRiddleAnswerResults.one} />
@@ -6139,7 +6135,7 @@ function BlackjackBattle({
                                 });
                                 setScanExchangeChoice(null);
                               }}
-                              placeholder="小謎①の答えを入力"
+                              placeholder="数字で回答"
                               value={scanRiddleAnswerOne}
                             />
                             <CheckResultText result={scanRiddleAnswerResults.one} />

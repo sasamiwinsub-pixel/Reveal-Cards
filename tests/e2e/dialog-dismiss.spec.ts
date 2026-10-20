@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 for (const kind of ["tutorial", "player", "image"] as const) {
-  test(`${kind} dialog closes only with its close button`, async ({ page }) => {
+  test(`${kind} dialog uses its expected dismissal behavior`, async ({ page }, testInfo) => {
     await page.addInitScript((kind) => {
       const prefix = "reveal-cards:v1:";
       const battle = "stage-4:PokerBattle:all-games-last:";
@@ -18,12 +18,20 @@ for (const kind of ["tutorial", "player", "image"] as const) {
     await page.goto("/?stage=4&battle=poker&robot=all-games-last");
     const card = kind === "tutorial" ? page.locator("[data-tutorial-card]") : page.getByRole("dialog");
     await expect(card).toBeVisible();
+    if (kind === "image") {
+      await expect(card.getByRole("img")).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("riddle-image-outside-dismiss.png") });
+    }
     const body = kind === "tutorial" ? card.locator("p").first()
       : kind === "image" ? card.getByRole("img", { name: "小謎", exact: true })
       : card.getByText(/ハイ＆ロー宣言のタイミング/);
     await body.click({ clickCount: 3 });
     await expect(card).toBeVisible();
     await page.mouse.click(2, 2);
+    if (kind === "image") {
+      await expect(card).toHaveCount(0);
+      return;
+    }
     await expect(card).toBeVisible();
     const close = card.getByRole("button", { name: "閉じる", exact: true });
     await close.focus();

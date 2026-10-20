@@ -57,9 +57,10 @@ async function blackjack(page: Page, cards: [string, string]) {
 async function closeResult(page: Page) {
   const close = button(page, "結果表示を閉じる");
   await expect(close).toBeVisible();
+  const result = (await close.innerText()).includes("YOU WIN") ? "win" : "lose";
+  await page.screenshot({ path: test.info().outputPath(`result-${result}.png`) });
   await page.mouse.click(2, 2);
-  await expect(close).toBeVisible();
-  await click(page, "結果表示を閉じる");
+  await expect(close).toHaveCount(0);
 }
 
 async function pokerRound(page: Page, highLowCard: string, zone: "HIGH" | "LOW", blackjackCards: [string, string], field: [string, string]) {
@@ -191,7 +192,9 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await enterPreparation(page);
     await page.getByPlaceholder("答えを入力", { exact: true }).fill("らっと");
     await click(page, "回答");
-    await page.getByPlaceholder("小謎①の答えを入力").fill("0315");
+    await page.getByPlaceholder("数字で回答", { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath("riddle-one-number-placeholder.png") });
+    await page.getByPlaceholder("数字で回答", { exact: true }).fill("0315");
     await page.getByPlaceholder("小謎②の答えを入力").fill("すいり");
     await click(page, "回答");
     const readings = page.getByPlaceholder("イラストの呼称を入力");
