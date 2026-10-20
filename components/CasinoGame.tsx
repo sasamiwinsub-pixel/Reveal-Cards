@@ -7745,6 +7745,11 @@ function PokerBattle({
       setCopyPasteError("文章の意味が通らないため、ペーストできません。");
       return;
     }
+    if (pastedBlueTexts[pasteTarget.id] === text) {
+      setCopyPasteSuccessMessage("");
+      setCopyPasteError("すでに同じ内容に変更されています。回数は消費しません。");
+      return;
+    }
     setCopyPasteError("");
     setCopyPasteSuccessMessage(`ペースト実行しました。${pasteTarget.label} を「${text}」に上書きしました。`);
     setPastedBlueTexts((current) => ({ ...current, [pasteTarget.id]: text }));
@@ -7758,6 +7763,9 @@ function PokerBattle({
     setTargetSelectionAbility(null);
     setIsCopyPasteApplied(true);
     setCopyPasteUseCount((count) => count + 1);
+    setCopiedTargetId(null);
+    setPasteTargetId(null);
+    setCopyPasteStep("source");
   }
 
   function startPokerSequence() {
@@ -8219,7 +8227,7 @@ function PokerBattle({
         <TutorialDialog
           text={finalScanHintDialog === "cards"
             ? "2枚生成できたようだね。AとJ以外スキャン生成できないことは保証する"
-            : "現物スキャンに目を付けたのは良い着眼点だ。残り1回のコピーペーストも隠された青字や探索の必要はなく、今表示されているものしか使わないことは保証しよう。後は自力で頑張ると良い"}
+            : `現物スキャンに目を付けたのは良い着眼点だ。${remainingCopyPastes > 0 ? `残り${remainingCopyPastes}回のコピーペーストも` : "コピーペーストは"}隠された青字や探索の必要はなく、今表示されているものしか使わないことは保証しよう。後は自力で頑張ると良い`}
           onDismiss={() => setFinalScanHintDialog(null)}
           tone="hands"
         />
