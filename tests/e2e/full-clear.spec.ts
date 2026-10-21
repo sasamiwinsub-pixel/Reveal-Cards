@@ -297,7 +297,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await returnToTable(page);
     await pokerRound(page, "A heart", "HIGH", ["A heart", "J spade"], ["A crub", "J crub"]);
     await click(page, /ファイナル/);
-    await click(page, "ファイナルゲームへ");
+    await click(page, "ファイナルステージへ");
   });
 
   await test.step("Final: high-low timing paste warns, loses and allows retry", async () => {

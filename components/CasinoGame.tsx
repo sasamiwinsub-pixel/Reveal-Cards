@@ -1151,7 +1151,7 @@ function CasinoGameSession({
     }
 
     if (shouldShowFinalAbilitySpec) {
-      return "ファイナルゲームに必要な能力と条件を確認しましょう。";
+      return "ファイナルステージに必要な能力と条件を確認しましょう。";
     }
 
     if (stage.id === 2) {
@@ -1693,17 +1693,17 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
           <p className="text-[11px] font-black uppercase tracking-[0.2em] text-brass">
             ファイナル情報開示
           </p>
-          <h2 className="mt-2 text-2xl font-black">ファイナルゲームの勝利条件<span className="text-red-300">公開</span></h2>
+          <h2 className="mt-2 text-2xl font-black">ファイナルステージの勝利条件<span className="text-red-300">公開</span></h2>
           <p className="mt-3 text-sm font-bold leading-7 text-stone-100">
             {ENABLE_FINAL_DISCOVERY_PHASE
               ? "最後の1戦で使われる手札とフィールドが判明。このまま事前準備へ入る前に、未判明のスキャン生成2枚を特定しよう"
               : <>
                   <span className="my-7 block text-xl font-black leading-8 text-red-300 sm:text-2xl">「全てのゲームで勝利する」</span>
-                  <span className="mt-3 block">最後の1戦で使われる手札とフィールドが<span className="text-red-300">公開</span>。事前準備を整えて、ファイナルゲームに挑もう</span>
+                  <span className="mt-3 block">最後の1戦で使われる手札とフィールドが<span className="text-red-300">公開</span>。事前準備を整えて、ファイナルステージに挑もう</span>
                 </>}
           </p>
           <p className="mt-3 text-sm font-bold leading-7 text-red-300">
-            ファイナルゲームでは、これまでのコピーペーストによる変更とエクスチェンジをすべてリセットします。
+            ファイナルステージでは、これまでのコピーペーストによる変更とエクスチェンジをすべてリセットします。
           </p>
           <div className="mt-5 grid gap-3">
             {finalBattleDisclosureSections.map((section) => (
@@ -1719,7 +1719,7 @@ function FinalDisclosure({ onContinue }: { onContinue: () => void }) {
             onClick={onContinue}
             type="button"
           >
-            {ENABLE_FINAL_DISCOVERY_PHASE ? "スキャン一覧を作成する" : "ファイナルゲームへ"}
+            {ENABLE_FINAL_DISCOVERY_PHASE ? "スキャン一覧を作成する" : "ファイナルステージへ"}
           </button>
         </div>
       </section>
@@ -3709,7 +3709,7 @@ function BlackjackBattle({
     }
 
     if (isFinalBattle && !isFinalPreparationApplied) {
-      setMessage("先にファイナルゲーム用の事前準備を完了してください。");
+      setMessage("先にファイナルステージ用の事前準備を完了してください。");
       return;
     }
 
@@ -6467,7 +6467,7 @@ function BlackjackBattle({
               onApply={() => {
                 setIsFinalPreparationApplied(true);
                 setMessage(
-                  "ファイナルゲームの事前準備が完了しました。Aを先に出し、Jをそっと置いてブラックジャックを宣言します。",
+                  "ファイナルステージの事前準備が完了しました。Aを先に出し、Jをそっと置いてブラックジャックを宣言します。",
                 );
               }}
             />
@@ -7226,7 +7226,7 @@ function PokerBattle({
       ? "勝利後条件追加：プレイヤー・ブラックジャックの手札も交換不可"
       : null;
   const nextPokerBattleLabel = isPokerFourthBattle
-    ? "ファイナルゲームへ"
+    ? "ファイナルステージへ"
     : isPokerThirdBattle
       ? "4戦目へ"
       : isPokerSecondBattle

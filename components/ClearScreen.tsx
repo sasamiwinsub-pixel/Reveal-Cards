@@ -27,7 +27,7 @@ export default function ClearScreen() {
         <div className="mt-6 divide-y divide-white/20 border-y border-white/20">
           <details className="group">
             <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 py-4 font-black text-brass [&::-webkit-details-marker]:hidden">
-              ファイナルゲーム解説
+              ファイナルステージ解説
               <ChevronDown aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-180" size={20} />
             </summary>
             <div className="grid gap-3 pb-5 text-sm font-bold leading-7 text-stone-100">
@@ -37,7 +37,7 @@ export default function ClearScreen() {
           </details>
           <details className="group">
             <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 py-4 font-black text-brass [&::-webkit-details-marker]:hidden">
-              ファイナルゲームもう1戦解説
+              ファイナルステージもう1戦解説
               <ChevronDown aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-180" size={20} />
             </summary>
             <div className="grid gap-3 pb-5 text-sm font-bold leading-7 text-stone-100">
