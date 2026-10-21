@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GAME_SESSION_VERSION, GAME_SAVE_RETENTION_MS, readSessionState, clearStageSession } from "../lib/session-state.ts";
+import { GAME_SESSION_VERSION, GAME_SAVE_RETENTION_MS, readSessionState, writeSessionState, clearStageSession } from "../lib/session-state.ts";
 
 const prefix = `reveal-cards:${GAME_SESSION_VERSION}:`;
 const lastPlayedKey = `${prefix}__last-played-at`;
@@ -103,4 +103,43 @@ test("blocked localStorage falls back to sessionStorage, and unavailable storage
   assert.doesNotThrow(() => clearStageSession(4));
   delete globalThis.window;
   assert.equal(readSessionState("stage-4:phase", 0), 0);
+}));
+
+test("repeated reads and writes do not rescan initialized storage", () => browser((local, session) => {
+  let enumerations = 0;
+  const track = (store) => new Proxy(store, { ownKeys(target) { enumerations++; return Reflect.ownKeys(target); } });
+  globalThis.window = { localStorage: track(local), sessionStorage: track(session) };
+  for (let i = 0; i < 500; i++) local.setItem(`${prefix}fixture-${i}`, String(i));
+  assert.equal(readSessionState("fixture-1", 0), 1);
+  const initialized = enumerations;
+  for (let i = 0; i < 100; i++) {
+    writeSessionState("stage-4:test", i);
+    assert.equal(readSessionState("stage-4:test", 0), i);
+  }
+  assert.equal(enumerations, initialized);
+  local.setItem(lastPlayedKey, String(Date.now() - GAME_SAVE_RETENTION_MS));
+  session.setItem(`${prefix}stage-4:test`, "99");
+  assert.equal(readSessionState("stage-4:test", 0), 0);
+  assert.equal(session.getItem(`${prefix}stage-4:test`), null);
+  assert.ok(enumerations > initialized);
+}));
+
+test("a new legacy session is migrated even when local storage is already initialized", () => browser((local) => {
+  writeSessionState("stage-4:phase", 2);
+  const newSession = createStorage();
+  newSession.setItem(`${prefix}stage-4:phase`, "1");
+  newSession.setItem(`${prefix}stage-3:won`, "true");
+  globalThis.window = { localStorage: local, sessionStorage: newSession };
+  assert.equal(readSessionState("stage-4:phase", 0), 2);
+  assert.equal(readSessionState("stage-3:won", false), true);
+  assert.equal(newSession.getItem(`${prefix}stage-3:won`), null);
+}));
+
+test("fallback session writes can migrate when local storage becomes available again", () => browser((local, session) => {
+  writeSessionState("stage-4:phase", 2);
+  globalThis.window = { get localStorage() { throw new Error("blocked"); }, sessionStorage: session };
+  writeSessionState("stage-4:fallback-result", true);
+  globalThis.window = { localStorage: local, sessionStorage: session };
+  assert.equal(readSessionState("stage-4:fallback-result", false), true);
+  assert.equal(readSessionState("stage-4:phase", 0), 2);
 }));

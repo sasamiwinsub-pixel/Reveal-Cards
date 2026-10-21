@@ -11843,9 +11843,9 @@ function PlayingCardView({
           className="object-cover"
           fill
           onError={() => setImageFailed(true)}
-          sizes="80px"
+          sizes={size === "zone" ? "(min-width: 640px) 96px, 68px" : size === "field" ? "(min-width: 640px) 56px, 44px" : "(min-width: 640px) 64px, 56px"}
           src={card.imageSrc}
-          unoptimized
+          quality={90}
         />
       </div>
     );

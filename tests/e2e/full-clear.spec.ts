@@ -132,6 +132,9 @@ test(`opening to final clear through every battle and both final phases (${scanO
   const errors: string[] = [];
   const tutorialMessages: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => {
+    if (response.request().resourceType() === "image" && response.status() >= 400) errors.push(`Image ${response.status()}: ${response.url()}`);
+  });
   // Only dismiss ordinary story/tutorial dialogs; no saved-state injection or route skipping.
   await page.addLocatorHandler(page.locator("[data-tutorial-card]").last(), async (dialog) => {
     tutorialMessages.push(await dialog.locator("p").first().innerText());

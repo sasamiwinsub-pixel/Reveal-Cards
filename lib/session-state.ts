@@ -7,6 +7,9 @@ export const GAME_SESSION_VERSION = "v1";
 export const GAME_SAVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const prefix = `reveal-cards:${GAME_SESSION_VERSION}:`;
 const lastPlayedKey = `${prefix}__last-played-at`;
+// Migration is tab-local; expiry is still checked on every access.
+const preparedStores = new WeakSet<Storage>();
+const migratedSessions = new WeakMap<Storage, Storage>();
 
 function sessionStorage(): Storage | null {
   try {
@@ -43,15 +46,21 @@ function storage(): Storage | null {
       if (legacy && legacy !== target) removeGameKeys(legacy, (key) => key.startsWith(prefix));
     }
     for (const store of new Set([target, legacy])) {
-      if (store) removeGameKeys(store, (key) => key.startsWith("reveal-cards:") && !key.startsWith(prefix));
+      if (store && !preparedStores.has(store)) {
+        removeGameKeys(store, (key) => key.startsWith("reveal-cards:") && !key.startsWith(prefix));
+        preparedStores.add(store);
+      }
     }
-    if (legacy && legacy !== target) {
+    if (legacy && legacy !== target && migratedSessions.get(legacy) !== target) {
       for (const key of Object.keys(legacy)) {
         if (!key.startsWith(prefix)) continue;
         const saved = legacy.getItem(key);
         if (saved !== null && target.getItem(key) === null) target.setItem(key, saved);
         legacy.removeItem(key);
       }
+      migratedSessions.set(legacy, target);
+    } else if (legacy && legacy === target) {
+      migratedSessions.delete(legacy);
     }
     target.setItem(lastPlayedKey, String(now));
     return target;
