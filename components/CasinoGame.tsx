@@ -1874,6 +1874,9 @@ function ScanRuleText({ showPhysicalRules = true }: { showPhysicalRules?: boolea
       <span className="block">
         ③エクスチェンジ機能を使ってゲームで利用
       </span>
+      <span className="block">
+        ※イラストの呼称で入力した答えが導ければ、インクを無視してイラストをスキャン可能
+      </span>
       {showPhysicalRules ? <span className="block">
         ※
         <span className="text-red-300">
@@ -1964,7 +1967,7 @@ function PhysicalScanRuleText() {
     <div className="mb-3 text-sm font-bold leading-6 text-sky-100">
       <h3 className="font-black text-brass">現物スキャン</h3>
       <p>ルール：<SelectableBlueText id="scan-poker">ポーカー</SelectableBlueText></p>
-      <p>条件：選択した時に<SelectableBlueText id="scan-role-name">役名</SelectableBlueText>であること。現物のトランプであること</p>
+      <p>条件：選択した時に<SelectableBlueText id="scan-role-name">役名</SelectableBlueText>であること。所持アイテムであること</p>
     </div>
   );
 }
@@ -4556,7 +4559,7 @@ function BlackjackBattle({
                 印刷した小謎の紙も渡そう。
               </span>
               <span className="mt-2 block">
-                イラストの呼称で入力した答えが導ければ、インクを無視してイラストをスキャン可能。まずは謎を解いてみると良い
+                まずは謎を解いてみると良い
               </span>
             </>
           }
@@ -7238,6 +7241,19 @@ function PokerBattle({
   const maxCopyPastes =
     isFinalAllGamesBattle ? (finalPhase === 1 ? 1 : 3) : config && "maxCopyPastes" in config ? config.maxCopyPastes : 0;
   const remainingCopyPastes = Math.max(0, maxCopyPastes - copyPasteUseCount);
+  const pokerScanSummaryRows: ScanSummaryRow[] = [
+    ...((isPokerThirdBattle || isPokerFourthBattle || isFinalAllGamesBattle)
+      ? pokerBattleConfigs["poker-3-2"].scanRequirements : []),
+    ...(isFinalAllGamesBattle && hasScannedSugoroku ? pokerBattleConfigs["poker-3-4"].scanRequirements : []),
+    ...scanRequirements.filter((requirement) => scannedPokerCardIds.includes(requirement.cardId)),
+  ].map((requirement) => ({
+    id: `${requirement.riddleSrc}:${requirement.answer}:${requirement.illustration}:${requirement.cardId}`,
+    answer: requirement.answer,
+    imageSrc: requirement.targetImageSrc,
+    generatedNumber: requirement.cardId === "scan-A" ? "1" : requirement.cardId === "scan-J" ? "11" : String(generatedScanCards[requirement.cardId].rank),
+    illustrationName: requirement.illustration.replace(/[\s\u3000]+/g, "/"),
+    question: pokerScanRiddles.find((riddle) => riddle.src === requirement.riddleSrc)?.label ?? "",
+  }));
   const copyPasteTargets = [
     ...(config && "copyPasteTargets" in config ? [...config.copyPasteTargets] : []),
     ...Object.values(selectedBlueTexts),
@@ -8255,7 +8271,7 @@ function PokerBattle({
       {showCopyPasteHint ? (
         <TutorialDialog
           onDismiss={() => setShowCopyPasteHint(false)}
-          text="1枚もエクスチェンジできない状況で、ルールを変えることで勝ちにできないだろうか..."
+          text="1枚もエクスチェンジできない状況だ。コピーペースト機能を使ってルールを変えてみろ"
           tone="hands"
         />
       ) : null}
@@ -8843,21 +8859,7 @@ function PokerBattle({
                         <summary className="cursor-pointer text-sm font-black text-brass">小謎の紙</summary>
                         <ScanRiddleImages images={pokerScanRiddles} onOpen={setExpandedPokerRiddle} />
                       </details>
-                      <ScanSolvedSummary hasFourthScanResult additionalRows={[
-                        { question: "③", answer: "フエ", illustrationName: "れい/ん", generatedNumber: "0", imageSrc: scanTargetImages.rain },
-                        { question: "④", answer: "ツーペア", illustrationName: "わん/ぺあ", generatedNumber: "1", imageSrc: scanTargetImages.onepair },
-                        ...(isFinalAllGamesBattle && hasScannedSugoroku ? [{ question: "⑤", answer: "りすく", illustrationName: "す/ご/ろく", generatedNumber: "11", imageSrc: scanTargetImages.sugoroku }] : []),
-                        ...(isFinalAllGamesBattle ? scanRequirements
-                          .filter((requirement) => scannedPokerCardIds.includes(requirement.cardId))
-                          .map((requirement) => ({
-                            id: requirement.cardId,
-                            question: pokerScanRiddles.find((riddle) => riddle.src === requirement.riddleSrc)?.label ?? "",
-                            answer: requirement.answer,
-                            illustrationName: requirement.illustration.replace(/[\s\u3000]+/g, "/"),
-                            generatedNumber: requirement.cardId === "scan-A" ? "1" : "11",
-                            imageSrc: requirement.targetImageSrc,
-                          })) : []),
-                      ]} />
+                      <ScanSolvedSummary hasFourthScanResult additionalRows={pokerScanSummaryRows} />
                       <ScanAnswerPanel
                         answer={pokerScanAnswer} illustration={pokerScanIllustration} splitIndexes={pokerScanSplitIndexes}
                         inventoryCards={scannedPokerCards}
@@ -9017,16 +9019,7 @@ function PokerBattle({
                       <summary className="cursor-pointer text-sm font-black leading-6 text-brass">小謎の紙</summary>
                       <ScanRiddleImages images={pokerScanRiddles} onOpen={setExpandedPokerRiddle} />
                     </details>
-                    <ScanSolvedSummary hasFourthScanResult additionalRows={scanRequirements
-                      .filter((requirement) => scannedPokerCardIds.includes(requirement.cardId))
-                      .map((requirement) => ({
-                        answer: requirement.answer,
-                        imageSrc: requirement.targetImageSrc,
-                        generatedNumber: requirement.cardId === "scan-J" ? "11" : String(generatedScanCards[requirement.cardId].rank),
-                        illustrationName: requirement.illustration.replace(/[\s\u3000]+/g, "/"),
-                        question: pokerScanRiddles.find((riddle) => riddle.src === requirement.riddleSrc)?.label ?? "",
-                      }))}
-                    />
+                    <ScanSolvedSummary hasFourthScanResult additionalRows={pokerScanSummaryRows} />
                     <ScanAnswerPanel
                       answer={pokerScanAnswer}
                       inventoryCards={scannedPokerCards}

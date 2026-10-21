@@ -22,6 +22,7 @@ export function OpeningScreen() {
             <li>URLの変更やソースコードの閲覧は不要です</li>
             <li>配信での使用もご自由にどうぞ（連絡不要）</li>
             <li>LINEやXなどのアプリ内ブラウザでは動作しない可能性がございます</li>
+            <li>ヒントを見ても分からない、バグを見つけた場合、Xの@sasamiWinのDMまでご連絡ください（すぐに気づかない場合もあります）</li>
           </ul>
           <Link className={`${startLinkClass} mx-auto mt-8`} href="/?screen=introduction">始める<ArrowRight aria-hidden="true" size={22} /></Link>
         </div>

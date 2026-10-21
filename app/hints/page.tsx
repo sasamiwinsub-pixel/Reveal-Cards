@@ -22,6 +22,7 @@ export default function HintsPage() {
           <details className={`${styles.accordion} ${styles.stage}`} key={stage.title}>
             <summary><ChevronRight aria-hidden="true" className={styles.chevron} size={22} /><h2>{stage.title}</h2></summary>
             <div className={styles.nested}>
+              {stage.description ? <p className={styles.answer}>{stage.description}</p> : null}
               {stage.battles.map((battle) => (
                 <details className={`${styles.accordion} ${styles.battle}`} key={battle.title}>
                   <summary><ChevronRight aria-hidden="true" className={styles.chevron} size={20} /><h3>{battle.title}</h3></summary>

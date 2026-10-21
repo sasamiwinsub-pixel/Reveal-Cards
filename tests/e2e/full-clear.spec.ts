@@ -110,6 +110,18 @@ async function scan(page: Page, answer: string, reading: string, indexes: number
   await click(page, "スキャン発動");
 }
 
+async function expectStageThreeScanHistory(page: Page) {
+  const summary = page.getByText("スキャン回答済み", { exact: true }).locator("..");
+  for (const reading of ["れい/ん", "わん/ぺあ"]) await expect(summary.getByText(reading, { exact: true })).toHaveCount(1);
+}
+
+async function reloadSavedPage(page: Page) {
+  await page.reload();
+  const resume = page.getByRole("dialog", { name: "続きから再開しますか？" });
+  await expect(page.locator("main").or(resume)).toBeVisible();
+  if (await resume.isVisible()) await resume.getByRole("button", { name: "はい", exact: true }).click();
+}
+
 async function copyStart(page: Page, format: string) {
   await ability(page, "コピーペースト");
   await click(page, format);
@@ -132,6 +144,9 @@ test(`opening to final clear through every battle and both final phases (${scanO
   const errors: string[] = [];
   const tutorialMessages: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.text().includes("Encountered two children with the same key")) errors.push(message.text());
+  });
   page.on("response", (response) => {
     if (response.request().resourceType() === "image" && response.status() >= 400) errors.push(`Image ${response.status()}: ${response.url()}`);
   });
@@ -261,8 +276,19 @@ test(`opening to final clear through every battle and both final phases (${scanO
   await test.step("Stage3 game2: generate zero and A, win three games", async () => {
     await enterPreparation(page);
     await ability(page, "スキャン");
-    await scan(page, "フエ", "れいん", [2]);
-    await scan(page, "ツーペア", "わんぺあ", [2]);
+    const summary = page.getByText("スキャン回答済み", { exact: true }).locator("..");
+    const entries = [
+      { answer: "フエ", reading: "れいん", displayed: "れい/ん" },
+      { answer: "ツーペア", reading: "わんぺあ", displayed: "わん/ぺあ" },
+    ];
+    if (scanOrder === "J-first") entries.reverse();
+    for (const entry of entries) await expect(summary.getByText(entry.displayed, { exact: true })).toHaveCount(0);
+    for (const [index, entry] of entries.entries()) {
+      await scan(page, entry.answer, entry.reading, [2]);
+      await expect(summary.getByText(entry.displayed, { exact: true })).toHaveCount(1);
+      if (index === 0) await expect(summary.getByText(entries[1].displayed, { exact: true })).toHaveCount(0);
+    }
+    await expectStageThreeScanHistory(page);
     await ability(page, "エクスチェンジ");
     await exchange(page, "0 spade", "J daia");
     await exchange(page, "A spade", "K spade");
@@ -278,6 +304,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await click(page, "回答");
     await copyStart(page, "数字");
     await ability(page, "スキャン");
+    await expectStageThreeScanHistory(page);
     await blue(page, "scan-example").click();
     await ability(page, "コピーペースト");
     await openSpecification(page, "ブラックジャックの仕様");
@@ -291,7 +318,12 @@ test(`opening to final clear through every battle and both final phases (${scanO
   await test.step("Stage3 game4: scan sugoroku to create J", async () => {
     await enterPreparation(page);
     await ability(page, "スキャン");
+    await expectStageThreeScanHistory(page);
+    await reloadSavedPage(page);
+    await expectStageThreeScanHistory(page);
     await scan(page, "りすく", "すごろく", [1, 2]);
+    await expectStageThreeScanHistory(page);
+    await page.getByText("スキャン回答済み", { exact: true }).locator("..").screenshot({ path: testInfo.outputPath("stage3-game4-scan-history.png") });
     await ability(page, "エクスチェンジ");
     await exchange(page, "A daia", "J spade");
     await returnToTable(page);
@@ -379,6 +411,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
     ];
     if (scanOrder === "J-first") targets.reverse();
     const summary = page.getByText("スキャン回答済み", { exact: true }).locator("..");
+    await expectStageThreeScanHistory(page);
     for (const target of targets) await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(0);
     for (const target of targets) {
       await scan(page, "ハイキング", target.reading, [2]);
@@ -388,9 +421,12 @@ test(`opening to final clear through every battle and both final phases (${scanO
       await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
       await page.getByRole("button", { name: "今回スキャンした対象を拡大表示", exact: true }).screenshot({ path: testInfo.outputPath(`final-${target.name}-scan.png`) });
     }
-    await page.reload();
-    await page.getByRole("dialog", { name: "続きから再開しますか？" }).getByRole("button", { name: "はい", exact: true }).click();
+    await reloadSavedPage(page);
     for (const target of targets) await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(1);
+    await expectStageThreeScanHistory(page);
+    await expect(summary.getByText("す/ご/ろく", { exact: true })).toHaveCount(1);
+    await summary.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await summary.screenshot({ path: testInfo.outputPath("final-scan-history.png") });
     await expect(button(page, "やること")).toContainText("全てのゲームで勝利する");
     await click(page, "Aのカードを現物スキャン対象に選択");
     await click(page, "Jのカードを現物スキャン対象に選択");

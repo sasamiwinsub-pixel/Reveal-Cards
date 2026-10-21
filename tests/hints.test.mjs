@@ -3,8 +3,9 @@ import test from "node:test";
 import { hintStages } from "../lib/hints.ts";
 
 test("hints cover all supplied stages, battles and individual lines", () => {
-  assert.deepEqual(hintStages.map((stage) => stage.title), ["1stStage", "2ndStage", "3rdStage"]);
-  assert.deepEqual(hintStages.map((stage) => stage.battles.length), [3, 4, 4]);
+  assert.deepEqual(hintStages.map((stage) => stage.title), ["1stStage", "2ndStage", "3rdStage", "ファイナルステージ"]);
+  assert.deepEqual(hintStages.map((stage) => stage.battles.length), [3, 4, 4, 0]);
+  assert.equal(hintStages[3].description, "2026年11月上旬追加予定");
   const groups = hintStages.flatMap((stage) => stage.battles.flatMap((battle) => battle.groups));
   assert.equal(groups.flatMap((group) => group.lines).length, 92);
   assert.ok(groups.every((group) => group.title && group.lines.length && group.lines.every((line) => line.trim())));
