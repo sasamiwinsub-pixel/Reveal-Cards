@@ -53,8 +53,10 @@ test("final physical scan requires both rule changes and A plus J", () => {
   assert.equal(getFinalPhysicalScanReading(["A", "Q"], "ブラックジャック", "じゅういち"), null);
 });
 
-test("two plus eleven produces K only with the correct split", () => {
+test("final physical scan produces K with either accepted split", () => {
   assert.equal(resolveFinalPhysicalScanSplit("に じゅういち"), "scan-K");
   assert.equal(resolveFinalPhysicalScanSplit("にじゅういち"), null);
-  assert.equal(resolveFinalPhysicalScanSplit("に じゅう いち"), null);
+  assert.equal(resolveFinalPhysicalScanSplit("に じゅう いち"), "scan-K");
+  assert.equal(resolveFinalPhysicalScanSplit("にじゅう いち"), null);
+  assert.equal(resolveFinalPhysicalScanSplit("に じゅ ういち"), null);
 });

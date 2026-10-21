@@ -21,7 +21,7 @@ export function getFinalPhysicalScanReading(ranks: string[], game: string | unde
 }
 
 export function resolveFinalPhysicalScanSplit(reading: string): string | null {
-  return reading === "に じゅういち" ? "scan-K" : null;
+  return reading === "に じゅういち" || reading === "に じゅう いち" ? "scan-K" : null;
 }
 
 export function getFinalSingleCardScan(ranks: string[], game: string | undefined, role: string | undefined): "A" | "J" | null {

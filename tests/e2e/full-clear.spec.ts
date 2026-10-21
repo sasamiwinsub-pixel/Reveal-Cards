@@ -431,7 +431,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await click(page, "Aのカードを現物スキャン対象に選択");
     await click(page, "Jのカードを現物スキャン対象に選択");
     await click(page, "現物スキャン");
-    await split(page, [1], -1);
+    await split(page, scanOrder === "A-first" ? [1] : [1, 4], -1);
     await click(page, "現物スキャン発動");
     for (const target of targets) await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(1);
     await ability(page, "エクスチェンジ");
