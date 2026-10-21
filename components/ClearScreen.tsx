@@ -60,7 +60,6 @@ export default function ClearScreen() {
             <ul className="grid gap-1">
               <li>まいたけ 三度の謎と謎解きが好き</li>
               <li>Lexer</li>
-              <li>カク</li>
             </ul>
           </div>
         </div>

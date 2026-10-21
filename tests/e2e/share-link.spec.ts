@@ -52,10 +52,11 @@ test("clear screen credits show all contributors without horizontal overflow", a
   const credits = page.locator("footer");
   await expect(credits.getByRole("heading", { name: "制作", exact: true })).toBeVisible();
   await expect(credits.getByRole("heading", { name: "テストプレイ協力", exact: true })).toBeVisible();
-  for (const name of ["ささみカツ@謎解き", "まいたけ 三度の謎と謎解きが好き", "Lexer", "カク"]) {
+  for (const name of ["ささみカツ@謎解き", "まいたけ 三度の謎と謎解きが好き", "Lexer"]) {
     await expect(credits.getByText(name, { exact: true })).toBeVisible();
   }
   await credits.scrollIntoViewIfNeeded();
+  await expect(credits.getByText("カク", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await credits.screenshot({ path: testInfo.outputPath("credits.png") });
 });
