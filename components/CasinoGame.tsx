@@ -8582,6 +8582,7 @@ function PokerBattle({
                     />
                   }
                   cards={pokerBlackjackVisibleRobotHand}
+                  className="order-2 sm:order-1"
                   isBlackjack={false}
                   label="ブラックジャックのロボット手札"
                   revealSecond
@@ -8589,6 +8590,7 @@ function PokerBattle({
                 />
                 <BlackjackField
                   cards={pokerBlackjackVisiblePlayerHand}
+                  className="order-1 sm:order-2"
                   selectedCardId={pokerBlackjackDraggingCardId}
                   draggableCardIds={pokerBlackjackDraggableCardIds}
                   isBlackjack={false}
@@ -11060,6 +11062,7 @@ function BlackjackField({
   actions,
   cards,
   cardContent,
+  className = "",
   draggableCardIds = [],
   highlightedCardId = null,
   selectedCardId = null,
@@ -11076,6 +11079,7 @@ function BlackjackField({
   actions?: ReactNode;
   cards: PlayingCard[];
   cardContent?: ReactNode;
+  className?: string;
   draggableCardIds?: string[];
   highlightedCardId?: string | null;
   selectedCardId?: string | null;
@@ -11093,7 +11097,7 @@ function BlackjackField({
   const secondCard = cards[1] ?? null;
 
   return (
-    <div className="rounded border border-white/10 bg-black/35 p-2">
+    <div className={`rounded border border-white/10 bg-black/35 p-2 ${className}`}>
       <div className="flex items-center justify-between gap-3">
         <p className="min-w-0 text-[11px] font-black uppercase tracking-[0.18em] text-brass">
           {label}

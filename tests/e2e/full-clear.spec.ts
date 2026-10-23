@@ -54,6 +54,15 @@ async function blackjack(page: Page, cards: [string, string]) {
   const playerBounds = await player.boundingBox();
   const robotBounds = await robot.boundingBox();
   expect(robotBounds!.x).toBeLessThan(playerBounds!.x);
+  const playerHand = page.getByText("プレイヤーの手札", { exact: true }).filter({ visible: true });
+  const robotHand = page.getByText("ブラックジャックのロボット手札", { exact: true }).filter({ visible: true });
+  const playerHandBounds = await playerHand.boundingBox();
+  const robotHandBounds = await robotHand.boundingBox();
+  if (page.viewportSize()!.width < 640) {
+    expect(playerHandBounds!.y).toBeLessThan(robotHandBounds!.y);
+  } else if (Math.abs(playerHandBounds!.y - robotHandBounds!.y) < 20) {
+    expect(robotHandBounds!.x).toBeLessThan(playerHandBounds!.x);
+  }
   await page.screenshot({ path: test.info().outputPath("blackjack-layout.png"), fullPage: true });
   for (const card of cards) {
     await click(page, card);
