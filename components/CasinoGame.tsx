@@ -2286,7 +2286,7 @@ function ScanInventoryPanel({ cards, disabled, onScan, showPhysicalRules = true 
   );
 }
 
-function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, onIllustrationChange, onSplitChange, onSubmit, disabled = false, message, children, inventoryCards = [], onPhysicalScan, physicalScanDisabled = false }: {
+function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, onIllustrationChange, onSplitChange, onSubmit, disabled = false, message, children, inventoryCards = [], inventoryResetKey = 0, onPhysicalScan, physicalScanDisabled = false }: {
   answer: string;
   illustration: string;
   splitIndexes: number[];
@@ -2298,6 +2298,7 @@ function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, o
   message: string;
   children?: ReactNode;
   inventoryCards?: PlayingCard[];
+  inventoryResetKey?: number;
   onPhysicalScan?: (cardIds: string[]) => void;
   physicalScanDisabled?: boolean;
 }) {
@@ -2317,7 +2318,7 @@ function ScanAnswerPanel({ answer, illustration, splitIndexes, onAnswerChange, o
       <button className={`min-h-11 rounded px-3 py-2 text-sm font-black ${disabled ? "cursor-not-allowed bg-stone-700 text-stone-400" : "bg-brass text-stone-950 hover:bg-yellow-300"}`} disabled={disabled} onClick={onSubmit} type="button">スキャン発動</button>
       {message ? <ScanFeedbackMessage message={message} /> : null}
       {children}
-      <ScanInventoryPanel cards={inventoryCards} disabled={physicalScanDisabled} onScan={onPhysicalScan} />
+      <ScanInventoryPanel key={inventoryResetKey} cards={inventoryCards} disabled={physicalScanDisabled} onScan={onPhysicalScan} />
     </div>
   );
 }
@@ -7060,6 +7061,7 @@ function PokerBattle({
   const [scannedPokerCardIds, setScannedPokerCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:scannedPokerCardIds`, []);
   const [consumedPokerScanCardIds, setConsumedPokerScanCardIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:consumedPokerScanCardIds`, []);
   const [finalPhysicalScanIds, setFinalPhysicalScanIds] = useSessionState<string[]>(`stage-${robotId === "all-games-last" ? 4 : 3}:PokerBattle:${robotId}:finalPhysicalScanIds`, []);
+  const [finalPhysicalScanResetKey, setFinalPhysicalScanResetKey] = useState(0);
   const [hasScannedSugoroku, setHasScannedSugoroku] = useSessionState("ability:scan:sugoroku-answered", () =>
     readSessionState<string[]>("stage-3:PokerBattle:poker-3-4:scannedPokerCardIds", []).includes("scan-J"));
   const [finalSingleCardScanDialog, setFinalSingleCardScanDialog] = useSessionState<{
@@ -7649,9 +7651,10 @@ function PokerBattle({
     const { before } = finalSingleCardScanDialog;
     setScannedPokerCardIds(before.scannedIds);
     setConsumedPokerScanCardIds(before.consumedIds);
-    setFinalPhysicalScanIds(before.physicalIds);
-    setFinalPhysicalScanReading(before.reading);
-    setFinalPhysicalScanSplitIndexes(before.splitIndexes);
+    setFinalPhysicalScanIds([]);
+    setFinalPhysicalScanReading("");
+    setFinalPhysicalScanSplitIndexes([]);
+    setFinalPhysicalScanResetKey((current) => current + 1);
     setPokerScanPreviewSrc(before.previewSrc);
     setPokerScanMessage(before.message);
     setFinalSingleCardScanDialog(null);
@@ -8879,6 +8882,7 @@ function PokerBattle({
                       <ScanAnswerPanel
                         answer={pokerScanAnswer} illustration={pokerScanIllustration} splitIndexes={pokerScanSplitIndexes}
                         inventoryCards={scannedPokerCards}
+                        inventoryResetKey={finalPhysicalScanResetKey}
                         onPhysicalScan={isFinalAllGamesBattle ? startFinalPhysicalScan : undefined}
                         onAnswerChange={setPokerScanAnswer}
                         onIllustrationChange={(value) => { setPokerScanIllustration(value); setPokerScanSplitIndexes([]); }}

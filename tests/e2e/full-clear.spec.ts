@@ -454,6 +454,12 @@ test(`opening to final clear through every battle and both final phases (${scanO
         await physicalScan.screenshot({ path: testInfo.outputPath("failure-05-split.png") });
         await page.removeLocatorHandler(playerDialog);
         for (let attempt = 0; attempt < 2; attempt += 1) {
+          if (attempt > 0) {
+            await click(page, "Aのカードを現物スキャン対象に選択");
+            await click(page, "Jのカードを現物スキャン対象に選択");
+            await click(page, "現物スキャン");
+            await split(page, [4], -1);
+          }
           await click(page, "現物スキャン発動");
           const dialog = page.getByRole("dialog").filter({ hasText: "Jが生成出来てもカードが減っただけだ...やり直そう..." });
           await expect(dialog).toBeVisible();
@@ -463,6 +469,10 @@ test(`opening to final clear through every battle and both final phases (${scanO
           await expect(button(page, "スキャン 残1")).toBeVisible();
           await expect(button(page, "Aのカードを現物スキャン対象に選択")).toBeVisible();
           await expect(button(page, "Jのカードを現物スキャン対象に選択")).toBeVisible();
+          await expect(button(page, "現物スキャン発動")).toHaveCount(0);
+          await expect(button(page, "Aのカードを現物スキャン対象に選択")).toHaveAttribute("aria-pressed", "false");
+          await expect(button(page, "Jのカードを現物スキャン対象に選択")).toHaveAttribute("aria-pressed", "false");
+          await expect(button(page, "現物スキャン")).toBeDisabled();
           if (attempt === 0) await inventory.screenshot({ path: testInfo.outputPath("failure-07-restored.png") });
         }
         await page.addLocatorHandler(playerDialog, dismissPlayerDialog, { noWaitAfter: true });
