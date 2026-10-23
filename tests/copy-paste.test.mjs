@@ -43,6 +43,15 @@ test("blackjack can replace the physical scan game", () => {
   assert.equal(resolvePaste({ ...source, text: "ハイ＆ロー" }, "scan-poker", "katakana"), null);
 });
 
+test("blackjack can replace the role name as a resettable incorrect paste", () => {
+  const source = { id: "blackjack-declaration", text: "ブラックジャック" };
+  assert.equal(resolvePaste(source, "scan-role-name", "katakana"), "ブラックジャック");
+  for (const format of ["hiragana", "kanji", "number"]) {
+    assert.equal(resolvePaste(source, "scan-role-name", format), null);
+  }
+  assert.deepEqual(getCorrectCopyPasteChanges({ "scan-role-name": "ブラックジャック" }, true), {});
+});
+
 test("only configured source, target and format combinations are accepted", () => {
   const source = { id: "scan-example", text: "例" };
   assert.equal(resolvePaste(source, "blackjack-ace-value", "number"), "0");

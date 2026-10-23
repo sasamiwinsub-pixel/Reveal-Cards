@@ -47,6 +47,14 @@ async function highLow(page: Page, card: string, zone: "HIGH" | "LOW", reloadAtC
 }
 
 async function blackjack(page: Page, cards: [string, string]) {
+  const field = page.getByText("ブラックジャックフィールド", { exact: true }).locator("..");
+  const player = field.getByText("プレイヤー", { exact: true });
+  const robot = field.getByText("ロボット", { exact: true });
+  await expect(player).toBeVisible();
+  const playerBounds = await player.boundingBox();
+  const robotBounds = await robot.boundingBox();
+  expect(playerBounds!.x).toBeLessThan(robotBounds!.x);
+  await page.screenshot({ path: test.info().outputPath("blackjack-layout.png"), fullPage: true });
   for (const card of cards) {
     await click(page, card);
     await click(page, "プレイヤーフィールドへ配置");
@@ -344,7 +352,7 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await page.removeLocatorHandler(playerDialog);
     for (let attempt = 0; attempt < 2; attempt++) {
       await click(page, "ゲームスタート");
-      await expect(page.getByRole("dialog")).toContainText("ハイ＆ロー宣言のタイミングでのエクスチェンジしても、ブラックジャックに勝てない気がする。もう一度考えなそう...");
+      await expect(page.getByRole("dialog")).toContainText("ハイ＆ロー宣言のタイミングでのエクスチェンジしても、ブラックジャックに勝てない気がする。もう一度考え直そう...");
       await expect(page.getByRole("button", { name: "結果表示を閉じる" })).toHaveCount(0);
       await dismissPlayerDialog(playerDialog);
       await closeResult(page);
@@ -398,9 +406,9 @@ test(`opening to final clear through every battle and both final phases (${scanO
     await ability(page, "スキャン");
     await blue(page, "scan-poker").click();
     await copyCommit(page);
-    await copyStart(page, "平仮名");
+    await copyStart(page, scanOrder === "J-first" ? "カタカナ" : "平仮名");
     await openSpecification(page, "ブラックジャックの仕様");
-    await blue(page, "blackjack-ace-value").click();
+    await blue(page, scanOrder === "J-first" ? "blackjack-declaration" : "blackjack-ace-value").click();
     await ability(page, "スキャン");
     await blue(page, "scan-role-name").click();
     await copyCommit(page);
@@ -420,6 +428,48 @@ test(`opening to final clear through every battle and both final phases (${scanO
       await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(1);
       await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
       await page.getByRole("button", { name: "今回スキャンした対象を拡大表示", exact: true }).screenshot({ path: testInfo.outputPath(`final-${target.name}-scan.png`) });
+    }
+    if (scanOrder === "J-first") {
+      await test.step("Incorrect blackjack role scan can be retried, reset and recovered", async () => {
+        const inventory = button(page, "現物スキャン").locator("..");
+        await inventory.screenshot({ path: testInfo.outputPath("failure-01-pasted-role.png") });
+        await click(page, "Aのカードを現物スキャン対象に選択");
+        await inventory.screenshot({ path: testInfo.outputPath("failure-02-selected-a.png") });
+        await click(page, "Jのカードを現物スキャン対象に選択");
+        await inventory.screenshot({ path: testInfo.outputPath("failure-03-selected-aj.png") });
+        await click(page, "現物スキャン");
+        const physicalScan = button(page, "現物スキャン発動").locator("..");
+        await expect(physicalScan.locator(":scope > p")).toHaveText("ブラックジャック");
+        await physicalScan.screenshot({ path: testInfo.outputPath("failure-04-reading.png") });
+        await split(page, [4], -1);
+        await physicalScan.screenshot({ path: testInfo.outputPath("failure-05-split.png") });
+        await page.removeLocatorHandler(playerDialog);
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          await click(page, "現物スキャン発動");
+          const dialog = page.getByRole("dialog").filter({ hasText: "Jが生成出来てもカードが減っただけだ...やり直そう..." });
+          await expect(dialog).toBeVisible();
+          await expect(button(page, "スキャン 残0")).toBeVisible();
+          if (attempt === 0) await dialog.screenshot({ path: testInfo.outputPath("failure-06-player-dialog.png") });
+          await dialog.getByRole("button", { name: "閉じる", exact: true }).click();
+          await expect(button(page, "スキャン 残1")).toBeVisible();
+          await expect(button(page, "Aのカードを現物スキャン対象に選択")).toBeVisible();
+          await expect(button(page, "Jのカードを現物スキャン対象に選択")).toBeVisible();
+          if (attempt === 0) await inventory.screenshot({ path: testInfo.outputPath("failure-07-restored.png") });
+        }
+        await page.addLocatorHandler(playerDialog, dismissPlayerDialog, { noWaitAfter: true });
+        await ability(page, "コピーペースト");
+        await click(page, "やり直し");
+        await expect(button(page, "コピーペースト 残1")).toBeVisible();
+        await ability(page, "スキャン");
+        await inventory.screenshot({ path: testInfo.outputPath("failure-08-reset-paste.png") });
+        await copyStart(page, "平仮名");
+        await openSpecification(page, "ブラックジャックの仕様");
+        await blue(page, "blackjack-ace-value").click();
+        await ability(page, "スキャン");
+        await blue(page, "scan-role-name").click();
+        await copyCommit(page);
+        await ability(page, "スキャン");
+      });
     }
     await reloadSavedPage(page);
     for (const target of targets) await expect(summary.getByText(target.summary, { exact: true })).toHaveCount(1);

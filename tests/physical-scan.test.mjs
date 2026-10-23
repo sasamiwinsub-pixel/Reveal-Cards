@@ -60,3 +60,16 @@ test("final physical scan produces K with either accepted split", () => {
   assert.equal(resolveFinalPhysicalScanSplit("にじゅう いち"), null);
   assert.equal(resolveFinalPhysicalScanSplit("に じゅ ういち"), null);
 });
+
+test("blackjack role scan reads the name and generates a jack only at the correct split", () => {
+  for (const game of [undefined, "ポーカー", "ブラックジャック"]) {
+    assert.equal(getFinalPhysicalScanReading(["A", "J"], game, "ブラックジャック"), "ブラックジャック");
+    assert.equal(getFinalPhysicalScanReading(["J", "A"], game, "ブラックジャック"), "ブラックジャック");
+    assert.equal(getFinalPhysicalScanReading(["A", "Q"], game, "ブラックジャック"), null);
+  }
+  assert.equal(getFinalPhysicalScanReading(["A", "J"], "ハイ＆ロー", "ブラックジャック"), null);
+  assert.equal(resolveFinalPhysicalScanSplit("ブラック ジャック"), "scan-J");
+  assert.equal(resolveFinalPhysicalScanSplit("ぶらっく じゃっく"), "scan-J");
+  assert.equal(resolveFinalPhysicalScanSplit("ブラックジャック"), null);
+  assert.equal(resolveFinalPhysicalScanSplit("ブラッ クジャック"), null);
+});

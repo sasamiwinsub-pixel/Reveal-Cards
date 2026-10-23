@@ -44,13 +44,14 @@ const allowedPastes = [
   { source: "blackjack-ace-value", target: "scan-role-name", format: "katakana", text: "ジュウイチ" },
   { source: "blackjack-ace-value", target: "scan-role-name", format: "kanji", text: "十一" },
   { source: "blackjack-declaration", target: "scan-poker", format: "katakana", text: "ブラックジャック" },
+  { source: "blackjack-declaration", target: "scan-role-name", format: "katakana", text: "ブラックジャック" },
 ] as const;
 
 export function resolvePaste(source: { id: string; text: string }, targetId: string, format: PasteFormat): string | null {
   if (source.id === targetId) return null;
   if (targetId === "exchange-start-timing" && source.text !== "ブラックジャック" && source.text !== "ハイ＆ロー") return null;
   if (targetId === "riddle-four-game" && source.text !== "ハイ＆ロー") return null;
-  if (targetId === "scan-role-name" && source.text !== "11") return null;
+  if (targetId === "scan-role-name" && source.text !== "11" && source.text !== "ブラックジャック") return null;
   if (targetId === "scan-poker" && source.text !== "ブラックジャック") return null;
   if (targetId === "high-low-declaration" || targetId === "blackjack-declaration") {
     const reading = readings[source.text] ?? source.text;

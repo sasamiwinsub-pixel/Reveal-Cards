@@ -7575,6 +7575,18 @@ function PokerBattle({
         },
       ];
 
+  function captureFinalScanState() {
+    return {
+      scannedIds: [...scannedPokerCardIds],
+      consumedIds: [...consumedPokerScanCardIds],
+      physicalIds: [...finalPhysicalScanIds],
+      reading: finalPhysicalScanReading,
+      splitIndexes: [...finalPhysicalScanSplitIndexes],
+      previewSrc: pokerScanPreviewSrc,
+      message: pokerScanMessage,
+    };
+  }
+
   function startFinalPhysicalScan(cardIds: string[]) {
     const cards = scannedPokerCards.filter((card) => cardIds.includes(card.id));
     const singleRank = getFinalSingleCardScan(cards.map((card) => card.rank), pastedBlueTexts["scan-poker"], pastedBlueTexts["scan-role-name"]);
@@ -7583,15 +7595,7 @@ function PokerBattle({
         text: singleRank === "A"
           ? "生成できたが、AがJに変化しても意味なさそうだ...やり直そう"
           : "JからJになったが、スキャンを消費しただけだ...やり直そう",
-        before: {
-          scannedIds: [...scannedPokerCardIds],
-          consumedIds: [...consumedPokerScanCardIds],
-          physicalIds: [...finalPhysicalScanIds],
-          reading: finalPhysicalScanReading,
-          splitIndexes: [...finalPhysicalScanSplitIndexes],
-          previewSrc: pokerScanPreviewSrc,
-          message: pokerScanMessage,
-        },
+        before: captureFinalScanState(),
       });
       const generatedId = `scan-J-physical-${scannedPokerCardIds.length + 1}`;
       setConsumedPokerScanCardIds((current) => [...new Set([...current, ...cardIds])]);
@@ -7618,16 +7622,26 @@ function PokerBattle({
     const cards = scannedPokerCards.filter((card) => finalPhysicalScanIds.includes(card.id));
     const reading = getFinalPhysicalScanReading(cards.map((card) => card.rank), pastedBlueTexts["scan-poker"], pastedBlueTexts["scan-role-name"]);
     const cardId = resolveFinalPhysicalScanSplit(normalizeScanIllustrationName(finalPhysicalScanReading));
-    if (!isFinalAllGamesBattle || !reading || !cardId || remainingScans === 0 || scannedPokerCardIds.includes(cardId)) {
+    const isJackResult = reading === "ブラックジャック" && cardId === "scan-J";
+    if (!isFinalAllGamesBattle || !reading || !cardId || remainingScans === 0 || (!isJackResult && scannedPokerCardIds.includes(cardId))) {
       setPokerScanMessage("上手くいかないようだ...");
       return;
     }
+    if (isJackResult) {
+      setFinalSingleCardScanDialog({
+        text: "Jが生成出来てもカードが減っただけだ...やり直そう...",
+        before: captureFinalScanState(),
+      });
+    }
+    const generatedId = isJackResult ? `scan-J-physical-${scannedPokerCardIds.length + 1}` : cardId;
     setConsumedPokerScanCardIds((current) => [...new Set([...current, ...finalPhysicalScanIds])]);
-    setScannedPokerCardIds((current) => [...current, cardId]);
+    setScannedPokerCardIds((current) => [...current, generatedId]);
     setFinalPhysicalScanIds([]);
     setFinalPhysicalScanReading("");
     setPokerScanPreviewSrc(null);
-    setPokerScanMessage("現物スキャン成功。2 + 11 = 13でKのカードを生成しました。使用したAとJは消費されます。");
+    setPokerScanMessage(isJackResult
+      ? "現物スキャンでJのカードを生成しました。使用したAとJは消費されます。"
+      : "現物スキャン成功。2 + 11 = 13でKのカードを生成しました。使用したAとJは消費されます。");
   }
 
   function dismissFinalSingleCardScanDialog() {
@@ -8243,7 +8257,7 @@ function PokerBattle({
       {finalSingleCardScanDialog ? <PlayerCutInDialog text={finalSingleCardScanDialog.text} onDismiss={dismissFinalSingleCardScanDialog} /> : null}
       {showFinalHighLowTimingDialog ? (
         <PlayerCutInDialog
-          text="ハイ＆ロー宣言のタイミングでのエクスチェンジしても、ブラックジャックに勝てない気がする。もう一度考えなそう..."
+          text="ハイ＆ロー宣言のタイミングでのエクスチェンジしても、ブラックジャックに勝てない気がする。もう一度考え直そう..."
           onDismiss={() => setShowFinalHighLowTimingDialog(false)}
         />
       ) : null}
@@ -8874,7 +8888,7 @@ function PokerBattle({
                       </ScanAnswerPanel>
                       {isFinalAllGamesBattle && finalPhysicalScanReading ? (
                         <section className="mt-3 rounded border border-sky-300/35 bg-sky-950/20 p-3">
-                          <p className="text-sm font-black text-sky-100">ブラックジャック：21（にじゅういち）</p>
+                          <p className="text-sm font-black text-sky-100">{pastedBlueTexts["scan-role-name"] === "ブラックジャック" ? "ブラックジャック" : "ブラックジャック：21（にじゅういち）"}</p>
                           <div className="my-3 flex justify-center gap-2">
                             {scannedPokerCards.filter((card) => finalPhysicalScanIds.includes(card.id)).map((card) => <PlayingCardView key={card.id} card={card} size="hand" />)}
                           </div>
@@ -10905,12 +10919,6 @@ function BlackjackFieldArea({
       </p>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <BlackjackFieldSlot
-          cards={robotCards}
-          label="ロボット"
-          stackCards
-          value={robotValue}
-        />
-        <BlackjackFieldSlot
           canDropCard={canDropPlayerCard}
           cards={playerCards}
           label="プレイヤー"
@@ -10919,6 +10927,12 @@ function BlackjackFieldArea({
           placementAnimationMode={placementAnimationMode}
           stackCards
           value={playerValue}
+        />
+        <BlackjackFieldSlot
+          cards={robotCards}
+          label="ロボット"
+          stackCards
+          value={robotValue}
         />
       </div>
     </div>

@@ -15,12 +15,14 @@ export function isPhysicalScanSelectionValid(
 }
 
 export function getFinalPhysicalScanReading(ranks: string[], game: string | undefined, role: string | undefined): string | null {
-  if (game !== "ブラックジャック" || role !== "じゅういち") return null;
   if (ranks.length !== 2 || !ranks.includes("A") || !ranks.includes("J")) return null;
+  if (role === "ブラックジャック" && (game === undefined || game === "ポーカー" || game === "ブラックジャック")) return "ブラックジャック";
+  if (game !== "ブラックジャック" || role !== "じゅういち") return null;
   return "にじゅういち";
 }
 
 export function resolveFinalPhysicalScanSplit(reading: string): string | null {
+  if (reading === "ブラック ジャック" || reading === "ぶらっく じゃっく") return "scan-J";
   return reading === "に じゅういち" || reading === "に じゅう いち" ? "scan-K" : null;
 }
 
