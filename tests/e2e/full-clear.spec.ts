@@ -53,7 +53,7 @@ async function blackjack(page: Page, cards: [string, string]) {
   await expect(player).toBeVisible();
   const playerBounds = await player.boundingBox();
   const robotBounds = await robot.boundingBox();
-  expect(playerBounds!.x).toBeLessThan(robotBounds!.x);
+  expect(robotBounds!.x).toBeLessThan(playerBounds!.x);
   await page.screenshot({ path: test.info().outputPath("blackjack-layout.png"), fullPage: true });
   for (const card of cards) {
     await click(page, card);

@@ -8574,18 +8574,6 @@ function PokerBattle({
               ) : null}
               <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
                 <BlackjackField
-                  cards={pokerBlackjackVisiblePlayerHand}
-                  selectedCardId={pokerBlackjackDraggingCardId}
-                  draggableCardIds={pokerBlackjackDraggableCardIds}
-                  isBlackjack={false}
-                  label="プレイヤーの手札"
-                  onCardDragEnd={endPokerBlackjackDraggingCard}
-                  onCardDragMove={movePokerBlackjackDraggingCard}
-                  onCardDragStart={startPokerBlackjackDraggingCard}
-                  revealSecond
-                  score={null}
-                />
-                <BlackjackField
                   actions={
                     <GameInfoButtons
                       gameType="blackjack"
@@ -8596,6 +8584,18 @@ function PokerBattle({
                   cards={pokerBlackjackVisibleRobotHand}
                   isBlackjack={false}
                   label="ブラックジャックのロボット手札"
+                  revealSecond
+                  score={null}
+                />
+                <BlackjackField
+                  cards={pokerBlackjackVisiblePlayerHand}
+                  selectedCardId={pokerBlackjackDraggingCardId}
+                  draggableCardIds={pokerBlackjackDraggableCardIds}
+                  isBlackjack={false}
+                  label="プレイヤーの手札"
+                  onCardDragEnd={endPokerBlackjackDraggingCard}
+                  onCardDragMove={movePokerBlackjackDraggingCard}
+                  onCardDragStart={startPokerBlackjackDraggingCard}
                   revealSecond
                   score={null}
                 />
@@ -10919,6 +10919,12 @@ function BlackjackFieldArea({
       </p>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <BlackjackFieldSlot
+          cards={robotCards}
+          label="ロボット"
+          stackCards
+          value={robotValue}
+        />
+        <BlackjackFieldSlot
           canDropCard={canDropPlayerCard}
           cards={playerCards}
           label="プレイヤー"
@@ -10927,12 +10933,6 @@ function BlackjackFieldArea({
           placementAnimationMode={placementAnimationMode}
           stackCards
           value={playerValue}
-        />
-        <BlackjackFieldSlot
-          cards={robotCards}
-          label="ロボット"
-          stackCards
-          value={robotValue}
         />
       </div>
     </div>
